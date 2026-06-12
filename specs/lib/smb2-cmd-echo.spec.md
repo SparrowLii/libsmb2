@@ -12,20 +12,20 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_encode_echo_request | function | `static int smb2_encode_echo_request(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Skip | 静态内部编码 helper，仅服务 `smb2_cmd_echo_async` 的请求 PDU 构造，外部可观察契约归属到调用接口。 |
-| smb2_cmd_echo_async | function | `struct smb2_pdu *smb2_cmd_echo_async(struct smb2_context *smb2, smb2_command_cb cb, void *cb_data)` | Include | 原始 SMB2 ECHO 请求构造入口声明在 `include/smb2/libsmb2-raw.h`，由高层 echo API 调用并返回调用方可发送的 PDU。 |
-| smb2_encode_echo_reply | function | `static int smb2_encode_echo_reply(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Skip | 静态内部编码 helper，仅服务 `smb2_cmd_echo_reply_async` 的回复 PDU 构造，外部可观察契约归属到调用接口。 |
-| smb2_cmd_echo_reply_async | function | `struct smb2_pdu *smb2_cmd_echo_reply_async(struct smb2_context *smb2, smb2_command_cb cb, void *cb_data)` | Include | 原始 SMB2 ECHO 回复构造入口声明在 `include/smb2/libsmb2-raw.h`，由服务端请求回调路径调用并返回调用方可发送的 PDU。 |
-| smb2_process_echo_fixed | function | `int smb2_process_echo_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有 PDU 固定段解析入口声明在 `include/libsmb2-private.h`，由回复解析分发调用并定义 ECHO reply 尺寸校验错误语义。 |
-| smb2_process_echo_request_fixed | function | `int smb2_process_echo_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有 PDU 固定段解析入口声明在 `include/libsmb2-private.h`，由请求解析分发调用并定义 ECHO request 尺寸校验与 payload 分配语义。 |
+| smb2_encode_echo_request | function | static int smb2_encode_echo_request(struct smb2_context *smb2, struct smb2_pdu *pdu) | Skip | 静态内部编码 helper，仅服务 `smb2_cmd_echo_async` 的请求 PDU 构造，外部可观察契约归属到调用接口。 |
+| smb2_cmd_echo_async | function | struct smb2_pdu *smb2_cmd_echo_async(struct smb2_context *smb2, smb2_command_cb cb, void *cb_data) | Include | 原始 SMB2 ECHO 请求构造入口声明在 `include/smb2/libsmb2-raw.h`，由高层 echo API 调用并返回调用方可发送的 PDU。 |
+| smb2_encode_echo_reply | function | static int smb2_encode_echo_reply(struct smb2_context *smb2, struct smb2_pdu *pdu) | Skip | 静态内部编码 helper，仅服务 `smb2_cmd_echo_reply_async` 的回复 PDU 构造，外部可观察契约归属到调用接口。 |
+| smb2_cmd_echo_reply_async | function | struct smb2_pdu *smb2_cmd_echo_reply_async(struct smb2_context *smb2, smb2_command_cb cb, void *cb_data) | Include | 原始 SMB2 ECHO 回复构造入口声明在 `include/smb2/libsmb2-raw.h`，由服务端请求回调路径调用并返回调用方可发送的 PDU。 |
+| smb2_process_echo_fixed | function | int smb2_process_echo_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有 PDU 固定段解析入口声明在 `include/libsmb2-private.h`，由回复解析分发调用并定义 ECHO reply 尺寸校验错误语义。 |
+| smb2_process_echo_request_fixed | function | int smb2_process_echo_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有 PDU 固定段解析入口声明在 `include/libsmb2-private.h`，由请求解析分发调用并定义 ECHO request 尺寸校验与 payload 分配语义。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SMB2_ECHO_REQUEST_SIZE | macro | `include/smb2/smb2.h:412`, `include/smb2/smb2.h:1235` | ECHO request 固定段结构大小为 4 字节，本文件用于编码与请求解析尺寸校验。 |
-| SMB2_ECHO_REPLY_SIZE | macro | `include/smb2/smb2.h:1236` | ECHO reply 固定段结构大小为 4 字节，本文件用于编码与回复解析尺寸校验。 |
-| struct smb2_echo_request | struct | `include/smb2/smb2.h:414` | 请求解析成功时为 `pdu->payload` 分配该结构；当前公开字段仅包含 `reserved`。 |
+| SMB2_ECHO_REQUEST_SIZE | macro | include/smb2/smb2.h:412`, `include/smb2/smb2.h:1235 | ECHO request 固定段结构大小为 4 字节，本文件用于编码与请求解析尺寸校验。 |
+| SMB2_ECHO_REPLY_SIZE | macro | include/smb2/smb2.h:1236 | ECHO reply 固定段结构大小为 4 字节，本文件用于编码与回复解析尺寸校验。 |
+| struct smb2_echo_request | struct | include/smb2/smb2.h:414 | 请求解析成功时为 `pdu->payload` 分配该结构；当前公开字段仅包含 `reserved`。 |
 
 ## ADDED Requirements
 

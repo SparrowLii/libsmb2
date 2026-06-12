@@ -12,23 +12,23 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_encode_tree_connect_request | function | `static int smb2_encode_tree_connect_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_tree_connect_request *req)` | Skip | 静态编码 helper，仅由同文件公开入口调用，行为归属到 `smb2_cmd_tree_connect_async`。 |
-| smb2_cmd_tree_connect_async | function | `struct smb2_pdu *smb2_cmd_tree_connect_async(struct smb2_context *smb2, struct smb2_tree_connect_request *req, smb2_command_cb cb, void *cb_data)` | Include | 原始公开异步 Tree Connect 请求入口，负责分配 PDU、编码请求和返回错误。 |
-| smb2_encode_tree_connect_reply | function | `static int smb2_encode_tree_connect_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_tree_connect_reply *rep)` | Skip | 静态编码 helper，仅由同文件 reply 入口调用，行为归属到 `smb2_cmd_tree_connect_reply_async`。 |
-| smb2_cmd_tree_connect_reply_async | function | `struct smb2_pdu *smb2_cmd_tree_connect_reply_async(struct smb2_context *smb2, struct smb2_tree_connect_reply *rep, uint32_t tree_id, smb2_command_cb cb, void *cb_data)` | Include | 原始公开异步 Tree Connect reply 构造入口，设置 tree id 并编码 reply PDU。 |
-| smb2_process_tree_connect_fixed | function | `int smb2_process_tree_connect_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 内部固定部分 reply 解码入口，被 PDU 解析流程跨文件调用并更新连接状态与 sealing 状态。 |
-| smb2_process_tree_connect_request_fixed | function | `int smb2_process_tree_connect_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 内部固定部分 request 解码入口，被服务端请求解析流程跨文件调用并返回变量区长度。 |
-| smb2_process_tree_connect_request_variable | function | `int smb2_process_tree_connect_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 内部变量部分 request 解码入口，被服务端请求解析流程跨文件调用并绑定路径缓冲区。 |
+| smb2_encode_tree_connect_request | function | static int smb2_encode_tree_connect_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_tree_connect_request *req) | Skip | 静态编码 helper，仅由同文件公开入口调用，行为归属到 `smb2_cmd_tree_connect_async`。 |
+| smb2_cmd_tree_connect_async | function | struct smb2_pdu *smb2_cmd_tree_connect_async(struct smb2_context *smb2, struct smb2_tree_connect_request *req, smb2_command_cb cb, void *cb_data) | Include | 原始公开异步 Tree Connect 请求入口，负责分配 PDU、编码请求和返回错误。 |
+| smb2_encode_tree_connect_reply | function | static int smb2_encode_tree_connect_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_tree_connect_reply *rep) | Skip | 静态编码 helper，仅由同文件 reply 入口调用，行为归属到 `smb2_cmd_tree_connect_reply_async`。 |
+| smb2_cmd_tree_connect_reply_async | function | struct smb2_pdu *smb2_cmd_tree_connect_reply_async(struct smb2_context *smb2, struct smb2_tree_connect_reply *rep, uint32_t tree_id, smb2_command_cb cb, void *cb_data) | Include | 原始公开异步 Tree Connect reply 构造入口，设置 tree id 并编码 reply PDU。 |
+| smb2_process_tree_connect_fixed | function | int smb2_process_tree_connect_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 内部固定部分 reply 解码入口，被 PDU 解析流程跨文件调用并更新连接状态与 sealing 状态。 |
+| smb2_process_tree_connect_request_fixed | function | int smb2_process_tree_connect_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 内部固定部分 request 解码入口，被服务端请求解析流程跨文件调用并返回变量区长度。 |
+| smb2_process_tree_connect_request_variable | function | int smb2_process_tree_connect_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 内部变量部分 request 解码入口，被服务端请求解析流程跨文件调用并绑定路径缓冲区。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SMB2_TREE_CONNECT_REQUEST_SIZE | macro | `include/smb2/smb2.h:181` | Tree Connect request 固定结构大小为 9 字节，编码时按偶数字节长度放入 fixed iovec。 |
-| struct smb2_tree_connect_request | struct | `include/smb2/smb2.h:185` | request 数据包含 `flags`、`path_offset`、`path_length` 和 UTF-16 路径指针。 |
-| SMB2_SHAREFLAG_ENCRYPT_DATA | macro | `include/smb2/smb2.h:209` | reply 解码时用于在未启用 sealing 时根据 share flags 打开 `smb2->seal`。 |
-| SMB2_TREE_CONNECT_REPLY_SIZE | macro | `include/smb2/smb2.h:217` | Tree Connect reply 固定结构大小为 16 字节。 |
-| struct smb2_tree_connect_reply | struct | `include/smb2/smb2.h:219` | reply 数据包含 share type、share flags、capabilities 和 maximal access。 |
+| SMB2_TREE_CONNECT_REQUEST_SIZE | macro | include/smb2/smb2.h:181 | Tree Connect request 固定结构大小为 9 字节，编码时按偶数字节长度放入 fixed iovec。 |
+| struct smb2_tree_connect_request | struct | include/smb2/smb2.h:185 | request 数据包含 `flags`、`path_offset`、`path_length` 和 UTF-16 路径指针。 |
+| SMB2_SHAREFLAG_ENCRYPT_DATA | macro | include/smb2/smb2.h:209 | reply 解码时用于在未启用 sealing 时根据 share flags 打开 `smb2->seal`。 |
+| SMB2_TREE_CONNECT_REPLY_SIZE | macro | include/smb2/smb2.h:217 | Tree Connect reply 固定结构大小为 16 字节。 |
+| struct smb2_tree_connect_reply | struct | include/smb2/smb2.h:219 | reply 数据包含 share type、share flags、capabilities 和 maximal access。 |
 
 ## ADDED Requirements
 

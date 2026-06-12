@@ -12,21 +12,21 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_encode_set_info_request | function | `static int smb2_encode_set_info_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_set_info_request *req)` | Include | 内部编码器承载 SET_INFO 请求头、数据缓冲区、passthrough 和错误路径语义，影响公开 PDU 构造接口。 |
-| smb2_cmd_set_info_async | function | `struct smb2_pdu *smb2_cmd_set_info_async(struct smb2_context *smb2, struct smb2_set_info_request *req, smb2_command_cb cb, void *cb_data)` | Include | 头文件声明的 RAW SET_INFO 客户端构造入口，被 truncate、rename 和 ftruncate 流程调用。 |
-| smb2_encode_set_info_reply | function | `static int smb2_encode_set_info_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_set_info_request *req)` | Include | 内部回复编码器承载服务端 SET_INFO 成功响应的结构大小和分配失败语义。 |
-| smb2_cmd_set_info_reply_async | function | `struct smb2_pdu *smb2_cmd_set_info_reply_async(struct smb2_context *smb2, struct smb2_set_info_request *req, smb2_command_cb cb, void *cb_data)` | Include | 头文件声明的 RAW SET_INFO 回复构造入口，被服务端 set-info request callback 调用。 |
-| smb2_process_set_info_fixed | function | `int smb2_process_set_info_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有 PDU 分发入口，定义 SET_INFO 成功回复 fixed parser 无 payload 行为。 |
-| smb2_process_set_info_request_fixed | function | `int smb2_process_set_info_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有服务端请求 fixed parser，解析 wire header、分配 payload 并返回 variable 长度。 |
-| smb2_process_set_info_request_variable | function | `int smb2_process_set_info_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有服务端请求 variable parser，定义 passthrough-only buffer 归属和非 passthrough 错误。 |
+| smb2_encode_set_info_request | function | static int smb2_encode_set_info_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_set_info_request *req) | Include | 内部编码器承载 SET_INFO 请求头、数据缓冲区、passthrough 和错误路径语义，影响公开 PDU 构造接口。 |
+| smb2_cmd_set_info_async | function | struct smb2_pdu *smb2_cmd_set_info_async(struct smb2_context *smb2, struct smb2_set_info_request *req, smb2_command_cb cb, void *cb_data) | Include | 头文件声明的 RAW SET_INFO 客户端构造入口，被 truncate、rename 和 ftruncate 流程调用。 |
+| smb2_encode_set_info_reply | function | static int smb2_encode_set_info_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_set_info_request *req) | Include | 内部回复编码器承载服务端 SET_INFO 成功响应的结构大小和分配失败语义。 |
+| smb2_cmd_set_info_reply_async | function | struct smb2_pdu *smb2_cmd_set_info_reply_async(struct smb2_context *smb2, struct smb2_set_info_request *req, smb2_command_cb cb, void *cb_data) | Include | 头文件声明的 RAW SET_INFO 回复构造入口，被服务端 set-info request callback 调用。 |
+| smb2_process_set_info_fixed | function | int smb2_process_set_info_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有 PDU 分发入口，定义 SET_INFO 成功回复 fixed parser 无 payload 行为。 |
+| smb2_process_set_info_request_fixed | function | int smb2_process_set_info_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有服务端请求 fixed parser，解析 wire header、分配 payload 并返回 variable 长度。 |
+| smb2_process_set_info_request_variable | function | int smb2_process_set_info_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有服务端请求 variable parser，定义 passthrough-only buffer 归属和非 passthrough 错误。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SMB2_SET_INFO_REQUEST_SIZE | macro | `include/smb2/smb2.h:720` | SET_INFO 请求固定结构大小为 33，编码时按偶数长度分配 header 缓冲。 |
-| struct smb2_set_info_request | struct | `include/smb2/smb2.h:722` | 携带 info type、file info class、buffer 长度/偏移、additional information、file id 和 input_data。 |
-| SMB2_SET_INFO_REPLY_SIZE | macro | `include/smb2/smb2.h:732` | SET_INFO 成功回复固定结构大小为 2，回复编码器写入该结构大小。 |
+| SMB2_SET_INFO_REQUEST_SIZE | macro | include/smb2/smb2.h:720 | SET_INFO 请求固定结构大小为 33，编码时按偶数长度分配 header 缓冲。 |
+| struct smb2_set_info_request | struct | include/smb2/smb2.h:722 | 携带 info type、file info class、buffer 长度/偏移、additional information、file id 和 input_data。 |
+| SMB2_SET_INFO_REPLY_SIZE | macro | include/smb2/smb2.h:732 | SET_INFO 成功回复固定结构大小为 2，回复编码器写入该结构大小。 |
 
 ## ADDED Requirements
 

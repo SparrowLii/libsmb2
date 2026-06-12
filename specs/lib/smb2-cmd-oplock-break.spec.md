@@ -12,41 +12,41 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_encode_oplock_break_acknowledgement | function | `static int smb2_encode_oplock_break_acknowledgement(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_oplock_break_acknowledgement *req)` | Skip | 静态编码 helper，仅由同文件公开 builder 调用，行为归属到 `smb2_cmd_oplock_break_async`。 |
-| smb2_cmd_oplock_break_async | function | `struct smb2_pdu *smb2_cmd_oplock_break_async(struct smb2_context *smb2, struct smb2_oplock_break_acknowledgement *req, smb2_command_cb cb, void *cb_data)` | Include | RAW 头文件声明的异步 Oplock Break acknowledgement PDU 构造入口，调用方可观察返回 PDU 或 NULL。 |
-| smb2_encode_oplock_break_reply | function | `static int smb2_encode_oplock_break_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_oplock_break_reply *rep)` | Skip | 静态编码 helper，仅由同文件 reply builder 调用，行为归属到 `smb2_cmd_oplock_break_reply_async`。 |
-| smb2_cmd_oplock_break_reply_async | function | `struct smb2_pdu *smb2_cmd_oplock_break_reply_async(struct smb2_context *smb2, struct smb2_oplock_break_reply *rep, smb2_command_cb cb, void *cb_data)` | Include | RAW 头文件声明的 Oplock Break reply PDU 构造入口，并被 `lib/libsmb2.c` 的通知处理路径调用。 |
-| smb2_encode_oplock_break_notification | function | `static int smb2_encode_oplock_break_notification(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_oplock_break_notification *rep)` | Skip | 静态编码 helper，仅由同文件 notification builder 调用，行为归属到 `smb2_cmd_oplock_break_notification_async`。 |
-| smb2_cmd_oplock_break_notification_async | function | `struct smb2_pdu *smb2_cmd_oplock_break_notification_async(struct smb2_context *smb2, struct smb2_oplock_break_notification *rep, smb2_command_cb cb, void *cb_data)` | Include | RAW 头文件声明的 Oplock Break notification PDU 构造入口，构造可发送的 SMB2_OPLOCK_BREAK PDU。 |
-| smb2_encode_lease_break_acknowledgement | function | `static int smb2_encode_lease_break_acknowledgement(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_lease_break_acknowledgement *req)` | Skip | 静态编码 helper，仅由同文件 lease acknowledgement builder 调用，行为归属到 `smb2_cmd_lease_break_async`。 |
-| smb2_cmd_lease_break_async | function | `struct smb2_pdu *smb2_cmd_lease_break_async(struct smb2_context *smb2, struct smb2_lease_break_acknowledgement *req, smb2_command_cb cb, void *cb_data)` | Include | RAW 头文件声明的 Lease Break acknowledgement PDU 构造入口，调用方可观察 PDU 构造成功或失败。 |
-| smb2_encode_lease_break_reply | function | `static int smb2_encode_lease_break_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_lease_break_reply *rep)` | Skip | 静态编码 helper，仅由同文件 lease reply builder 调用，行为归属到 `smb2_cmd_lease_break_reply_async`。 |
-| smb2_cmd_lease_break_reply_async | function | `struct smb2_pdu *smb2_cmd_lease_break_reply_async(struct smb2_context *smb2, struct smb2_lease_break_reply *rep, smb2_command_cb cb, void *cb_data)` | Include | RAW 头文件声明的 Lease Break reply PDU 构造入口，并被 `lib/libsmb2.c` 的通知处理路径调用。 |
-| smb2_encode_lease_break_notification | function | `static int smb2_encode_lease_break_notification(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_lease_break_notification *req)` | Skip | 静态编码 helper，仅由同文件 lease notification builder 调用，行为归属到 `smb2_cmd_lease_break_notification_async`。 |
-| smb2_cmd_lease_break_notification_async | function | `struct smb2_pdu *smb2_cmd_lease_break_notification_async(struct smb2_context *smb2, struct smb2_lease_break_notification *req, smb2_command_cb cb, void *cb_data)` | Include | RAW 头文件声明的 Lease Break notification PDU 构造入口，构造可发送的 SMB2_OPLOCK_BREAK PDU。 |
-| smb2_process_oplock_break_fixed | function | `int smb2_process_oplock_break_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有 parser 入口，由 `lib/pdu.c` 固定载荷分派调用，分配 reply payload 并校验结构大小。 |
-| smb2_process_oplock_break_variable | function | `int smb2_process_oplock_break_variable(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有 parser 入口，由 `lib/pdu.c` variable 载荷分派调用，按已解析结构大小填充 break 类型和字段。 |
-| smb2_process_oplock_break_request_fixed | function | `int smb2_process_oplock_break_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有 server-side request parser 入口，由 `lib/pdu.c` request fixed 分派调用，分配 request payload 并校验 acknowledge 结构大小。 |
-| smb2_process_oplock_break_request_variable | function | `int smb2_process_oplock_break_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有 server-side request parser 入口，由 `lib/pdu.c` request variable 分派调用，按 acknowledge 类型填充请求字段。 |
+| smb2_encode_oplock_break_acknowledgement | function | static int smb2_encode_oplock_break_acknowledgement(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_oplock_break_acknowledgement *req) | Skip | 静态编码 helper，仅由同文件公开 builder 调用，行为归属到 `smb2_cmd_oplock_break_async`。 |
+| smb2_cmd_oplock_break_async | function | struct smb2_pdu *smb2_cmd_oplock_break_async(struct smb2_context *smb2, struct smb2_oplock_break_acknowledgement *req, smb2_command_cb cb, void *cb_data) | Include | RAW 头文件声明的异步 Oplock Break acknowledgement PDU 构造入口，调用方可观察返回 PDU 或 NULL。 |
+| smb2_encode_oplock_break_reply | function | static int smb2_encode_oplock_break_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_oplock_break_reply *rep) | Skip | 静态编码 helper，仅由同文件 reply builder 调用，行为归属到 `smb2_cmd_oplock_break_reply_async`。 |
+| smb2_cmd_oplock_break_reply_async | function | struct smb2_pdu *smb2_cmd_oplock_break_reply_async(struct smb2_context *smb2, struct smb2_oplock_break_reply *rep, smb2_command_cb cb, void *cb_data) | Include | RAW 头文件声明的 Oplock Break reply PDU 构造入口，并被 `lib/libsmb2.c` 的通知处理路径调用。 |
+| smb2_encode_oplock_break_notification | function | static int smb2_encode_oplock_break_notification(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_oplock_break_notification *rep) | Skip | 静态编码 helper，仅由同文件 notification builder 调用，行为归属到 `smb2_cmd_oplock_break_notification_async`。 |
+| smb2_cmd_oplock_break_notification_async | function | struct smb2_pdu *smb2_cmd_oplock_break_notification_async(struct smb2_context *smb2, struct smb2_oplock_break_notification *rep, smb2_command_cb cb, void *cb_data) | Include | RAW 头文件声明的 Oplock Break notification PDU 构造入口，构造可发送的 SMB2_OPLOCK_BREAK PDU。 |
+| smb2_encode_lease_break_acknowledgement | function | static int smb2_encode_lease_break_acknowledgement(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_lease_break_acknowledgement *req) | Skip | 静态编码 helper，仅由同文件 lease acknowledgement builder 调用，行为归属到 `smb2_cmd_lease_break_async`。 |
+| smb2_cmd_lease_break_async | function | struct smb2_pdu *smb2_cmd_lease_break_async(struct smb2_context *smb2, struct smb2_lease_break_acknowledgement *req, smb2_command_cb cb, void *cb_data) | Include | RAW 头文件声明的 Lease Break acknowledgement PDU 构造入口，调用方可观察 PDU 构造成功或失败。 |
+| smb2_encode_lease_break_reply | function | static int smb2_encode_lease_break_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_lease_break_reply *rep) | Skip | 静态编码 helper，仅由同文件 lease reply builder 调用，行为归属到 `smb2_cmd_lease_break_reply_async`。 |
+| smb2_cmd_lease_break_reply_async | function | struct smb2_pdu *smb2_cmd_lease_break_reply_async(struct smb2_context *smb2, struct smb2_lease_break_reply *rep, smb2_command_cb cb, void *cb_data) | Include | RAW 头文件声明的 Lease Break reply PDU 构造入口，并被 `lib/libsmb2.c` 的通知处理路径调用。 |
+| smb2_encode_lease_break_notification | function | static int smb2_encode_lease_break_notification(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_lease_break_notification *req) | Skip | 静态编码 helper，仅由同文件 lease notification builder 调用，行为归属到 `smb2_cmd_lease_break_notification_async`。 |
+| smb2_cmd_lease_break_notification_async | function | struct smb2_pdu *smb2_cmd_lease_break_notification_async(struct smb2_context *smb2, struct smb2_lease_break_notification *req, smb2_command_cb cb, void *cb_data) | Include | RAW 头文件声明的 Lease Break notification PDU 构造入口，构造可发送的 SMB2_OPLOCK_BREAK PDU。 |
+| smb2_process_oplock_break_fixed | function | int smb2_process_oplock_break_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有 parser 入口，由 `lib/pdu.c` 固定载荷分派调用，分配 reply payload 并校验结构大小。 |
+| smb2_process_oplock_break_variable | function | int smb2_process_oplock_break_variable(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有 parser 入口，由 `lib/pdu.c` variable 载荷分派调用，按已解析结构大小填充 break 类型和字段。 |
+| smb2_process_oplock_break_request_fixed | function | int smb2_process_oplock_break_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有 server-side request parser 入口，由 `lib/pdu.c` request fixed 分派调用，分配 request payload 并校验 acknowledge 结构大小。 |
+| smb2_process_oplock_break_request_variable | function | int smb2_process_oplock_break_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有 server-side request parser 入口，由 `lib/pdu.c` request variable 分派调用，按 acknowledge 类型填充请求字段。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SMB2_OPLOCK_BREAK_NOTIFICATION_SIZE | macro | `include/smb2/smb2.h:1096` | Oplock break notification 固定结构大小为 24。 |
-| SMB2_OPLOCK_BREAK_ACKNOWLEDGE_SIZE | macro | `include/smb2/smb2.h:1103` | Oplock break acknowledgement 固定结构大小为 24。 |
-| SMB2_OPLOCK_BREAK_REPLY_SIZE | macro | `include/smb2/smb2.h:1110` | Oplock break reply 固定结构大小为 24。 |
-| SMB2_LEASE_BREAK_NOTIFICATION_SIZE | macro | `include/smb2/smb2.h:1130` | Lease break notification 固定结构大小为 44。 |
-| SMB2_LEASE_BREAK_ACKNOWLEDGE_SIZE | macro | `include/smb2/smb2.h:1143` | Lease break acknowledgement 固定结构大小为 36。 |
-| SMB2_LEASE_BREAK_REPLY_SIZE | macro | `include/smb2/smb2.h:1152` | Lease break reply 固定结构大小为 36。 |
-| struct smb2_oplock_break_notification | struct | `include/smb2/smb2.h:1098` | 包含 oplock level 与 file id。 |
-| struct smb2_oplock_break_acknowledgement | struct | `include/smb2/smb2.h:1105` | 包含 acknowledgement oplock level 与 file id。 |
-| struct smb2_oplock_break_reply | struct | `include/smb2/smb2.h:1112` | 包含 reply oplock level 与 file id。 |
-| struct smb2_lease_break_notification | struct | `include/smb2/smb2.h:1132` | 包含 epoch、flags、lease key、lease state 和 mask hint 字段。 |
-| struct smb2_lease_break_acknowledgement | struct | `include/smb2/smb2.h:1145` | 包含 flags、lease key、lease state 和 lease duration。 |
-| struct smb2_lease_break_reply | struct | `include/smb2/smb2.h:1154` | 包含 flags、lease key、lease state 和 lease duration。 |
-| struct smb2_oplock_or_lease_break_reply | struct | `include/smb2/smb2.h:1164` | Parser payload union，用 `break_type` 标识 oplock/lease notification 或 response。 |
-| struct smb2_oplock_or_lease_break_request | struct | `include/smb2/smb2.h:1176` | Server-side request parser payload union，用 `break_type` 标识 acknowledgement 类型。 |
+| SMB2_OPLOCK_BREAK_NOTIFICATION_SIZE | macro | include/smb2/smb2.h:1096 | Oplock break notification 固定结构大小为 24。 |
+| SMB2_OPLOCK_BREAK_ACKNOWLEDGE_SIZE | macro | include/smb2/smb2.h:1103 | Oplock break acknowledgement 固定结构大小为 24。 |
+| SMB2_OPLOCK_BREAK_REPLY_SIZE | macro | include/smb2/smb2.h:1110 | Oplock break reply 固定结构大小为 24。 |
+| SMB2_LEASE_BREAK_NOTIFICATION_SIZE | macro | include/smb2/smb2.h:1130 | Lease break notification 固定结构大小为 44。 |
+| SMB2_LEASE_BREAK_ACKNOWLEDGE_SIZE | macro | include/smb2/smb2.h:1143 | Lease break acknowledgement 固定结构大小为 36。 |
+| SMB2_LEASE_BREAK_REPLY_SIZE | macro | include/smb2/smb2.h:1152 | Lease break reply 固定结构大小为 36。 |
+| struct smb2_oplock_break_notification | struct | include/smb2/smb2.h:1098 | 包含 oplock level 与 file id。 |
+| struct smb2_oplock_break_acknowledgement | struct | include/smb2/smb2.h:1105 | 包含 acknowledgement oplock level 与 file id。 |
+| struct smb2_oplock_break_reply | struct | include/smb2/smb2.h:1112 | 包含 reply oplock level 与 file id。 |
+| struct smb2_lease_break_notification | struct | include/smb2/smb2.h:1132 | 包含 epoch、flags、lease key、lease state 和 mask hint 字段。 |
+| struct smb2_lease_break_acknowledgement | struct | include/smb2/smb2.h:1145 | 包含 flags、lease key、lease state 和 lease duration。 |
+| struct smb2_lease_break_reply | struct | include/smb2/smb2.h:1154 | 包含 flags、lease key、lease state 和 lease duration。 |
+| struct smb2_oplock_or_lease_break_reply | struct | include/smb2/smb2.h:1164 | Parser payload union，用 `break_type` 标识 oplock/lease notification 或 response。 |
+| struct smb2_oplock_or_lease_break_request | struct | include/smb2/smb2.h:1176 | Server-side request parser payload union，用 `break_type` 标识 acknowledgement 类型。 |
 
 ## ADDED Requirements
 

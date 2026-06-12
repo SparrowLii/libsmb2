@@ -12,18 +12,18 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_decode_reparse_data_buffer | function | `int smb2_decode_reparse_data_buffer(struct smb2_context *smb2, void *memctx, struct smb2_reparse_data_buffer *rp, struct smb2_iovec *vec);` | Include | 内部跨文件解码入口，由 ioctl reply variable parser 调用，向 readlink flow 提供 reparse tag 和 symlink 名称输出。 |
-| SMB2_REPARSE_TAG_SYMLINK | macro | `#define SMB2_REPARSE_TAG_SYMLINK                0xa000000c` | Skip | 数据模型常量已在 `include/smb2/smb2.spec.md` 归属，本文件仅消费该 tag。 |
-| struct smb2_symlink_reparse_buffer | type | `struct smb2_symlink_reparse_buffer { uint32_t flags; char *subname; char *printname; };` | Skip | 公开数据模型已在 `include/smb2/smb2.spec.md` 归属，本文件仅填充字段。 |
-| struct smb2_reparse_data_buffer | type | `struct smb2_reparse_data_buffer { uint32_t reparse_tag; uint16_t reparse_data_length; union { struct smb2_symlink_reparse_buffer symlink; }; };` | Skip | 公开数据模型已在 `include/smb2/smb2.spec.md` 归属，本文件仅填充字段。 |
+| smb2_decode_reparse_data_buffer | function | int smb2_decode_reparse_data_buffer(struct smb2_context *smb2, void *memctx, struct smb2_reparse_data_buffer *rp, struct smb2_iovec *vec); | Include | 内部跨文件解码入口，由 ioctl reply variable parser 调用，向 readlink flow 提供 reparse tag 和 symlink 名称输出。 |
+| SMB2_REPARSE_TAG_SYMLINK | macro | #define SMB2_REPARSE_TAG_SYMLINK                0xa000000c | Skip | 数据模型常量已在 `include/smb2/smb2.spec.md` 归属，本文件仅消费该 tag。 |
+| struct smb2_symlink_reparse_buffer | type | struct smb2_symlink_reparse_buffer { uint32_t flags; char *subname; char *printname; }; | Skip | 公开数据模型已在 `include/smb2/smb2.spec.md` 归属，本文件仅填充字段。 |
+| struct smb2_reparse_data_buffer | type | struct smb2_reparse_data_buffer { uint32_t reparse_tag; uint16_t reparse_data_length; union { struct smb2_symlink_reparse_buffer symlink; }; }; | Skip | 公开数据模型已在 `include/smb2/smb2.spec.md` 归属，本文件仅填充字段。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SMB2_REPARSE_TAG_SYMLINK | macro | `include/smb2/smb2.h:991` | 识别 symlink reparse buffer 的 tag 值。 |
-| struct smb2_symlink_reparse_buffer | struct | `include/smb2/smb2.h:985` | 保存 symlink flags、subname 和 printname 输出字段。 |
-| struct smb2_reparse_data_buffer | struct | `include/smb2/smb2.h:995` | 保存 reparse tag、payload length 和 symlink union 输出。 |
+| SMB2_REPARSE_TAG_SYMLINK | macro | include/smb2/smb2.h:991 | 识别 symlink reparse buffer 的 tag 值。 |
+| struct smb2_symlink_reparse_buffer | struct | include/smb2/smb2.h:985 | 保存 symlink flags、subname 和 printname 输出字段。 |
+| struct smb2_reparse_data_buffer | struct | include/smb2/smb2.h:995 | 保存 reparse tag、payload length 和 symlink union 输出。 |
 
 ## ADDED Requirements
 

@@ -13,7 +13,7 @@
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
 | irx_imports.h include surface | header | `#include <irx.h>` and PS2SDK IOP import includes | Include | 该头文件为 PS2 IOP 构建集中暴露 IRX 导入依赖，调用方可观察行为是一次包含即可获得所列 PS2SDK 声明。 |
-| IOP_IRX_IMPORTS_H | macro | `#define IOP_IRX_IMPORTS_H` | Skip | include guard 仅防止重复包含，无独立调用方可观察行为。 |
+| IOP_IRX_IMPORTS_H | macro | #define IOP_IRX_IMPORTS_H | Skip | include guard 仅防止重复包含，无独立调用方可观察行为。 |
 
 ## Data Model Summary
 

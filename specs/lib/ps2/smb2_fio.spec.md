@@ -12,46 +12,46 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| `SMB2_initdev` | function | `int SMB2_initdev(void)` | Include | PS2 模块入口通过 `DelDrv`/`AddDrv` 注册 `smb` 文件系统设备。 |
-| `SMB2_devctl` | function | `int SMB2_devctl(iop_file_t *f, const char *devname, int cmd, void *arg, unsigned int arglen, void *bufp, unsigned int buflen)` | Include | 公开设备控制入口处理 SMB2 共享连接命令。 |
-| `SMB2_open` | function | `int SMB2_open(iop_file_t *f, const char *filename, int flags, int mode)` | Include | 文件打开回调建立 per-file SMB2 句柄并写入 `f->privdata`。 |
-| `SMB2_close` | function | `int SMB2_close(iop_file_t *f)` | Include | 文件关闭回调释放 SMB2 文件句柄和私有数据。 |
-| `SMB2_dopen` | function | `int SMB2_dopen(iop_file_t *f, const char *dirname)` | Include | 目录打开回调建立 per-directory SMB2 句柄或虚拟根目录迭代状态。 |
-| `SMB2_dclose` | function | `int SMB2_dclose(iop_file_t *f)` | Include | 目录关闭回调释放目录句柄和私有数据。 |
-| `SMB2_dread` | function | `int SMB2_dread(iop_file_t *f, iox_dirent_t *dirent)` | Include | 目录读取回调返回 SMB2 目录项或已连接共享列表项。 |
-| `SMB2_getstat` | function | `int SMB2_getstat(iop_file_t *f, const char *filename, iox_stat_t *stat)` | Include | stat 回调把 libsmb2 64 位属性转换为 PS2 `iox_stat_t`。 |
-| `SMB2_lseek64` | function | `s64 SMB2_lseek64(iop_file_t *f, s64 pos, int whence)` | Include | 64 位 seek 回调委托 libsmb2 文件偏移设置。 |
-| `SMB2_lseek` | function | `int SMB2_lseek(iop_file_t *f, int pos, int where)` | Include | 32 位 seek 回调包装 `SMB2_lseek64` 并截断为 `int`。 |
-| `SMB2_read` | function | `int SMB2_read(iop_file_t *f, void *buf, int size)` | Include | 读回调在有效文件句柄上委托 libsmb2 同步读取。 |
-| `SMB2_write` | function | `int SMB2_write(iop_file_t *f, void *buf, int size)` | Include | 写回调在文件句柄上委托 libsmb2 同步写入。 |
-| `SMB2_mkdir` | function | `int SMB2_mkdir(iop_file_t *f, const char *dirname, int mode)` | Include | mkdir 回调解析共享路径并委托 SMB2 创建目录。 |
-| `SMB2_rmdir` | function | `int SMB2_rmdir(iop_file_t *f, const char *dirname)` | Include | rmdir 回调解析共享路径并委托 SMB2 删除目录。 |
-| `SMB2_remove` | function | `int SMB2_remove(iop_file_t *f, const char *filename)` | Include | remove 回调解析共享路径并委托 SMB2 unlink。 |
-| `SMB2_rename` | function | `int SMB2_rename(iop_file_t *f, const char *oldname, const char *newname)` | Include | rename 回调验证源和目标属于同一 SMB2 上下文后委托 SMB2 rename。 |
-| `SMB2_dummy` | function | `int SMB2_dummy(void)` | Include | 未实现设备操作槽位返回固定 I/O 错误。 |
-| `SMB2_chdir` | function | `int SMB2_chdir(iop_file_t *f, const char *dirname)` | Include | chdir 回调更新模块全局当前目录前缀。 |
-| `SMB2_deinit` | function | `int SMB2_deinit(iop_device_t *dev)` | Include | 设备反初始化回调删除 I/O 互斥信号量。 |
-| `SMB2_init` | function | `int SMB2_init(iop_device_t *dev)` | Include | 设备初始化回调创建 I/O 互斥信号量。 |
-| `find_context` | function | `static struct smb2_context *find_context(char *path, char **remainder)` | Skip | 静态路径解析 helper，仅支撑本文件公开回调。 |
-| `prepare_path` | function | `static char *prepare_path(const char *path)` | Skip | 静态路径规范化 helper，行为归属到调用它的公开回调。 |
-| `smb2_Connect` | function | `static int smb2_Connect(smb2Connect_in_t *in, smb2Connect_out_t *out)` | Skip | 静态 devctl helper，连接契约归属到 `SMB2_devctl`。 |
-| `FileTimeToDate` | function | `static void FileTimeToDate(u64 t, u8 *datetime)` | Skip | 静态时间转换 helper，stat 契约归属到 `SMB2_getstat`/`SMB2_dread`。 |
-| `smb2_statFiller` | function | `static void smb2_statFiller(struct smb2_stat_64 *st, iox_stat_t *stat)` | Skip | 静态属性转换 helper，stat 契约归属到调用方。 |
+| SMB2_initdev | function | int SMB2_initdev(void) | Include | PS2 模块入口通过 `DelDrv`/`AddDrv` 注册 `smb` 文件系统设备。 |
+| SMB2_devctl | function | int SMB2_devctl(iop_file_t *f, const char *devname, int cmd, void *arg, unsigned int arglen, void *bufp, unsigned int buflen) | Include | 公开设备控制入口处理 SMB2 共享连接命令。 |
+| SMB2_open | function | int SMB2_open(iop_file_t *f, const char *filename, int flags, int mode) | Include | 文件打开回调建立 per-file SMB2 句柄并写入 `f->privdata`。 |
+| SMB2_close | function | int SMB2_close(iop_file_t *f) | Include | 文件关闭回调释放 SMB2 文件句柄和私有数据。 |
+| SMB2_dopen | function | int SMB2_dopen(iop_file_t *f, const char *dirname) | Include | 目录打开回调建立 per-directory SMB2 句柄或虚拟根目录迭代状态。 |
+| SMB2_dclose | function | int SMB2_dclose(iop_file_t *f) | Include | 目录关闭回调释放目录句柄和私有数据。 |
+| SMB2_dread | function | int SMB2_dread(iop_file_t *f, iox_dirent_t *dirent) | Include | 目录读取回调返回 SMB2 目录项或已连接共享列表项。 |
+| SMB2_getstat | function | int SMB2_getstat(iop_file_t *f, const char *filename, iox_stat_t *stat) | Include | stat 回调把 libsmb2 64 位属性转换为 PS2 `iox_stat_t`。 |
+| SMB2_lseek64 | function | s64 SMB2_lseek64(iop_file_t *f, s64 pos, int whence) | Include | 64 位 seek 回调委托 libsmb2 文件偏移设置。 |
+| SMB2_lseek | function | int SMB2_lseek(iop_file_t *f, int pos, int where) | Include | 32 位 seek 回调包装 `SMB2_lseek64` 并截断为 `int`。 |
+| SMB2_read | function | int SMB2_read(iop_file_t *f, void *buf, int size) | Include | 读回调在有效文件句柄上委托 libsmb2 同步读取。 |
+| SMB2_write | function | int SMB2_write(iop_file_t *f, void *buf, int size) | Include | 写回调在文件句柄上委托 libsmb2 同步写入。 |
+| SMB2_mkdir | function | int SMB2_mkdir(iop_file_t *f, const char *dirname, int mode) | Include | mkdir 回调解析共享路径并委托 SMB2 创建目录。 |
+| SMB2_rmdir | function | int SMB2_rmdir(iop_file_t *f, const char *dirname) | Include | rmdir 回调解析共享路径并委托 SMB2 删除目录。 |
+| SMB2_remove | function | int SMB2_remove(iop_file_t *f, const char *filename) | Include | remove 回调解析共享路径并委托 SMB2 unlink。 |
+| SMB2_rename | function | int SMB2_rename(iop_file_t *f, const char *oldname, const char *newname) | Include | rename 回调验证源和目标属于同一 SMB2 上下文后委托 SMB2 rename。 |
+| SMB2_dummy | function | int SMB2_dummy(void) | Include | 未实现设备操作槽位返回固定 I/O 错误。 |
+| SMB2_chdir | function | int SMB2_chdir(iop_file_t *f, const char *dirname) | Include | chdir 回调更新模块全局当前目录前缀。 |
+| SMB2_deinit | function | int SMB2_deinit(iop_device_t *dev) | Include | 设备反初始化回调删除 I/O 互斥信号量。 |
+| SMB2_init | function | int SMB2_init(iop_device_t *dev) | Include | 设备初始化回调创建 I/O 互斥信号量。 |
+| find_context | function | static struct smb2_context *find_context(char *path, char **remainder) | Skip | 静态路径解析 helper，仅支撑本文件公开回调。 |
+| prepare_path | function | static char *prepare_path(const char *path) | Skip | 静态路径规范化 helper，行为归属到调用它的公开回调。 |
+| smb2_Connect | function | static int smb2_Connect(smb2Connect_in_t *in, smb2Connect_out_t *out) | Skip | 静态 devctl helper，连接契约归属到 `SMB2_devctl`。 |
+| FileTimeToDate | function | static void FileTimeToDate(u64 t, u8 *datetime) | Skip | 静态时间转换 helper，stat 契约归属到 `SMB2_getstat`/`SMB2_dread`。 |
+| smb2_statFiller | function | static void smb2_statFiller(struct smb2_stat_64 *st, iox_stat_t *stat) | Skip | 静态属性转换 helper，stat 契约归属到调用方。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| `struct smb2_share_list` | struct | `lib/ps2/smb2_fio.c:67` | 保存已连接共享名称、libsmb2 context 和链表 next 指针。 |
-| `struct dir_fh` | struct | `lib/ps2/smb2_fio.c:245` | 目录私有句柄，区分 SMB2 目录和虚拟根共享列表迭代。 |
-| `struct file_fh` | struct | `lib/ps2/smb2_fio.c:253` | 文件私有句柄，保存 libsmb2 context 和文件句柄。 |
-| `smb2man_ops` | static object | `lib/ps2/smb2_fio.c:773` | PS2 IOP device operation table，把回调映射到 `smb` 文件系统设备。 |
-| `smb2dev` | static object | `lib/ps2/smb2_fio.c:802` | PS2 IOP device descriptor，设备名为 `smb`。 |
-| `smb2_io_lock` | macro | `lib/ps2/smb2_fio.c:75` | 包装 `WaitSema(smb2man_io_sema)` 保护 SMB2 I/O 操作。 |
-| `smb2_io_unlock` | macro | `lib/ps2/smb2_fio.c:76` | 包装 `SignalSema(smb2man_io_sema)` 释放 SMB2 I/O 互斥。 |
-| `SMB2_DEVCTL_CONNECT` | macro | `lib/ps2/ps2smb2.h:13` | devctl 连接命令常量。 |
-| `smb2Connect_in_t` | typedef | `lib/ps2/ps2smb2.h:20` | 连接输入包含共享名、用户名、密码和 URL。 |
-| `smb2Connect_out_t` | typedef | `lib/ps2/ps2smb2.h:27` | 连接输出携带创建的 SMB2 context 指针。 |
+| struct smb2_share_list | struct | lib/ps2/smb2_fio.c:67 | 保存已连接共享名称、libsmb2 context 和链表 next 指针。 |
+| struct dir_fh | struct | lib/ps2/smb2_fio.c:245 | 目录私有句柄，区分 SMB2 目录和虚拟根共享列表迭代。 |
+| struct file_fh | struct | lib/ps2/smb2_fio.c:253 | 文件私有句柄，保存 libsmb2 context 和文件句柄。 |
+| smb2man_ops | static object | lib/ps2/smb2_fio.c:773 | PS2 IOP device operation table，把回调映射到 `smb` 文件系统设备。 |
+| smb2dev | static object | lib/ps2/smb2_fio.c:802 | PS2 IOP device descriptor，设备名为 `smb`。 |
+| smb2_io_lock | macro | lib/ps2/smb2_fio.c:75 | 包装 `WaitSema(smb2man_io_sema)` 保护 SMB2 I/O 操作。 |
+| smb2_io_unlock | macro | lib/ps2/smb2_fio.c:76 | 包装 `SignalSema(smb2man_io_sema)` 释放 SMB2 I/O 互斥。 |
+| SMB2_DEVCTL_CONNECT | macro | lib/ps2/ps2smb2.h:13 | devctl 连接命令常量。 |
+| smb2Connect_in_t | typedef | lib/ps2/ps2smb2.h:20 | 连接输入包含共享名、用户名、密码和 URL。 |
+| smb2Connect_out_t | typedef | lib/ps2/ps2smb2.h:27 | 连接输出携带创建的 SMB2 context 指针。 |
 
 ## ADDED Requirements
 
@@ -336,6 +336,6 @@ Trace: `lib/ps2/smb2_fio.c:SMB2_init`
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `find_context` 使用 `strcmp(share->name, path)` 非零时返回 context，是否意图匹配相等共享名仍需确认。 | `SMB2_open`, `SMB2_dopen`, `SMB2_getstat`, `SMB2_mkdir`, `SMB2_rmdir`, `SMB2_remove`, `SMB2_rename` | 源码行为与注释“share name match”语义存在疑似冲突，未找到测试证据。 |
-| Q-002 | `SMB2_dopen` 的虚拟 root 分支设置 `dfh->is_root = true` 后仍检查未初始化的 `dfh->fh == NULL`，root 目录是否实际可打开需确认。 | `SMB2_dopen`, `SMB2_dread` | 源码 TODO 提到虚拟 root 行为，未找到测试或平台文档确认预期。 |
-| Q-003 | `SMB2_lseek64`、`SMB2_write` 未检查 `f->privdata == NULL`，调用方是否保证有效句柄需确认。 | `SMB2_lseek64`, `SMB2_write` | 与 `SMB2_read`/`SMB2_close` 的 `-EBADF` 处理不一致，未找到测试证据。 |
+| Q-001 | `find_context` 使用 `strcmp(share->name, path)` 非零时返回 context，是否意图匹配相等共享名仍需确认。 | SMB2_open`, `SMB2_dopen`, `SMB2_getstat`, `SMB2_mkdir`, `SMB2_rmdir`, `SMB2_remove`, `SMB2_rename | 源码行为与注释“share name match”语义存在疑似冲突，未找到测试证据。 |
+| Q-002 | `SMB2_dopen` 的虚拟 root 分支设置 `dfh->is_root = true` 后仍检查未初始化的 `dfh->fh == NULL`，root 目录是否实际可打开需确认。 | SMB2_dopen`, `SMB2_dread | 源码 TODO 提到虚拟 root 行为，未找到测试或平台文档确认预期。 |
+| Q-003 | `SMB2_lseek64`、`SMB2_write` 未检查 `f->privdata == NULL`，调用方是否保证有效句柄需确认。 | SMB2_lseek64`, `SMB2_write | 与 `SMB2_read`/`SMB2_close` 的 `-EBADF` 处理不一致，未找到测试证据。 |

@@ -12,37 +12,37 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| gethostname | function | `int gethostname(char *name, size_t len)` | Include | Xbox 和 PS2 平台缺少或需要固定 hostname 时由实现写入平台标识。 |
-| time | function | `time_t time(time_t *tloc)` | Include | PS2 IOP 平台通过系统时钟提供缺失的 time 兼容入口。 |
-| asprintf | function | `int asprintf(char **strp, const char *fmt, ...)` | Include | PS2 IOP 平台提供缺失的格式化分配字符串入口。 |
-| errno | variable | `int errno;` | Include | PS2 IOP 平台显式提供全局 errno 存储供兼容函数写入。 |
-| iop_connect | function | `int iop_connect(int sockfd, struct sockaddr *addr, socklen_t addrlen)` | Include | PS2 IOP 平台包装 lwIP connect 并同步 socket 错误到 errno。 |
-| smb2_getaddrinfo | function | `int smb2_getaddrinfo(const char *node, const char*service, const struct addrinfo *hints, struct addrinfo **res)` | Include | 缺少 getaddrinfo 的平台由实现分配 IPv4-only addrinfo 结果。 |
-| smb2_freeaddrinfo | function | `void smb2_freeaddrinfo(struct addrinfo *res)` | Include | 与兼容 resolver 配套释放 `ai_addr` 和 `addrinfo`。 |
-| random | function | `long random(void)` / `int random(void)` | Include | 缺少 random 的平台返回 ESP、C library 或 PS2 IOP 本地伪随机值。 |
-| srandom | function | `void srandom(unsigned int seed)` | Include | 缺少 srandom 的平台初始化底层或 PS2 IOP 本地伪随机状态。 |
-| getpid | function | `int getpid()` | Include | 缺少 getpid 的平台返回平台配置的兼容进程标识。 |
-| getlogin_r | function | `int getlogin_r(char *buf, size_t size)` | Include | 缺少 getlogin_r 的平台返回平台配置的登录查询状态码。 |
-| writev | function | `ssize_t writev(t_socket fd, const struct iovec* vector, int count)` | Include | 缺少 writev 的平台聚合 iovec 后执行底层 write。 |
-| readv | function | `ssize_t readv(t_socket fd, const struct iovec* vector, int count)` | Include | 缺少 readv 的平台执行单次底层 read 后分散到 iovec。 |
-| poll | function | `int poll(struct pollfd *fds, unsigned int nfds, int timo)` | Include | 缺少 poll 的平台基于 select 实现 readiness 等待和 revents 填充。 |
-| strdup | function | `char *strdup(const char *s)` | Include | 缺少 strdup 的平台分配并复制 NUL 结尾字符串。 |
-| be64toh | function | `long long int be64toh(long long int x)` | Include | 缺少 be64toh 的平台组合两个 32 位网络序转换结果。 |
-| login_num | macro | `#define login_num ENXIO` / `#define login_num 0` / `#define login_num 1` | Skip | 平台内部返回码宏，行为由 `getlogin_r` Requirement 覆盖。 |
-| getpid_num | macro | `#define getpid_num() GetCurrentProcessId()` / `#define getpid_num() 0` / `#define getpid_num() 27` | Skip | 平台内部进程标识宏，行为由 `getpid` Requirement 覆盖。 |
-| smb2_random | macro | `#define smb2_random rand` / `#define smb2_random esp_random` | Skip | 平台内部随机源别名，行为由 `random` Requirement 覆盖。 |
-| smb2_srandom | macro | `#define smb2_srandom srand` / `#define smb2_srandom(seed)` | Skip | 平台内部随机种子别名，行为由 `srandom` Requirement 覆盖。 |
+| gethostname | function | int gethostname(char *name, size_t len) | Include | Xbox 和 PS2 平台缺少或需要固定 hostname 时由实现写入平台标识。 |
+| time | function | time_t time(time_t *tloc) | Include | PS2 IOP 平台通过系统时钟提供缺失的 time 兼容入口。 |
+| asprintf | function | int asprintf(char **strp, const char *fmt, ...) | Include | PS2 IOP 平台提供缺失的格式化分配字符串入口。 |
+| errno | variable | int errno; | Include | PS2 IOP 平台显式提供全局 errno 存储供兼容函数写入。 |
+| iop_connect | function | int iop_connect(int sockfd, struct sockaddr *addr, socklen_t addrlen) | Include | PS2 IOP 平台包装 lwIP connect 并同步 socket 错误到 errno。 |
+| smb2_getaddrinfo | function | int smb2_getaddrinfo(const char *node, const char*service, const struct addrinfo *hints, struct addrinfo **res) | Include | 缺少 getaddrinfo 的平台由实现分配 IPv4-only addrinfo 结果。 |
+| smb2_freeaddrinfo | function | void smb2_freeaddrinfo(struct addrinfo *res) | Include | 与兼容 resolver 配套释放 `ai_addr` 和 `addrinfo`。 |
+| random | function | long random(void)` / `int random(void) | Include | 缺少 random 的平台返回 ESP、C library 或 PS2 IOP 本地伪随机值。 |
+| srandom | function | void srandom(unsigned int seed) | Include | 缺少 srandom 的平台初始化底层或 PS2 IOP 本地伪随机状态。 |
+| getpid | function | int getpid() | Include | 缺少 getpid 的平台返回平台配置的兼容进程标识。 |
+| getlogin_r | function | int getlogin_r(char *buf, size_t size) | Include | 缺少 getlogin_r 的平台返回平台配置的登录查询状态码。 |
+| writev | function | ssize_t writev(t_socket fd, const struct iovec* vector, int count) | Include | 缺少 writev 的平台聚合 iovec 后执行底层 write。 |
+| readv | function | ssize_t readv(t_socket fd, const struct iovec* vector, int count) | Include | 缺少 readv 的平台执行单次底层 read 后分散到 iovec。 |
+| poll | function | int poll(struct pollfd *fds, unsigned int nfds, int timo) | Include | 缺少 poll 的平台基于 select 实现 readiness 等待和 revents 填充。 |
+| strdup | function | char *strdup(const char *s) | Include | 缺少 strdup 的平台分配并复制 NUL 结尾字符串。 |
+| be64toh | function | long long int be64toh(long long int x) | Include | 缺少 be64toh 的平台组合两个 32 位网络序转换结果。 |
+| login_num | macro | #define login_num ENXIO` / `#define login_num 0` / `#define login_num 1 | Skip | 平台内部返回码宏，行为由 `getlogin_r` Requirement 覆盖。 |
+| getpid_num | macro | #define getpid_num() GetCurrentProcessId()` / `#define getpid_num() 0` / `#define getpid_num() 27 | Skip | 平台内部进程标识宏，行为由 `getpid` Requirement 覆盖。 |
+| smb2_random | macro | #define smb2_random rand` / `#define smb2_random esp_random | Skip | 平台内部随机源别名，行为由 `random` Requirement 覆盖。 |
+| smb2_srandom | macro | #define smb2_srandom srand` / `#define smb2_srandom(seed) | Skip | 平台内部随机种子别名，行为由 `srandom` Requirement 覆盖。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| errno | variable | `lib/compat.c:159` | PS2 IOP 分支提供全局错误码存储。 |
-| next | static variable | `lib/compat.c:133` | PS2 IOP `random`/`srandom` 使用的线性同余状态。 |
-| login_num | macro | `lib/compat.c:26`, `lib/compat.c:29`, `lib/compat.c:53`, `lib/compat.c:65`, `lib/compat.c:87`, `lib/compat.c:101`, `lib/compat.c:121`, `lib/compat.c:186`, `lib/compat.c:197`, `lib/compat.c:209`, `lib/compat.c:240` | 平台选择的 `getlogin_r` 返回码。 |
-| getpid_num | macro | `lib/compat.c:27`, `lib/compat.c:30`, `lib/compat.c:131` | 平台选择的 `getpid` 返回值来源。 |
-| smb2_random | macro | `lib/compat.c:32`, `lib/compat.c:66`, `lib/compat.c:198` | 非 PS2 IOP 随机数兼容实现的底层随机源。 |
-| smb2_srandom | macro | `lib/compat.c:33`, `lib/compat.c:67`, `lib/compat.c:199` | 非 PS2 IOP 随机数种子兼容实现的底层种子入口。 |
+| errno | variable | lib/compat.c:159 | PS2 IOP 分支提供全局错误码存储。 |
+| next | static variable | lib/compat.c:133 | PS2 IOP `random`/`srandom` 使用的线性同余状态。 |
+| login_num | macro | lib/compat.c:26`, `lib/compat.c:29`, `lib/compat.c:53`, `lib/compat.c:65`, `lib/compat.c:87`, `lib/compat.c:101`, `lib/compat.c:121`, `lib/compat.c:186`, `lib/compat.c:197`, `lib/compat.c:209`, `lib/compat.c:240 | 平台选择的 `getlogin_r` 返回码。 |
+| getpid_num | macro | lib/compat.c:27`, `lib/compat.c:30`, `lib/compat.c:131 | 平台选择的 `getpid` 返回值来源。 |
+| smb2_random | macro | lib/compat.c:32`, `lib/compat.c:66`, `lib/compat.c:198 | 非 PS2 IOP 随机数兼容实现的底层随机源。 |
+| smb2_srandom | macro | lib/compat.c:33`, `lib/compat.c:67`, `lib/compat.c:199 | 非 PS2 IOP 随机数种子兼容实现的底层种子入口。 |
 
 ## ADDED Requirements
 

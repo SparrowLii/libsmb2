@@ -12,22 +12,22 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_cmd_read_async | function | `struct smb2_pdu *smb2_cmd_read_async(struct smb2_context *smb2, struct smb2_read_request *req, smb2_command_cb cb, void *cb_data);` | Include | 公开 RAW read 请求构造入口，调用方可观察 PDU 创建、错误返回、输入缓冲区和 credit charge 行为。 |
-| smb2_cmd_read_reply_async | function | `struct smb2_pdu *smb2_cmd_read_reply_async(struct smb2_context *smb2, struct smb2_read_reply *rep, smb2_command_cb cb, void *cb_data);` | Include | 公开 RAW read reply 构造入口，用于服务端/回调路径生成 READ 响应 PDU。 |
-| smb2_process_read_fixed | function | `int smb2_process_read_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 私有 PDU dispatch 入口解析 READ reply fixed 部分，影响异步 read 回调 payload 和 variable 长度。 |
-| smb2_process_read_variable | function | `int smb2_process_read_variable(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 私有 PDU dispatch 入口绑定或复制 READ reply variable 数据，影响 payload 数据生命周期。 |
-| smb2_process_read_request_fixed | function | `int smb2_process_read_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 私有服务端请求解析入口，校验 request fixed 字段、最大读取长度和 channel info 边界。 |
-| smb2_process_read_request_variable | function | `int smb2_process_read_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 私有服务端请求解析入口，绑定 READ request channel info variable 数据。 |
-| smb2_encode_read_request | function | `static int smb2_encode_read_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_read_request *req)` | Skip | 静态 helper，仅支撑 `smb2_cmd_read_async` 的请求编码，无独立跨文件接口。 |
-| smb2_encode_read_reply | function | `static int smb2_encode_read_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_read_reply *rep)` | Skip | 静态 helper，仅支撑 `smb2_cmd_read_reply_async` 的响应编码，无独立跨文件接口。 |
-| free_read_reply | function | `static void free_read_reply(struct smb2_context *smb2, void * payload)` | Skip | 静态释放回调，仅作为 `smb2_process_read_variable` 的 payload 生命周期细节。 |
-| IOVREQ_OFFSET_READ | macro | `#define IOVREQ_OFFSET_READ ((req->read_channel_info_offset)?(req->read_channel_info_offset - SMB2_HEADER_SIZE - (SMB2_READ_REQUEST_SIZE & 0xfffe)):0)` | Skip | 文件内偏移计算宏，仅用于 `smb2_process_read_request_fixed` 的返回长度。 |
+| smb2_cmd_read_async | function | struct smb2_pdu *smb2_cmd_read_async(struct smb2_context *smb2, struct smb2_read_request *req, smb2_command_cb cb, void *cb_data); | Include | 公开 RAW read 请求构造入口，调用方可观察 PDU 创建、错误返回、输入缓冲区和 credit charge 行为。 |
+| smb2_cmd_read_reply_async | function | struct smb2_pdu *smb2_cmd_read_reply_async(struct smb2_context *smb2, struct smb2_read_reply *rep, smb2_command_cb cb, void *cb_data); | Include | 公开 RAW read reply 构造入口，用于服务端/回调路径生成 READ 响应 PDU。 |
+| smb2_process_read_fixed | function | int smb2_process_read_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 私有 PDU dispatch 入口解析 READ reply fixed 部分，影响异步 read 回调 payload 和 variable 长度。 |
+| smb2_process_read_variable | function | int smb2_process_read_variable(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 私有 PDU dispatch 入口绑定或复制 READ reply variable 数据，影响 payload 数据生命周期。 |
+| smb2_process_read_request_fixed | function | int smb2_process_read_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 私有服务端请求解析入口，校验 request fixed 字段、最大读取长度和 channel info 边界。 |
+| smb2_process_read_request_variable | function | int smb2_process_read_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 私有服务端请求解析入口，绑定 READ request channel info variable 数据。 |
+| smb2_encode_read_request | function | static int smb2_encode_read_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_read_request *req) | Skip | 静态 helper，仅支撑 `smb2_cmd_read_async` 的请求编码，无独立跨文件接口。 |
+| smb2_encode_read_reply | function | static int smb2_encode_read_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_read_reply *rep) | Skip | 静态 helper，仅支撑 `smb2_cmd_read_reply_async` 的响应编码，无独立跨文件接口。 |
+| free_read_reply | function | static void free_read_reply(struct smb2_context *smb2, void * payload) | Skip | 静态释放回调，仅作为 `smb2_process_read_variable` 的 payload 生命周期细节。 |
+| IOVREQ_OFFSET_READ | macro | #define IOVREQ_OFFSET_READ ((req->read_channel_info_offset)?(req->read_channel_info_offset - SMB2_HEADER_SIZE - (SMB2_READ_REQUEST_SIZE & 0xfffe)):0) | Skip | 文件内偏移计算宏，仅用于 `smb2_process_read_request_fixed` 的返回长度。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| IOVREQ_OFFSET_READ | macro | `lib/smb2-cmd-read.c:321` | 根据 request channel info offset 计算 variable payload 需要读取的相对偏移；仅文件内部使用。 |
+| IOVREQ_OFFSET_READ | macro | lib/smb2-cmd-read.c:321 | 根据 request channel info offset 计算 variable payload 需要读取的相对偏移；仅文件内部使用。 |
 
 ## ADDED Requirements
 

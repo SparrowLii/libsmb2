@@ -12,7 +12,7 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_hmac_md5 | function | `void smb2_hmac_md5(unsigned char *text, int text_len, unsigned char *key, unsigned int key_len, unsigned char *digest);` | Include | 该函数由 `lib/hmac-md5.h` 声明并被 NTLMSSP 认证路径跨文件调用，输出调用方可观察的 16 字节 HMAC-MD5 摘要。 |
+| smb2_hmac_md5 | function | void smb2_hmac_md5(unsigned char *text, int text_len, unsigned char *key, unsigned int key_len, unsigned char *digest); | Include | 该函数由 `lib/hmac-md5.h` 声明并被 NTLMSSP 认证路径跨文件调用，输出调用方可观察的 16 字节 HMAC-MD5 摘要。 |
 
 ## Data Model Summary
 

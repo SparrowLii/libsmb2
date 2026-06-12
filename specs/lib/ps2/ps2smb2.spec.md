@@ -12,25 +12,25 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| SMB2_PATH_MAX | macro | `#define SMB2_PATH_MAX 1024` | Include | 公开路径长度上限宏，对 PS2 调用方可见。 |
-| SMB2_DEVCTL_CONNECT | macro | `#define SMB2_DEVCTL_CONNECT		0xC0DE0001` | Include | 公开 devctl 连接命令号，被 `SMB2_devctl` 分派使用。 |
-| SMB2_DEVCTL_DISCONNECT_ALL | macro | `#define SMB2_DEVCTL_DISCONNECT_ALL	0xC0DE0002` | Include | 公开 devctl 断开命令号，对调用方可见但当前源码未确认分派实现。 |
-| SMB2_MAX_NAME_LEN | macro | `#define SMB2_MAX_NAME_LEN 32` | Include | 公开连接名称字段长度，并用于 `smb2Connect_in_t.name` 数组布局。 |
-| smb2Connect_in_t | type | `typedef struct { char name[SMB2_MAX_NAME_LEN]; char username[32]; char password[32]; char url[256]; } smb2Connect_in_t;` | Include | 公开连接 devctl 输入载荷布局，被 `smb2_Connect` 读取。 |
-| smb2Connect_out_t | type | `typedef struct { void *ctx; } smb2Connect_out_t;` | Include | 公开连接 devctl 输出载荷布局，被 `smb2_Connect` 写入连接上下文。 |
-| smb2Disconnect_in_t | type | `typedef struct { void *ctx; } smb2Disconnect_in_t;` | Include | 公开断开 devctl 输入载荷布局，对调用方可见但当前源码未确认分派实现。 |
+| SMB2_PATH_MAX | macro | #define SMB2_PATH_MAX 1024 | Include | 公开路径长度上限宏，对 PS2 调用方可见。 |
+| SMB2_DEVCTL_CONNECT | macro | #define SMB2_DEVCTL_CONNECT		0xC0DE0001 | Include | 公开 devctl 连接命令号，被 `SMB2_devctl` 分派使用。 |
+| SMB2_DEVCTL_DISCONNECT_ALL | macro | #define SMB2_DEVCTL_DISCONNECT_ALL	0xC0DE0002 | Include | 公开 devctl 断开命令号，对调用方可见但当前源码未确认分派实现。 |
+| SMB2_MAX_NAME_LEN | macro | #define SMB2_MAX_NAME_LEN 32 | Include | 公开连接名称字段长度，并用于 `smb2Connect_in_t.name` 数组布局。 |
+| smb2Connect_in_t | type | typedef struct { char name[SMB2_MAX_NAME_LEN]; char username[32]; char password[32]; char url[256]; } smb2Connect_in_t; | Include | 公开连接 devctl 输入载荷布局，被 `smb2_Connect` 读取。 |
+| smb2Connect_out_t | type | typedef struct { void *ctx; } smb2Connect_out_t; | Include | 公开连接 devctl 输出载荷布局，被 `smb2_Connect` 写入连接上下文。 |
+| smb2Disconnect_in_t | type | typedef struct { void *ctx; } smb2Disconnect_in_t; | Include | 公开断开 devctl 输入载荷布局，对调用方可见但当前源码未确认分派实现。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SMB2_PATH_MAX | macro | `lib/ps2/ps2smb2.h:9` | PS2 SMB2 路径最大长度常量为 1024。 |
-| SMB2_DEVCTL_CONNECT | macro | `lib/ps2/ps2smb2.h:13` | PS2 devctl 连接命令号为 `0xC0DE0001`。 |
-| SMB2_DEVCTL_DISCONNECT_ALL | macro | `lib/ps2/ps2smb2.h:14` | PS2 devctl 断开全部连接命令号为 `0xC0DE0002`。 |
-| SMB2_MAX_NAME_LEN | macro | `lib/ps2/ps2smb2.h:19` | 连接名称数组长度为 32 字节。 |
-| smb2Connect_in_t | typedef | `lib/ps2/ps2smb2.h:20` | 连接输入载荷包含 `name[SMB2_MAX_NAME_LEN]`、`username[32]`、`password[32]` 和 `url[256]`。 |
-| smb2Connect_out_t | typedef | `lib/ps2/ps2smb2.h:27` | 连接输出载荷包含不透明 `ctx` 指针。 |
-| smb2Disconnect_in_t | typedef | `lib/ps2/ps2smb2.h:31` | 断开输入载荷包含不透明 `ctx` 指针。 |
+| SMB2_PATH_MAX | macro | lib/ps2/ps2smb2.h:9 | PS2 SMB2 路径最大长度常量为 1024。 |
+| SMB2_DEVCTL_CONNECT | macro | lib/ps2/ps2smb2.h:13 | PS2 devctl 连接命令号为 `0xC0DE0001`。 |
+| SMB2_DEVCTL_DISCONNECT_ALL | macro | lib/ps2/ps2smb2.h:14 | PS2 devctl 断开全部连接命令号为 `0xC0DE0002`。 |
+| SMB2_MAX_NAME_LEN | macro | lib/ps2/ps2smb2.h:19 | 连接名称数组长度为 32 字节。 |
+| smb2Connect_in_t | typedef | lib/ps2/ps2smb2.h:20 | 连接输入载荷包含 `name[SMB2_MAX_NAME_LEN]`、`username[32]`、`password[32]` 和 `url[256]`。 |
+| smb2Connect_out_t | typedef | lib/ps2/ps2smb2.h:27 | 连接输出载荷包含不透明 `ctx` 指针。 |
+| smb2Disconnect_in_t | typedef | lib/ps2/ps2smb2.h:31 | 断开输入载荷包含不透明 `ctx` 指针。 |
 
 ## ADDED Requirements
 

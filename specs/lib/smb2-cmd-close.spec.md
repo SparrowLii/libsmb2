@@ -12,22 +12,22 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_encode_close_request | function | `static int smb2_encode_close_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_close_request *req)` | Skip | 静态内部编码 helper，仅由同文件 `smb2_cmd_close_async` 调用，外部可观察契约归属到公开 PDU builder。 |
-| smb2_cmd_close_async | function | `struct smb2_pdu *smb2_cmd_close_async(struct smb2_context *smb2, struct smb2_close_request *req, smb2_command_cb cb, void *cb_data)` | Include | RAW close request PDU 构造入口，在 `include/smb2/libsmb2-raw.h` 声明并被高层 close/stat/rename 等流程调用。 |
-| smb2_encode_close_reply | function | `static int smb2_encode_close_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_close_reply *rep)` | Skip | 静态内部编码 helper，仅服务 close reply builder，外部可观察契约归属到 `smb2_cmd_close_reply_async`。 |
-| smb2_cmd_close_reply_async | function | `struct smb2_pdu *smb2_cmd_close_reply_async(struct smb2_context *smb2, struct smb2_close_reply *rep, smb2_command_cb cb, void *cb_data)` | Include | Close reply PDU 构造入口，在 raw header 声明并由服务端 close request callback 调用。 |
-| smb2_process_close_fixed | function | `int smb2_process_close_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | Close reply fixed payload parser，在私有 header 声明并由 PDU reply dispatch 调用，承担尺寸校验、payload 分配和字段解码契约。 |
-| smb2_process_close_request_fixed | function | `int smb2_process_close_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | Close request fixed payload parser，在私有 header 声明并由 PDU request dispatch 调用，承担尺寸校验、payload 分配和字段解码契约。 |
+| smb2_encode_close_request | function | static int smb2_encode_close_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_close_request *req) | Skip | 静态内部编码 helper，仅由同文件 `smb2_cmd_close_async` 调用，外部可观察契约归属到公开 PDU builder。 |
+| smb2_cmd_close_async | function | struct smb2_pdu *smb2_cmd_close_async(struct smb2_context *smb2, struct smb2_close_request *req, smb2_command_cb cb, void *cb_data) | Include | RAW close request PDU 构造入口，在 `include/smb2/libsmb2-raw.h` 声明并被高层 close/stat/rename 等流程调用。 |
+| smb2_encode_close_reply | function | static int smb2_encode_close_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_close_reply *rep) | Skip | 静态内部编码 helper，仅服务 close reply builder，外部可观察契约归属到 `smb2_cmd_close_reply_async`。 |
+| smb2_cmd_close_reply_async | function | struct smb2_pdu *smb2_cmd_close_reply_async(struct smb2_context *smb2, struct smb2_close_reply *rep, smb2_command_cb cb, void *cb_data) | Include | Close reply PDU 构造入口，在 raw header 声明并由服务端 close request callback 调用。 |
+| smb2_process_close_fixed | function | int smb2_process_close_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | Close reply fixed payload parser，在私有 header 声明并由 PDU reply dispatch 调用，承担尺寸校验、payload 分配和字段解码契约。 |
+| smb2_process_close_request_fixed | function | int smb2_process_close_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | Close request fixed payload parser，在私有 header 声明并由 PDU request dispatch 调用，承担尺寸校验、payload 分配和字段解码契约。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SMB2_CLOSE_REQUEST_SIZE | macro | `include/smb2/smb2.h:378` | Close request fixed struct size 为 24，编码与解析均使用偶数长度 `SMB2_CLOSE_REQUEST_SIZE & 0xfffffffe` / `struct_size & 0xfffe` 校验。 |
-| SMB2_CLOSE_FLAG_POSTQUERY_ATTRIB | macro | `include/smb2/smb2.h:380` | Close request/reply flags 的公开标志值，影响是否返回关闭后的属性。 |
-| struct smb2_close_request | struct | `include/smb2/smb2.h:382` | Close request 包含 `flags` 和 `file_id`，编码写入 offset 2 和 offset 8。 |
-| SMB2_CLOSE_REPLY_SIZE | macro | `include/smb2/smb2.h:387` | Close reply fixed struct size 为 60，编码与解析均以偶数长度 60 校验。 |
-| struct smb2_close_reply | struct | `include/smb2/smb2.h:389` | Close reply 包含 flags、时间戳、allocation size、EOF 和 file attributes 字段，解析后挂载到 `pdu->payload`。 |
+| SMB2_CLOSE_REQUEST_SIZE | macro | include/smb2/smb2.h:378 | Close request fixed struct size 为 24，编码与解析均使用偶数长度 `SMB2_CLOSE_REQUEST_SIZE & 0xfffffffe` / `struct_size & 0xfffe` 校验。 |
+| SMB2_CLOSE_FLAG_POSTQUERY_ATTRIB | macro | include/smb2/smb2.h:380 | Close request/reply flags 的公开标志值，影响是否返回关闭后的属性。 |
+| struct smb2_close_request | struct | include/smb2/smb2.h:382 | Close request 包含 `flags` 和 `file_id`，编码写入 offset 2 和 offset 8。 |
+| SMB2_CLOSE_REPLY_SIZE | macro | include/smb2/smb2.h:387 | Close reply fixed struct size 为 60，编码与解析均以偶数长度 60 校验。 |
+| struct smb2_close_reply | struct | include/smb2/smb2.h:389 | Close reply 包含 flags、时间戳、allocation size、EOF 和 file attributes 字段，解析后挂载到 `pdu->payload`。 |
 
 ## ADDED Requirements
 

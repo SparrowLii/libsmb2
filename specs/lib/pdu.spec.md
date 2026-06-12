@@ -12,63 +12,63 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_pad_to_64bit | function | `int smb2_pad_to_64bit(struct smb2_context *smb2, struct smb2_io_vectors *v);` | Include | 内部跨文件 I/O vector 对齐接口，影响 PDU 编码长度。 |
-| smb2_allocate_pdu | function | `struct smb2_pdu *smb2_allocate_pdu(struct smb2_context *smb2, enum smb2_command command, smb2_command_cb cb, void *cb_data);` | Include | 内部跨文件 PDU 创建入口，被 SMB2 命令构造和服务端回复路径调用。 |
-| smb2_select_tree_id | function | `int smb2_select_tree_id(struct smb2_context *smb2, uint32_t tree_id);` | Include | 公开 tree-id 选择 API，改变后续请求上下文。 |
-| smb2_get_tree_id_for_pdu | function | `int smb2_get_tree_id_for_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu, uint32_t *tree_id);` | Include | 公开 PDU/tree-id 查询 API，供应用和代理使用。 |
-| smb2_set_tree_id_for_pdu | function | `int smb2_set_tree_id_for_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu, uint32_t tree_id);` | Include | 公开 PDU/tree-id 修改 API，影响发送头部。 |
-| smb2_get_session_id | function | `int smb2_get_session_id(struct smb2_context *smb2, uint64_t *session_id);` | Include | 公开 session-id 查询 API。 |
-| smb2_connect_tree_id | function | `int smb2_connect_tree_id(struct smb2_context *smb2, uint32_t tree_id);` | Include | 内部 tree-id 栈生命周期接口。 |
-| smb2_disconnect_tree_id | function | `int smb2_disconnect_tree_id(struct smb2_context *smb2, uint32_t tree_id);` | Include | 内部 tree-id 栈移除接口。 |
-| smb2_pdu_is_compound | function | `int smb2_pdu_is_compound(struct smb2_context *smb2);` | Include | 公开 compound receive-state 查询 API。 |
-| smb2_add_compound_pdu | function | `void smb2_add_compound_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_pdu *next_pdu);` | Include | 公开 compound chain 组装 API。 |
-| smb2_free_pdu | function | `void smb2_free_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 公开/内部 PDU 释放 API，负责队列移除和 payload 释放。 |
-| smb2_set_uint8 | function | `int smb2_set_uint8(struct smb2_iovec *iov, int offset, uint8_t value);` | Include | 内部 wire buffer 写入基础接口，存在边界检查语义。 |
-| smb2_set_uint16 | function | `int smb2_set_uint16(struct smb2_iovec *iov, int offset, uint16_t value);` | Include | 内部 little-endian wire buffer 写入接口。 |
-| smb2_set_uint32 | function | `int smb2_set_uint32(struct smb2_iovec *iov, int offset, uint32_t value);` | Include | 内部 little-endian wire buffer 写入接口，被 compound/header 编码使用。 |
-| smb2_set_uint64 | function | `int smb2_set_uint64(struct smb2_iovec *iov, int offset, uint64_t value);` | Include | 内部 little-endian wire buffer 写入接口。 |
-| smb2_get_uint8 | function | `int smb2_get_uint8(struct smb2_iovec *iov, int offset, uint8_t *value);` | Include | 内部 wire buffer 读取基础接口。 |
-| smb2_get_uint16 | function | `int smb2_get_uint16(struct smb2_iovec *iov, int offset, uint16_t *value);` | Include | 内部 little-endian wire buffer 读取接口。 |
-| smb2_get_uint32 | function | `int smb2_get_uint32(struct smb2_iovec *iov, int offset, uint32_t *value);` | Include | 内部 little-endian wire buffer 读取接口。 |
-| smb2_get_uint64 | function | `int smb2_get_uint64(struct smb2_iovec *iov, int offset, uint64_t *value);` | Include | 内部 little-endian wire buffer 读取接口。 |
-| smb2_decode_header | function | `int smb2_decode_header(struct smb2_context *smb2, struct smb2_iovec *iov, struct smb2_header *hdr);` | Include | 内部 header 解码和上下文同步入口。 |
-| smb2_queue_pdu | function | `void smb2_queue_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 公开发送队列入口，CRITICAL impact，覆盖签名、加密、message-id、outqueue。 |
-| smb2_get_compound_pdu | function | `struct smb2_pdu *smb2_get_compound_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 公开 compound 链遍历 API。 |
-| smb2_set_pdu_status | function | `void smb2_set_pdu_status(struct smb2_context *smb2, struct smb2_pdu *pdu, int status);` | Include | 公开 PDU 状态修改 API。 |
-| smb2_set_pdu_message_id | function | `void smb2_set_pdu_message_id(struct smb2_context *smb2, struct smb2_pdu *pdu, uint64_t message_id);` | Include | 公开 PDU message-id 修改 API。 |
-| smb2_get_pdu_message_id | function | `uint64_t smb2_get_pdu_message_id(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 公开 PDU message-id 查询 API。 |
-| smb2_get_last_request_message_id | function | `uint64_t smb2_get_last_request_message_id(struct smb2_context *smb2);` | Include | 公开最近请求 message-id 查询 API。 |
-| smb2_get_last_reply_message_id | function | `uint64_t smb2_get_last_reply_message_id(struct smb2_context *smb2);` | Include | 公开最近回复 message-id 查询 API。 |
-| smb2_find_pdu | function | `struct smb2_pdu *smb2_find_pdu(struct smb2_context *smb2, uint64_t message_id);` | Include | 内部 waitqueue 关联查找接口。 |
-| smb2_get_fixed_reply_size | function | `int smb2_get_fixed_reply_size(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 内部按命令选择 reply fixed payload 长度。 |
-| smb2_get_fixed_request_size | function | `int smb2_get_fixed_request_size(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 内部按命令选择 request fixed payload 长度。 |
-| smb2_get_fixed_size | function | `int smb2_get_fixed_size(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 内部 client/server 分派 fixed payload 长度。 |
-| smb2_process_reply_payload_fixed | function | `int smb2_process_reply_payload_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 内部 reply fixed payload 分派入口。 |
-| smb2_process_reply_payload_variable | function | `int smb2_process_reply_payload_variable(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 内部 reply variable payload 分派入口。 |
-| smb2_process_request_payload_fixed | function | `int smb2_process_request_payload_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 内部 server request fixed payload 分派入口。 |
-| smb2_process_request_payload_variable | function | `int smb2_process_request_payload_variable(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 内部 server request variable payload 分派入口。 |
-| smb2_process_payload_fixed | function | `int smb2_process_payload_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 内部 client/server fixed payload 总分派入口。 |
-| smb2_process_payload_variable | function | `int smb2_process_payload_variable(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 内部 client/server variable payload 总分派入口。 |
-| smb2_timeout_pdus | function | `void smb2_timeout_pdus(struct smb2_context *smb2);` | Include | 内部超时扫描入口，会调用回调并释放 PDU。 |
-| smb2_encode_header | function | `static void smb2_encode_header(struct smb2_context *smb2, struct smb2_iovec *iov, struct smb2_header *hdr);` | Skip | 静态 helper，仅由 `smb2_queue_pdu` 使用，行为归入发送队列 Requirement。 |
-| smb2_add_to_outqueue | function | `static void smb2_add_to_outqueue(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Skip | 静态 helper，仅封装 outqueue 添加和事件更新，归入 `smb2_queue_pdu`。 |
-| smb2_correlate_reply | function | `static int smb2_correlate_reply(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Skip | 静态 server reply 关联 helper，归入 `smb2_queue_pdu`。 |
-| smb2_is_error_response | function | `static int smb2_is_error_response(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Skip | 静态错误判定 helper，归入 fixed-size 和 payload 分派接口。 |
+| smb2_pad_to_64bit | function | int smb2_pad_to_64bit(struct smb2_context *smb2, struct smb2_io_vectors *v); | Include | 内部跨文件 I/O vector 对齐接口，影响 PDU 编码长度。 |
+| smb2_allocate_pdu | function | struct smb2_pdu *smb2_allocate_pdu(struct smb2_context *smb2, enum smb2_command command, smb2_command_cb cb, void *cb_data); | Include | 内部跨文件 PDU 创建入口，被 SMB2 命令构造和服务端回复路径调用。 |
+| smb2_select_tree_id | function | int smb2_select_tree_id(struct smb2_context *smb2, uint32_t tree_id); | Include | 公开 tree-id 选择 API，改变后续请求上下文。 |
+| smb2_get_tree_id_for_pdu | function | int smb2_get_tree_id_for_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu, uint32_t *tree_id); | Include | 公开 PDU/tree-id 查询 API，供应用和代理使用。 |
+| smb2_set_tree_id_for_pdu | function | int smb2_set_tree_id_for_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu, uint32_t tree_id); | Include | 公开 PDU/tree-id 修改 API，影响发送头部。 |
+| smb2_get_session_id | function | int smb2_get_session_id(struct smb2_context *smb2, uint64_t *session_id); | Include | 公开 session-id 查询 API。 |
+| smb2_connect_tree_id | function | int smb2_connect_tree_id(struct smb2_context *smb2, uint32_t tree_id); | Include | 内部 tree-id 栈生命周期接口。 |
+| smb2_disconnect_tree_id | function | int smb2_disconnect_tree_id(struct smb2_context *smb2, uint32_t tree_id); | Include | 内部 tree-id 栈移除接口。 |
+| smb2_pdu_is_compound | function | int smb2_pdu_is_compound(struct smb2_context *smb2); | Include | 公开 compound receive-state 查询 API。 |
+| smb2_add_compound_pdu | function | void smb2_add_compound_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_pdu *next_pdu); | Include | 公开 compound chain 组装 API。 |
+| smb2_free_pdu | function | void smb2_free_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 公开/内部 PDU 释放 API，负责队列移除和 payload 释放。 |
+| smb2_set_uint8 | function | int smb2_set_uint8(struct smb2_iovec *iov, int offset, uint8_t value); | Include | 内部 wire buffer 写入基础接口，存在边界检查语义。 |
+| smb2_set_uint16 | function | int smb2_set_uint16(struct smb2_iovec *iov, int offset, uint16_t value); | Include | 内部 little-endian wire buffer 写入接口。 |
+| smb2_set_uint32 | function | int smb2_set_uint32(struct smb2_iovec *iov, int offset, uint32_t value); | Include | 内部 little-endian wire buffer 写入接口，被 compound/header 编码使用。 |
+| smb2_set_uint64 | function | int smb2_set_uint64(struct smb2_iovec *iov, int offset, uint64_t value); | Include | 内部 little-endian wire buffer 写入接口。 |
+| smb2_get_uint8 | function | int smb2_get_uint8(struct smb2_iovec *iov, int offset, uint8_t *value); | Include | 内部 wire buffer 读取基础接口。 |
+| smb2_get_uint16 | function | int smb2_get_uint16(struct smb2_iovec *iov, int offset, uint16_t *value); | Include | 内部 little-endian wire buffer 读取接口。 |
+| smb2_get_uint32 | function | int smb2_get_uint32(struct smb2_iovec *iov, int offset, uint32_t *value); | Include | 内部 little-endian wire buffer 读取接口。 |
+| smb2_get_uint64 | function | int smb2_get_uint64(struct smb2_iovec *iov, int offset, uint64_t *value); | Include | 内部 little-endian wire buffer 读取接口。 |
+| smb2_decode_header | function | int smb2_decode_header(struct smb2_context *smb2, struct smb2_iovec *iov, struct smb2_header *hdr); | Include | 内部 header 解码和上下文同步入口。 |
+| smb2_queue_pdu | function | void smb2_queue_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 公开发送队列入口，CRITICAL impact，覆盖签名、加密、message-id、outqueue。 |
+| smb2_get_compound_pdu | function | struct smb2_pdu *smb2_get_compound_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 公开 compound 链遍历 API。 |
+| smb2_set_pdu_status | function | void smb2_set_pdu_status(struct smb2_context *smb2, struct smb2_pdu *pdu, int status); | Include | 公开 PDU 状态修改 API。 |
+| smb2_set_pdu_message_id | function | void smb2_set_pdu_message_id(struct smb2_context *smb2, struct smb2_pdu *pdu, uint64_t message_id); | Include | 公开 PDU message-id 修改 API。 |
+| smb2_get_pdu_message_id | function | uint64_t smb2_get_pdu_message_id(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 公开 PDU message-id 查询 API。 |
+| smb2_get_last_request_message_id | function | uint64_t smb2_get_last_request_message_id(struct smb2_context *smb2); | Include | 公开最近请求 message-id 查询 API。 |
+| smb2_get_last_reply_message_id | function | uint64_t smb2_get_last_reply_message_id(struct smb2_context *smb2); | Include | 公开最近回复 message-id 查询 API。 |
+| smb2_find_pdu | function | struct smb2_pdu *smb2_find_pdu(struct smb2_context *smb2, uint64_t message_id); | Include | 内部 waitqueue 关联查找接口。 |
+| smb2_get_fixed_reply_size | function | int smb2_get_fixed_reply_size(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 内部按命令选择 reply fixed payload 长度。 |
+| smb2_get_fixed_request_size | function | int smb2_get_fixed_request_size(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 内部按命令选择 request fixed payload 长度。 |
+| smb2_get_fixed_size | function | int smb2_get_fixed_size(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 内部 client/server 分派 fixed payload 长度。 |
+| smb2_process_reply_payload_fixed | function | int smb2_process_reply_payload_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 内部 reply fixed payload 分派入口。 |
+| smb2_process_reply_payload_variable | function | int smb2_process_reply_payload_variable(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 内部 reply variable payload 分派入口。 |
+| smb2_process_request_payload_fixed | function | int smb2_process_request_payload_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 内部 server request fixed payload 分派入口。 |
+| smb2_process_request_payload_variable | function | int smb2_process_request_payload_variable(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 内部 server request variable payload 分派入口。 |
+| smb2_process_payload_fixed | function | int smb2_process_payload_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 内部 client/server fixed payload 总分派入口。 |
+| smb2_process_payload_variable | function | int smb2_process_payload_variable(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 内部 client/server variable payload 总分派入口。 |
+| smb2_timeout_pdus | function | void smb2_timeout_pdus(struct smb2_context *smb2); | Include | 内部超时扫描入口，会调用回调并释放 PDU。 |
+| smb2_encode_header | function | static void smb2_encode_header(struct smb2_context *smb2, struct smb2_iovec *iov, struct smb2_header *hdr); | Skip | 静态 helper，仅由 `smb2_queue_pdu` 使用，行为归入发送队列 Requirement。 |
+| smb2_add_to_outqueue | function | static void smb2_add_to_outqueue(struct smb2_context *smb2, struct smb2_pdu *pdu); | Skip | 静态 helper，仅封装 outqueue 添加和事件更新，归入 `smb2_queue_pdu`。 |
+| smb2_correlate_reply | function | static int smb2_correlate_reply(struct smb2_context *smb2, struct smb2_pdu *pdu); | Skip | 静态 server reply 关联 helper，归入 `smb2_queue_pdu`。 |
+| smb2_is_error_response | function | static int smb2_is_error_response(struct smb2_context *smb2, struct smb2_pdu *pdu); | Skip | 静态错误判定 helper，归入 fixed-size 和 payload 分派接口。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| struct smb2_header | struct | `include/libsmb2-private.h:74` | PDU header 的协议号、credit、命令、flags、message-id、tree/session-id 和 signature 布局。 |
-| struct smb2_context | struct | `include/libsmb2-private.h:141` | PDU 创建、队列、message-id、tree-id、签名、加密和超时状态来源。 |
-| struct smb2_pdu | struct | `include/libsmb2-private.h` | PDU 队列节点、header、iov、payload、callback、compound、timeout、crypto 状态；具体行号待 GitNexus/源码完整回读确认。 |
-| struct smb2_iovec | struct | `include/libsmb2-private.h` | wire buffer 读写接口的输入模型；具体行号待确认。 |
-| SMB2_MAX_TREE_NESTING | macro | `include/libsmb2-private.h:129` | tree-id 栈上限，索引 0 不使用。 |
-| smb2_tree_id | macro | `include/libsmb2-private.h:130` | 当前 tree-id 查询宏，未选择时返回 `0xdeadbeef`。 |
-| MAX_CREDITS | macro | `include/libsmb2-private.h:132` | PDU credit request 计算上限。 |
-| SMB2_FLAGS_SERVER_TO_REDIR | macro | `include/smb2/smb2.h:49` | 服务端回复 header flag。 |
-| SMB2_FLAGS_ASYNC_COMMAND | macro | `include/smb2/smb2.h:50` | async command header flag。 |
-| SMB2_FLAGS_RELATED_OPERATIONS | macro | `include/smb2/smb2.h:51` | compound 后续 PDU header flag。 |
+| struct smb2_header | struct | include/libsmb2-private.h:74 | PDU header 的协议号、credit、命令、flags、message-id、tree/session-id 和 signature 布局。 |
+| struct smb2_context | struct | include/libsmb2-private.h:141 | PDU 创建、队列、message-id、tree-id、签名、加密和超时状态来源。 |
+| struct smb2_pdu | struct | include/libsmb2-private.h | PDU 队列节点、header、iov、payload、callback、compound、timeout、crypto 状态；具体行号待 GitNexus/源码完整回读确认。 |
+| struct smb2_iovec | struct | include/libsmb2-private.h | wire buffer 读写接口的输入模型；具体行号待确认。 |
+| SMB2_MAX_TREE_NESTING | macro | include/libsmb2-private.h:129 | tree-id 栈上限，索引 0 不使用。 |
+| smb2_tree_id | macro | include/libsmb2-private.h:130 | 当前 tree-id 查询宏，未选择时返回 `0xdeadbeef`。 |
+| MAX_CREDITS | macro | include/libsmb2-private.h:132 | PDU credit request 计算上限。 |
+| SMB2_FLAGS_SERVER_TO_REDIR | macro | include/smb2/smb2.h:49 | 服务端回复 header flag。 |
+| SMB2_FLAGS_ASYNC_COMMAND | macro | include/smb2/smb2.h:50 | async command header flag。 |
+| SMB2_FLAGS_RELATED_OPERATIONS | macro | include/smb2/smb2.h:51 | compound 后续 PDU header flag。 |
 
 ## ADDED Requirements
 

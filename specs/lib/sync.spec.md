@@ -12,47 +12,47 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| wait_for_reply | function | `static int wait_for_reply(struct smb2_context *smb2, struct sync_cb_data *cb_data)` | Skip | 内部阻塞轮询 helper，无独立公开 ABI；其轮询、超时和 service 错误语义归属到各同步 wrapper。 |
-| sync_connect_cb | function | `static void sync_connect_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data)` | Skip | 内部回调，仅搬运异步状态到同步等待数据。 |
-| smb2_connect_share | function | `int smb2_connect_share(struct smb2_context *smb2, const char *server, const char *share, const char *user)` | Include | 公开同步连接入口，封装异步连接和阻塞等待。 |
-| smb2_disconnect_share | function | `int smb2_disconnect_share(struct smb2_context *smb2)` | Include | 公开同步断开入口，封装异步断开和阻塞等待。 |
-| sync_opendir_cb | function | `static void sync_opendir_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data)` | Skip | 内部回调，仅将目录结果和状态写入同步等待数据。 |
-| smb2_opendir | function | `struct smb2dir *smb2_opendir(struct smb2_context *smb2, const char *path)` | Include | 公开同步目录打开入口，返回需由调用方关闭的目录句柄。 |
-| sync_open_cb | function | `static void sync_open_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data)` | Skip | 内部回调，仅保存打开结果指针。 |
-| smb2_open | function | `struct smb2fh *smb2_open(struct smb2_context *smb2, const char *path, int flags)` | Include | 公开同步文件打开入口，返回需由调用方关闭的文件句柄。 |
-| sync_close_cb | function | `static void sync_close_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data)` | Skip | 内部回调，仅保存 close 状态并处理取消释放。 |
-| smb2_close | function | `int smb2_close(struct smb2_context *smb2, struct smb2fh *fh)` | Include | 公开同步文件关闭入口，返回异步 close 状态。 |
-| sync_fsync_cb | function | `static void sync_fsync_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data)` | Skip | 内部回调，仅保存 fsync 状态并处理取消释放。 |
-| smb2_fsync | function | `int smb2_fsync(struct smb2_context *smb2, struct smb2fh *fh)` | Include | 公开同步 flush 入口，返回异步 fsync 状态。 |
-| sync_generic_status_cb | function | `static void sync_generic_status_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data)` | Skip | 内部通用状态回调，语义归属到各公开同步 wrapper。 |
-| smb2_pread | function | `int smb2_pread(struct smb2_context *smb2, struct smb2fh *fh, uint8_t *buf, uint32_t count, uint64_t offset)` | Include | 公开同步按偏移读取入口，返回字节数或负 errno。 |
-| smb2_pwrite | function | `int smb2_pwrite(struct smb2_context *smb2, struct smb2fh *fh, const uint8_t *buf, uint32_t count, uint64_t offset)` | Include | 公开同步按偏移写入入口，返回字节数或负 errno。 |
-| smb2_read | function | `int smb2_read(struct smb2_context *smb2, struct smb2fh *fh, uint8_t *buf, uint32_t count)` | Include | 公开同步顺序读取入口，返回字节数或负 errno。 |
-| smb2_write | function | `int smb2_write(struct smb2_context *smb2, struct smb2fh *fh, const uint8_t *buf, uint32_t count)` | Include | 公开同步顺序写入入口，返回字节数或负 errno。 |
-| smb2_unlink | function | `int smb2_unlink(struct smb2_context *smb2, const char *path)` | Include | 公开同步删除文件入口，返回异步 unlink 状态。 |
-| smb2_rmdir | function | `int smb2_rmdir(struct smb2_context *smb2, const char *path)` | Include | 公开同步删除目录入口，返回异步 rmdir 状态。 |
-| smb2_mkdir | function | `int smb2_mkdir(struct smb2_context *smb2, const char *path)` | Include | 公开同步创建目录入口，返回异步 mkdir 状态。 |
-| smb2_fstat | function | `int smb2_fstat(struct smb2_context *smb2, struct smb2fh *fh, struct smb2_stat_64 *st)` | Include | 公开同步文件句柄 stat 入口，将结果写入调用方缓冲区。 |
-| smb2_stat | function | `int smb2_stat(struct smb2_context *smb2, const char *path, struct smb2_stat_64 *st)` | Include | 公开同步路径 stat 入口，将结果写入调用方缓冲区。 |
-| smb2_rename | function | `int smb2_rename(struct smb2_context *smb2, const char *oldpath, const char *newpath)` | Include | 公开同步重命名入口，返回异步 rename 状态。 |
-| smb2_statvfs | function | `int smb2_statvfs(struct smb2_context *smb2, const char *path, struct smb2_statvfs *statvfs)` | Include | 公开同步文件系统 stat 入口，将结果写入调用方缓冲区。 |
-| smb2_truncate | function | `int smb2_truncate(struct smb2_context *smb2, const char *path, uint64_t length)` | Include | 公开同步路径截断入口，返回异步 truncate 状态。 |
-| smb2_ftruncate | function | `int smb2_ftruncate(struct smb2_context *smb2, struct smb2fh *fh, uint64_t length)` | Include | 公开同步文件句柄截断入口，返回异步 ftruncate 状态。 |
-| sync_readlink_cb_data | type | `struct sync_readlink_cb_data { char *buf; int len; };` | Skip | 文件内部 callback 数据结构，不对调用方暴露 ABI。 |
-| readlink_cb | function | `static void readlink_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data)` | Skip | 内部回调，将 readlink 响应复制到调用方缓冲区。 |
-| smb2_readlink | function | `int smb2_readlink(struct smb2_context *smb2, const char *path, char *buf, uint32_t bufsiz)` | Include | 公开同步 readlink 入口，将链接内容复制到调用方缓冲区。 |
-| sync_echo_cb | function | `static void sync_echo_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data)` | Skip | 内部回调，仅保存 echo 状态。 |
-| smb2_echo | function | `int smb2_echo(struct smb2_context *smb2)` | Include | 公开同步 echo 入口，包含未连接检查。 |
-| sync_notify_change_cb | function | `static void sync_notify_change_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data)` | Skip | 内部回调，仅保存 notify change 响应指针。 |
-| smb2_notify_change | function | `struct smb2_file_notify_change_information *smb2_notify_change(struct smb2_context *smb2, const char *path, uint16_t flags, uint32_t filter)` | Include | 公开一次性同步 notify change 入口，返回需调用方释放的响应链。 |
-| sync_share_enum_cb | function | `static void sync_share_enum_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data)` | Skip | 内部回调，仅保存 share enum 响应和状态。 |
-| smb2_share_enum_sync | function | `struct srvsvc_NetrShareEnum_rep *smb2_share_enum_sync(struct smb2_context *smb2, enum SHARE_INFO_enum level)` | Include | 公开同步 SRVSVC ShareEnum 入口，要求 IPC$ share 上下文。 |
+| wait_for_reply | function | static int wait_for_reply(struct smb2_context *smb2, struct sync_cb_data *cb_data) | Skip | 内部阻塞轮询 helper，无独立公开 ABI；其轮询、超时和 service 错误语义归属到各同步 wrapper。 |
+| sync_connect_cb | function | static void sync_connect_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data) | Skip | 内部回调，仅搬运异步状态到同步等待数据。 |
+| smb2_connect_share | function | int smb2_connect_share(struct smb2_context *smb2, const char *server, const char *share, const char *user) | Include | 公开同步连接入口，封装异步连接和阻塞等待。 |
+| smb2_disconnect_share | function | int smb2_disconnect_share(struct smb2_context *smb2) | Include | 公开同步断开入口，封装异步断开和阻塞等待。 |
+| sync_opendir_cb | function | static void sync_opendir_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data) | Skip | 内部回调，仅将目录结果和状态写入同步等待数据。 |
+| smb2_opendir | function | struct smb2dir *smb2_opendir(struct smb2_context *smb2, const char *path) | Include | 公开同步目录打开入口，返回需由调用方关闭的目录句柄。 |
+| sync_open_cb | function | static void sync_open_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data) | Skip | 内部回调，仅保存打开结果指针。 |
+| smb2_open | function | struct smb2fh *smb2_open(struct smb2_context *smb2, const char *path, int flags) | Include | 公开同步文件打开入口，返回需由调用方关闭的文件句柄。 |
+| sync_close_cb | function | static void sync_close_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data) | Skip | 内部回调，仅保存 close 状态并处理取消释放。 |
+| smb2_close | function | int smb2_close(struct smb2_context *smb2, struct smb2fh *fh) | Include | 公开同步文件关闭入口，返回异步 close 状态。 |
+| sync_fsync_cb | function | static void sync_fsync_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data) | Skip | 内部回调，仅保存 fsync 状态并处理取消释放。 |
+| smb2_fsync | function | int smb2_fsync(struct smb2_context *smb2, struct smb2fh *fh) | Include | 公开同步 flush 入口，返回异步 fsync 状态。 |
+| sync_generic_status_cb | function | static void sync_generic_status_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data) | Skip | 内部通用状态回调，语义归属到各公开同步 wrapper。 |
+| smb2_pread | function | int smb2_pread(struct smb2_context *smb2, struct smb2fh *fh, uint8_t *buf, uint32_t count, uint64_t offset) | Include | 公开同步按偏移读取入口，返回字节数或负 errno。 |
+| smb2_pwrite | function | int smb2_pwrite(struct smb2_context *smb2, struct smb2fh *fh, const uint8_t *buf, uint32_t count, uint64_t offset) | Include | 公开同步按偏移写入入口，返回字节数或负 errno。 |
+| smb2_read | function | int smb2_read(struct smb2_context *smb2, struct smb2fh *fh, uint8_t *buf, uint32_t count) | Include | 公开同步顺序读取入口，返回字节数或负 errno。 |
+| smb2_write | function | int smb2_write(struct smb2_context *smb2, struct smb2fh *fh, const uint8_t *buf, uint32_t count) | Include | 公开同步顺序写入入口，返回字节数或负 errno。 |
+| smb2_unlink | function | int smb2_unlink(struct smb2_context *smb2, const char *path) | Include | 公开同步删除文件入口，返回异步 unlink 状态。 |
+| smb2_rmdir | function | int smb2_rmdir(struct smb2_context *smb2, const char *path) | Include | 公开同步删除目录入口，返回异步 rmdir 状态。 |
+| smb2_mkdir | function | int smb2_mkdir(struct smb2_context *smb2, const char *path) | Include | 公开同步创建目录入口，返回异步 mkdir 状态。 |
+| smb2_fstat | function | int smb2_fstat(struct smb2_context *smb2, struct smb2fh *fh, struct smb2_stat_64 *st) | Include | 公开同步文件句柄 stat 入口，将结果写入调用方缓冲区。 |
+| smb2_stat | function | int smb2_stat(struct smb2_context *smb2, const char *path, struct smb2_stat_64 *st) | Include | 公开同步路径 stat 入口，将结果写入调用方缓冲区。 |
+| smb2_rename | function | int smb2_rename(struct smb2_context *smb2, const char *oldpath, const char *newpath) | Include | 公开同步重命名入口，返回异步 rename 状态。 |
+| smb2_statvfs | function | int smb2_statvfs(struct smb2_context *smb2, const char *path, struct smb2_statvfs *statvfs) | Include | 公开同步文件系统 stat 入口，将结果写入调用方缓冲区。 |
+| smb2_truncate | function | int smb2_truncate(struct smb2_context *smb2, const char *path, uint64_t length) | Include | 公开同步路径截断入口，返回异步 truncate 状态。 |
+| smb2_ftruncate | function | int smb2_ftruncate(struct smb2_context *smb2, struct smb2fh *fh, uint64_t length) | Include | 公开同步文件句柄截断入口，返回异步 ftruncate 状态。 |
+| sync_readlink_cb_data | type | struct sync_readlink_cb_data { char *buf; int len; }; | Skip | 文件内部 callback 数据结构，不对调用方暴露 ABI。 |
+| readlink_cb | function | static void readlink_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data) | Skip | 内部回调，将 readlink 响应复制到调用方缓冲区。 |
+| smb2_readlink | function | int smb2_readlink(struct smb2_context *smb2, const char *path, char *buf, uint32_t bufsiz) | Include | 公开同步 readlink 入口，将链接内容复制到调用方缓冲区。 |
+| sync_echo_cb | function | static void sync_echo_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data) | Skip | 内部回调，仅保存 echo 状态。 |
+| smb2_echo | function | int smb2_echo(struct smb2_context *smb2) | Include | 公开同步 echo 入口，包含未连接检查。 |
+| sync_notify_change_cb | function | static void sync_notify_change_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data) | Skip | 内部回调，仅保存 notify change 响应指针。 |
+| smb2_notify_change | function | struct smb2_file_notify_change_information *smb2_notify_change(struct smb2_context *smb2, const char *path, uint16_t flags, uint32_t filter) | Include | 公开一次性同步 notify change 入口，返回需调用方释放的响应链。 |
+| sync_share_enum_cb | function | static void sync_share_enum_cb(struct smb2_context *smb2, int status, void *command_data, void *private_data) | Skip | 内部回调，仅保存 share enum 响应和状态。 |
+| smb2_share_enum_sync | function | struct srvsvc_NetrShareEnum_rep *smb2_share_enum_sync(struct smb2_context *smb2, enum SHARE_INFO_enum level) | Include | 公开同步 SRVSVC ShareEnum 入口，要求 IPC$ share 上下文。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| sync_readlink_cb_data | struct | `lib/sync.c:782` | 内部 readlink 回调数据，保存调用方输出缓冲区指针和长度。 |
+| sync_readlink_cb_data | struct | lib/sync.c:782 | 内部 readlink 回调数据，保存调用方输出缓冲区指针和长度。 |
 
 ## ADDED Requirements
 
@@ -325,7 +325,7 @@ Trace: `lib/sync.c:smb2_share_enum_sync`, `include/smb2/libsmb2-dcerpc-srvsvc.h:
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `wait_for_reply` 在等待失败路径中部分 wrapper 直接返回而不释放 `cb_data`，这些路径是否依赖取消回调释放仍待确认。 | `smb2_fsync`, `smb2_pread`, `smb2_pwrite`, `smb2_read`, `smb2_write`, `smb2_unlink`, `smb2_rmdir`, `smb2_mkdir`, `smb2_fstat`, `smb2_stat`, `smb2_rename`, `smb2_statvfs`, `smb2_truncate`, `smb2_ftruncate`, `smb2_readlink`, `smb2_echo` | 源码存在 `cb_data->status = SMB2_STATUS_CANCELLED; return rc;` 早退，释放责任需要结合异步回调/PDU 生命周期确认。 |
-| Q-002 | `smb2_readlink` 使用 `strncpy(rl_data->buf, command_data, rl_data->len)` 时是否保证 NUL 终止仍待确认。 | `smb2_readlink` | 源码按长度复制，但 public header 只声明 `bufsiz`，未说明终止规则。 |
-| Q-003 | `smb2_echo` 未连接时返回 `-ENOMEM` 是否为稳定 ABI 语义仍待确认。 | `smb2_echo` | 源码对未连接设置 `Not Connected to Server` 后返回 `-ENOMEM`，错误码与语义名称不一致。 |
-| Q-004 | `smb2_share_enum_sync` 等待失败路径未设置 `SMB2_STATUS_CANCELLED` 且直接返回 `NULL`，是否存在回调数据生命周期差异仍待确认。 | `smb2_share_enum_sync` | 源码与多数同步 wrapper 的取消处理不一致。 |
+| Q-001 | `wait_for_reply` 在等待失败路径中部分 wrapper 直接返回而不释放 `cb_data`，这些路径是否依赖取消回调释放仍待确认。 | smb2_fsync`, `smb2_pread`, `smb2_pwrite`, `smb2_read`, `smb2_write`, `smb2_unlink`, `smb2_rmdir`, `smb2_mkdir`, `smb2_fstat`, `smb2_stat`, `smb2_rename`, `smb2_statvfs`, `smb2_truncate`, `smb2_ftruncate`, `smb2_readlink`, `smb2_echo | 源码存在 `cb_data->status = SMB2_STATUS_CANCELLED; return rc;` 早退，释放责任需要结合异步回调/PDU 生命周期确认。 |
+| Q-002 | `smb2_readlink` 使用 `strncpy(rl_data->buf, command_data, rl_data->len)` 时是否保证 NUL 终止仍待确认。 | smb2_readlink | 源码按长度复制，但 public header 只声明 `bufsiz`，未说明终止规则。 |
+| Q-003 | `smb2_echo` 未连接时返回 `-ENOMEM` 是否为稳定 ABI 语义仍待确认。 | smb2_echo | 源码对未连接设置 `Not Connected to Server` 后返回 `-ENOMEM`，错误码与语义名称不一致。 |
+| Q-004 | `smb2_share_enum_sync` 等待失败路径未设置 `SMB2_STATUS_CANCELLED` 且直接返回 `NULL`，是否存在回调数据生命周期差异仍待确认。 | smb2_share_enum_sync | 源码与多数同步 wrapper 的取消处理不一致。 |

@@ -12,16 +12,16 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| MD4_CTX | type | `typedef struct { uint32_t state[4]; uint32_t count[2]; unsigned char buffer[64]; } MD4_CTX;` | Include | 公开上下文结构承载 MD4 状态、位计数和缓冲区，调用方需按声明分配并传入 MD4 生命周期接口。 |
-| MD4Init | function | `void MD4Init(MD4_CTX *);` | Include | 公开初始化入口，定义上下文从未初始化到可更新状态的生命周期起点。 |
-| MD4Update | function | `void MD4Update(MD4_CTX *, unsigned char *, unsigned int);` | Include | 公开增量输入入口，更新上下文计数、缓冲和状态，供 NTLM 哈希路径跨文件调用。 |
-| MD4Final | function | `void MD4Final(unsigned char [16], MD4_CTX *);` | Include | 公开终结入口，输出 16 字节摘要并清零上下文，影响资源和敏感数据生命周期。 |
+| MD4_CTX | type | typedef struct { uint32_t state[4]; uint32_t count[2]; unsigned char buffer[64]; } MD4_CTX; | Include | 公开上下文结构承载 MD4 状态、位计数和缓冲区，调用方需按声明分配并传入 MD4 生命周期接口。 |
+| MD4Init | function | void MD4Init(MD4_CTX *); | Include | 公开初始化入口，定义上下文从未初始化到可更新状态的生命周期起点。 |
+| MD4Update | function | void MD4Update(MD4_CTX *, unsigned char *, unsigned int); | Include | 公开增量输入入口，更新上下文计数、缓冲和状态，供 NTLM 哈希路径跨文件调用。 |
+| MD4Final | function | void MD4Final(unsigned char [16], MD4_CTX *); | Include | 公开终结入口，输出 16 字节摘要并清零上下文，影响资源和敏感数据生命周期。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| MD4_CTX | typedef | `lib/md4.h:33` | MD4 调用方可见上下文，包含 4 个 32 位状态字、2 个 32 位 bit count 字和 64 字节输入缓冲区。 |
+| MD4_CTX | typedef | lib/md4.h:33 | MD4 调用方可见上下文，包含 4 个 32 位状态字、2 个 32 位 bit count 字和 64 字节输入缓冲区。 |
 
 ## ADDED Requirements
 

@@ -12,27 +12,27 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_encode_create_request | function | `static int smb2_encode_create_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_create_request *req)` | Skip | 静态 helper，仅服务 `smb2_cmd_create_async` 的请求编码，错误和资源语义归属到公开入口。 |
-| smb2_cmd_create_async | function | `struct smb2_pdu *smb2_cmd_create_async(struct smb2_context *smb2, struct smb2_create_request *req, smb2_command_cb cb, void *cb_data)` | Include | RAW create 公开构造入口，跨模块调用并决定 PDU 生命周期、路径编码和失败返回。 |
-| smb2_encode_create_reply | function | `static int smb2_encode_create_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_create_reply *rep)` | Skip | 静态 helper，仅服务 `smb2_cmd_create_reply_async` 的回复编码，行为归属到公开 reply builder。 |
-| smb2_cmd_create_reply_async | function | `struct smb2_pdu *smb2_cmd_create_reply_async(struct smb2_context *smb2, struct smb2_create_reply *rep, smb2_command_cb cb, void *cb_data)` | Include | SMB2 server-side create reply PDU 构造入口，被请求回调路径跨文件调用。 |
-| smb2_process_create_fixed | function | `int smb2_process_create_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有但跨文件声明的 reply fixed parser，影响 PDU payload、长度校验和后续 variable 读取。 |
-| smb2_process_create_variable | function | `int smb2_process_create_variable(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有但跨文件声明的 reply variable parser，决定 create context 指针暴露语义。 |
-| smb2_process_create_request_fixed | function | `int smb2_process_create_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有但跨文件声明的 request fixed parser，影响 server-side 请求 payload、name/context 边界校验和剩余长度。 |
-| smb2_process_create_request_variable | function | `int smb2_process_create_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有但跨文件声明的 request variable parser，执行 UTF-16 名称转换、SMB2 内存归属和 create context 指针绑定。 |
-| CCX_OFFSET | macro | `#define CCX_OFFSET() PAD_TO_64BIT(SMB2_HEADER_SIZE + (SMB2_CREATE_REQUEST_SIZE & 0xfffe) + (req->name_length ? req->name_length : 1));` | Skip | 文件内未使用宏，无当前调用方可观察行为。 |
-| IOV_OFFSET_CREATE | macro | `#define IOV_OFFSET_CREATE (rep->create_context_offset - SMB2_HEADER_SIZE - (SMB2_CREATE_REPLY_SIZE & 0xfffe))` | Skip | 文件内 offset helper，仅支持 included parser 的场景描述。 |
-| IOVREQ_OFFSET_CREATE | macro | `#define IOVREQ_OFFSET_CREATE (req->name_offset - SMB2_HEADER_SIZE - (SMB2_CREATE_REQUEST_SIZE & 0xfffe))` | Skip | 文件内 offset helper，仅支持 included request parser 的场景描述。 |
+| smb2_encode_create_request | function | static int smb2_encode_create_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_create_request *req) | Skip | 静态 helper，仅服务 `smb2_cmd_create_async` 的请求编码，错误和资源语义归属到公开入口。 |
+| smb2_cmd_create_async | function | struct smb2_pdu *smb2_cmd_create_async(struct smb2_context *smb2, struct smb2_create_request *req, smb2_command_cb cb, void *cb_data) | Include | RAW create 公开构造入口，跨模块调用并决定 PDU 生命周期、路径编码和失败返回。 |
+| smb2_encode_create_reply | function | static int smb2_encode_create_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_create_reply *rep) | Skip | 静态 helper，仅服务 `smb2_cmd_create_reply_async` 的回复编码，行为归属到公开 reply builder。 |
+| smb2_cmd_create_reply_async | function | struct smb2_pdu *smb2_cmd_create_reply_async(struct smb2_context *smb2, struct smb2_create_reply *rep, smb2_command_cb cb, void *cb_data) | Include | SMB2 server-side create reply PDU 构造入口，被请求回调路径跨文件调用。 |
+| smb2_process_create_fixed | function | int smb2_process_create_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有但跨文件声明的 reply fixed parser，影响 PDU payload、长度校验和后续 variable 读取。 |
+| smb2_process_create_variable | function | int smb2_process_create_variable(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有但跨文件声明的 reply variable parser，决定 create context 指针暴露语义。 |
+| smb2_process_create_request_fixed | function | int smb2_process_create_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有但跨文件声明的 request fixed parser，影响 server-side 请求 payload、name/context 边界校验和剩余长度。 |
+| smb2_process_create_request_variable | function | int smb2_process_create_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有但跨文件声明的 request variable parser，执行 UTF-16 名称转换、SMB2 内存归属和 create context 指针绑定。 |
+| CCX_OFFSET | macro | #define CCX_OFFSET() PAD_TO_64BIT(SMB2_HEADER_SIZE + (SMB2_CREATE_REQUEST_SIZE & 0xfffe) + (req->name_length ? req->name_length : 1)); | Skip | 文件内未使用宏，无当前调用方可观察行为。 |
+| IOV_OFFSET_CREATE | macro | #define IOV_OFFSET_CREATE (rep->create_context_offset - SMB2_HEADER_SIZE - (SMB2_CREATE_REPLY_SIZE & 0xfffe)) | Skip | 文件内 offset helper，仅支持 included parser 的场景描述。 |
+| IOVREQ_OFFSET_CREATE | macro | #define IOVREQ_OFFSET_CREATE (req->name_offset - SMB2_HEADER_SIZE - (SMB2_CREATE_REQUEST_SIZE & 0xfffe)) | Skip | 文件内 offset helper，仅支持 included request parser 的场景描述。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| struct smb2_create_request | struct | `include/smb2/smb2.h:324` | Create 请求模型包含安全标志、oplock、访问掩码、共享模式、创建处置、名称 offset/length、UTF-8 name 和 create context 指针/长度。 |
-| struct smb2_create_reply | struct | `include/smb2/smb2.h:361` | Create 回复模型包含 oplock、action、时间戳、大小、属性、file_id 和 create context 指针/offset/length。 |
-| SMB2_CREATE_REQUEST_SIZE | macro | `include/smb2/smb2.h` | 请求 fixed structure size，由编码和解析路径用于结构长度校验。 |
-| SMB2_CREATE_REPLY_SIZE | macro | `include/smb2/smb2.h:342` | 回复 fixed structure size 为 89，编码和解析以低 bit 清除后的长度作为 iovec fixed 长度。 |
-| SMB2_FD_SIZE | macro | `include/smb2/smb2.h:344` | file_id 复制长度为 16 字节。 |
+| struct smb2_create_request | struct | include/smb2/smb2.h:324 | Create 请求模型包含安全标志、oplock、访问掩码、共享模式、创建处置、名称 offset/length、UTF-8 name 和 create context 指针/长度。 |
+| struct smb2_create_reply | struct | include/smb2/smb2.h:361 | Create 回复模型包含 oplock、action、时间戳、大小、属性、file_id 和 create context 指针/offset/length。 |
+| SMB2_CREATE_REQUEST_SIZE | macro | include/smb2/smb2.h | 请求 fixed structure size，由编码和解析路径用于结构长度校验。 |
+| SMB2_CREATE_REPLY_SIZE | macro | include/smb2/smb2.h:342 | 回复 fixed structure size 为 89，编码和解析以低 bit 清除后的长度作为 iovec fixed 长度。 |
+| SMB2_FD_SIZE | macro | include/smb2/smb2.h:344 | file_id 复制长度为 16 字节。 |
 
 ## ADDED Requirements
 

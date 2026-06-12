@@ -12,20 +12,20 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_encode_flush_request | function | `static int smb2_encode_flush_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_flush_request *req)` | Skip | 静态编码 helper，仅由本文件 `smb2_cmd_flush_async` 调用，行为归入公开 flush 命令构造契约。 |
-| smb2_cmd_flush_async | function | `struct smb2_pdu *smb2_cmd_flush_async(struct smb2_context *smb2, struct smb2_flush_request *req, smb2_command_cb cb, void *cb_data)` | Include | 原型在 `include/smb2/libsmb2-raw.h` 声明，被 `smb2_fsync_async` 调用，构造客户端 SMB2 FLUSH PDU。 |
-| smb2_encode_flush_reply | function | `static int smb2_encode_flush_reply(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Skip | 静态编码 helper，仅由本文件 `smb2_cmd_flush_reply_async` 调用，行为归入 reply 构造契约。 |
-| smb2_cmd_flush_reply_async | function | `struct smb2_pdu *smb2_cmd_flush_reply_async(struct smb2_context *smb2, smb2_command_cb cb, void *cb_data)` | Include | 原型在 `include/smb2/libsmb2-raw.h` 声明，被服务端 flush request callback 调用，构造 SMB2 FLUSH reply PDU。 |
-| smb2_process_flush_fixed | function | `int smb2_process_flush_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有解析入口在 `include/libsmb2-private.h` 声明，由 reply fixed payload dispatcher 调用，校验 FLUSH reply 固定区。 |
-| smb2_process_flush_request_fixed | function | `int smb2_process_flush_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有解析入口在 `include/libsmb2-private.h` 声明，由 request fixed payload dispatcher 调用，解析服务端收到的 FLUSH request。 |
+| smb2_encode_flush_request | function | static int smb2_encode_flush_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_flush_request *req) | Skip | 静态编码 helper，仅由本文件 `smb2_cmd_flush_async` 调用，行为归入公开 flush 命令构造契约。 |
+| smb2_cmd_flush_async | function | struct smb2_pdu *smb2_cmd_flush_async(struct smb2_context *smb2, struct smb2_flush_request *req, smb2_command_cb cb, void *cb_data) | Include | 原型在 `include/smb2/libsmb2-raw.h` 声明，被 `smb2_fsync_async` 调用，构造客户端 SMB2 FLUSH PDU。 |
+| smb2_encode_flush_reply | function | static int smb2_encode_flush_reply(struct smb2_context *smb2, struct smb2_pdu *pdu) | Skip | 静态编码 helper，仅由本文件 `smb2_cmd_flush_reply_async` 调用，行为归入 reply 构造契约。 |
+| smb2_cmd_flush_reply_async | function | struct smb2_pdu *smb2_cmd_flush_reply_async(struct smb2_context *smb2, smb2_command_cb cb, void *cb_data) | Include | 原型在 `include/smb2/libsmb2-raw.h` 声明，被服务端 flush request callback 调用，构造 SMB2 FLUSH reply PDU。 |
+| smb2_process_flush_fixed | function | int smb2_process_flush_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有解析入口在 `include/libsmb2-private.h` 声明，由 reply fixed payload dispatcher 调用，校验 FLUSH reply 固定区。 |
+| smb2_process_flush_request_fixed | function | int smb2_process_flush_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有解析入口在 `include/libsmb2-private.h` 声明，由 request fixed payload dispatcher 调用，解析服务端收到的 FLUSH request。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SMB2_FLUSH_REQUEST_SIZE | macro | `include/smb2/smb2.h:400` | FLUSH request 固定结构大小为 24，编码和 request 解析均使用该值并按偶数长度校验。 |
-| struct smb2_flush_request | struct | `include/smb2/smb2.h:402` | FLUSH request 对外数据模型，仅包含 `smb2_file_id file_id`。 |
-| SMB2_FLUSH_REPLY_SIZE | macro | `include/smb2/smb2.h:418` | FLUSH reply 固定结构大小为 4，reply 编码和 reply 解析均使用该值并按偶数长度校验。 |
+| SMB2_FLUSH_REQUEST_SIZE | macro | include/smb2/smb2.h:400 | FLUSH request 固定结构大小为 24，编码和 request 解析均使用该值并按偶数长度校验。 |
+| struct smb2_flush_request | struct | include/smb2/smb2.h:402 | FLUSH request 对外数据模型，仅包含 `smb2_file_id file_id`。 |
+| SMB2_FLUSH_REPLY_SIZE | macro | include/smb2/smb2.h:418 | FLUSH reply 固定结构大小为 4，reply 编码和 reply 解析均使用该值并按偶数长度校验。 |
 
 ## ADDED Requirements
 

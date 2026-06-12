@@ -12,51 +12,51 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| `ntlmssp_init_context` | function | `struct auth_data * ntlmssp_init_context(const char *user, const char *password, const char *domain, const char *workstation, const char *client_challenge);` | Include | 公开声明的 NTLMSSP 上下文生命周期入口，分配认证状态、复制凭据并初始化 challenge/session-key 状态。 |
-| `ntlmssp_destroy_context` | function | `void ntlmssp_destroy_context(struct auth_data *auth);` | Include | 公开声明的生命周期清理入口，释放上下文拥有的动态字段和上下文本身。 |
-| `ntlmssp_set_spnego_wrapping` | function | `void ntlmssp_set_spnego_wrapping(struct auth_data *auth, int wrap);` | Include | 公开声明的状态设置入口，影响后续 blob 是否经 SPNEGO 包装。 |
-| `ntlmssp_get_spnego_wrapping` | function | `int ntlmssp_get_spnego_wrapping(struct auth_data *auth);` | Include | 公开声明的状态查询入口，返回当前 SPNEGO 包装标志。 |
-| `ntlmssp_get_message_type` | function | `int ntlmssp_get_message_type(struct smb2_context *smb2, uint8_t *ntlmssp_buffer, int len, int suppress_errors, uint32_t *message_type, uint8_t **ntlmssp_ptr, int *ntlmssp_len, int *is_wrapped);` | Include | 公开声明的 NTLMSSP/SPNEGO 解析入口，调用方可观察输出参数、错误码和 wrapped 标志。 |
-| `ntlmssp_generate_blob` | function | `int ntlmssp_generate_blob(struct smb2_server *server, struct smb2_context *smb2, time_t t, struct auth_data *auth_data, unsigned char *input_buf, int input_len, unsigned char **output_buf, uint16_t *output_len);` | Include | 公开声明的客户端/服务端 NTLMSSP 握手核心入口，生成 negotiate、challenge、authenticate 或 auth-result blob。 |
-| `ntlmssp_authenticate_blob` | function | `int ntlmssp_authenticate_blob(struct smb2_server *server, struct smb2_context *smb2, struct auth_data *auth_data, unsigned char *input_buf, int input_len);` | Include | 公开声明的服务端认证校验入口，解析 AUTHENTICATION_MESSAGE、调用授权处理器并验证 NT proof。 |
-| `ntlmssp_get_authenticated` | function | `int ntlmssp_get_authenticated(struct auth_data *auth);` | Include | 公开声明的认证状态查询入口，被 session setup 路径用于判断服务端认证结果。 |
-| `ntlmssp_get_session_key` | function | `int ntlmssp_get_session_key(struct auth_data *auth, uint8_t **key, uint8_t *key_size);` | Include | 公开声明的会话密钥导出入口，分配并返回 `SMB2_KEY_SIZE` 字节 key 副本。 |
-| `ntlmssp_get_utf16_field` | function | `void ntlmssp_get_utf16_field(uint8_t *input_buf, int input_len, int offset, char **result);` | Skip | 仅在本实现文件内部使用，未在 `lib/ntlmssp.h` 声明，行为归属到 `ntlmssp_authenticate_blob`。 |
-| `auth_data_set_password` | function | `static int auth_data_set_password(struct auth_data *auth_data, const char *password);` | Skip | `static` 内部 helper，仅管理上下文字段，行为归属到初始化和认证 blob 编码 Requirement。 |
-| `auth_data_set_domain` | function | `static int auth_data_set_domain(struct auth_data *auth_data, const char *domain);` | Skip | `static` 内部 helper，仅管理上下文字段，行为归属到初始化和认证 blob 编码 Requirement。 |
-| `encoder` | function | `static int encoder(const void *buffer, size_t size, void *ptr);` | Skip | `static` 内部缓冲追加 helper，调用方不可直接观察，错误语义归属到上层 blob 生成接口。 |
-| `encode_ntlm_negotiate_message` | function | `static int encode_ntlm_negotiate_message(struct smb2_context *smb2, struct auth_data *auth_data);` | Skip | `static` 内部编码 helper，协商消息行为归属到 `ntlmssp_generate_blob`。 |
-| `ntlm_decode_challenge_message` | function | `static int ntlm_decode_challenge_message(struct smb2_context *smb2, struct auth_data *auth_data, unsigned char *buf, size_t len);` | Skip | `static` 内部解析 helper，challenge 解析行为归属到 `ntlmssp_generate_blob`。 |
-| `ntlm_convert_password_hash` | function | `static int ntlm_convert_password_hash(const char *password, unsigned char password_hash[16]);` | Skip | `static` 内部密码 hash helper，认证计算行为归属到 `ntlmssp_generate_blob` 和 `ntlmssp_authenticate_blob`。 |
-| `NTOWFv1` | function | `static int NTOWFv1(const char *password, unsigned char password_hash[16]);` | Skip | `static` 内部 NT hash helper，认证计算行为归属到上层认证接口。 |
-| `NTOWFv2` | function | `static int NTOWFv2(const char *user, const char *password, const char *domain, unsigned char ntlmv2_hash[16]);` | Skip | `static` 内部 NTLMv2 hash helper，认证计算行为归属到上层认证接口。 |
-| `encode_temp` | function | `static int encode_temp(struct auth_data *auth_data, uint64_t t, uint8_t *client_challenge, size_t client_challenge_len, uint8_t *server_challenge, uint8_t *server_name, size_t server_name_len);` | Skip | `static` 内部 NTLMv2 temp buffer helper，输出归属到 `ntlmssp_generate_blob`。 |
-| `encode_ntlm_auth` | function | `static int encode_ntlm_auth(struct smb2_context *smb2, time_t ti, struct auth_data *auth_data, char *server_challenge);` | Skip | `static` 内部 AUTHENTICATION_MESSAGE 编码 helper，行为归属到 `ntlmssp_generate_blob`。 |
-| `encode_ntlm_challenge` | function | `static int encode_ntlm_challenge(struct smb2_context *smb2, struct auth_data *auth_data);` | Skip | `static` 内部 CHALLENGE_MESSAGE 编码 helper，行为归属到 `ntlmssp_generate_blob`。 |
+| ntlmssp_init_context | function | struct auth_data * ntlmssp_init_context(const char *user, const char *password, const char *domain, const char *workstation, const char *client_challenge); | Include | 公开声明的 NTLMSSP 上下文生命周期入口，分配认证状态、复制凭据并初始化 challenge/session-key 状态。 |
+| ntlmssp_destroy_context | function | void ntlmssp_destroy_context(struct auth_data *auth); | Include | 公开声明的生命周期清理入口，释放上下文拥有的动态字段和上下文本身。 |
+| ntlmssp_set_spnego_wrapping | function | void ntlmssp_set_spnego_wrapping(struct auth_data *auth, int wrap); | Include | 公开声明的状态设置入口，影响后续 blob 是否经 SPNEGO 包装。 |
+| ntlmssp_get_spnego_wrapping | function | int ntlmssp_get_spnego_wrapping(struct auth_data *auth); | Include | 公开声明的状态查询入口，返回当前 SPNEGO 包装标志。 |
+| ntlmssp_get_message_type | function | int ntlmssp_get_message_type(struct smb2_context *smb2, uint8_t *ntlmssp_buffer, int len, int suppress_errors, uint32_t *message_type, uint8_t **ntlmssp_ptr, int *ntlmssp_len, int *is_wrapped); | Include | 公开声明的 NTLMSSP/SPNEGO 解析入口，调用方可观察输出参数、错误码和 wrapped 标志。 |
+| ntlmssp_generate_blob | function | int ntlmssp_generate_blob(struct smb2_server *server, struct smb2_context *smb2, time_t t, struct auth_data *auth_data, unsigned char *input_buf, int input_len, unsigned char **output_buf, uint16_t *output_len); | Include | 公开声明的客户端/服务端 NTLMSSP 握手核心入口，生成 negotiate、challenge、authenticate 或 auth-result blob。 |
+| ntlmssp_authenticate_blob | function | int ntlmssp_authenticate_blob(struct smb2_server *server, struct smb2_context *smb2, struct auth_data *auth_data, unsigned char *input_buf, int input_len); | Include | 公开声明的服务端认证校验入口，解析 AUTHENTICATION_MESSAGE、调用授权处理器并验证 NT proof。 |
+| ntlmssp_get_authenticated | function | int ntlmssp_get_authenticated(struct auth_data *auth); | Include | 公开声明的认证状态查询入口，被 session setup 路径用于判断服务端认证结果。 |
+| ntlmssp_get_session_key | function | int ntlmssp_get_session_key(struct auth_data *auth, uint8_t **key, uint8_t *key_size); | Include | 公开声明的会话密钥导出入口，分配并返回 `SMB2_KEY_SIZE` 字节 key 副本。 |
+| ntlmssp_get_utf16_field | function | void ntlmssp_get_utf16_field(uint8_t *input_buf, int input_len, int offset, char **result); | Skip | 仅在本实现文件内部使用，未在 `lib/ntlmssp.h` 声明，行为归属到 `ntlmssp_authenticate_blob`。 |
+| auth_data_set_password | function | static int auth_data_set_password(struct auth_data *auth_data, const char *password); | Skip | `static` 内部 helper，仅管理上下文字段，行为归属到初始化和认证 blob 编码 Requirement。 |
+| auth_data_set_domain | function | static int auth_data_set_domain(struct auth_data *auth_data, const char *domain); | Skip | `static` 内部 helper，仅管理上下文字段，行为归属到初始化和认证 blob 编码 Requirement。 |
+| encoder | function | static int encoder(const void *buffer, size_t size, void *ptr); | Skip | `static` 内部缓冲追加 helper，调用方不可直接观察，错误语义归属到上层 blob 生成接口。 |
+| encode_ntlm_negotiate_message | function | static int encode_ntlm_negotiate_message(struct smb2_context *smb2, struct auth_data *auth_data); | Skip | `static` 内部编码 helper，协商消息行为归属到 `ntlmssp_generate_blob`。 |
+| ntlm_decode_challenge_message | function | static int ntlm_decode_challenge_message(struct smb2_context *smb2, struct auth_data *auth_data, unsigned char *buf, size_t len); | Skip | `static` 内部解析 helper，challenge 解析行为归属到 `ntlmssp_generate_blob`。 |
+| ntlm_convert_password_hash | function | static int ntlm_convert_password_hash(const char *password, unsigned char password_hash[16]); | Skip | `static` 内部密码 hash helper，认证计算行为归属到 `ntlmssp_generate_blob` 和 `ntlmssp_authenticate_blob`。 |
+| NTOWFv1 | function | static int NTOWFv1(const char *password, unsigned char password_hash[16]); | Skip | `static` 内部 NT hash helper，认证计算行为归属到上层认证接口。 |
+| NTOWFv2 | function | static int NTOWFv2(const char *user, const char *password, const char *domain, unsigned char ntlmv2_hash[16]); | Skip | `static` 内部 NTLMv2 hash helper，认证计算行为归属到上层认证接口。 |
+| encode_temp | function | static int encode_temp(struct auth_data *auth_data, uint64_t t, uint8_t *client_challenge, size_t client_challenge_len, uint8_t *server_challenge, uint8_t *server_name, size_t server_name_len); | Skip | `static` 内部 NTLMv2 temp buffer helper，输出归属到 `ntlmssp_generate_blob`。 |
+| encode_ntlm_auth | function | static int encode_ntlm_auth(struct smb2_context *smb2, time_t ti, struct auth_data *auth_data, char *server_challenge); | Skip | `static` 内部 AUTHENTICATION_MESSAGE 编码 helper，行为归属到 `ntlmssp_generate_blob`。 |
+| encode_ntlm_challenge | function | static int encode_ntlm_challenge(struct smb2_context *smb2, struct auth_data *auth_data); | Skip | `static` 内部 CHALLENGE_MESSAGE 编码 helper，行为归属到 `ntlmssp_generate_blob`。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| `struct auth_data` | struct | `lib/ntlmssp.c:84` | NTLMSSP 私有上下文，保存编码缓冲区、凭据、challenge、target info、认证状态和导出会话密钥。 |
-| `NEGOTIATE_MESSAGE` | macro | `lib/ntlmssp.h:33` | NTLMSSP message type 常量，值为 `0x00000001`。 |
-| `CHALLENGE_MESSAGE` | macro | `lib/ntlmssp.h:34` | NTLMSSP message type 常量，值为 `0x00000002`。 |
-| `AUTHENTICATION_MESSAGE` | macro | `lib/ntlmssp.h:35` | NTLMSSP message type 常量，值为 `0x00000003`。 |
-| `NTLMSSP_NEGOTIATE_56` | macro | `lib/ntlmssp.c:109` | 内部 negotiate flag，值为 `0x80000000`。 |
-| `NTLMSSP_NEGOTIATE_KEY_EXCH` | macro | `lib/ntlmssp.c:110` | 内部 negotiate flag，值为 `0x40000000`。 |
-| `NTLMSSP_NEGOTIATE_128` | macro | `lib/ntlmssp.c:111` | 内部 negotiate flag，值为 `0x20000000`。 |
-| `NTLMSSP_NEGOTIATE_VERSION` | macro | `lib/ntlmssp.c:112` | 内部 negotiate flag，值为 `0x02000000`。 |
-| `NTLMSSP_NEGOTIATE_TARGET_INFO` | macro | `lib/ntlmssp.c:113` | 内部 negotiate flag，值为 `0x00800000`。 |
-| `NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY` | macro | `lib/ntlmssp.c:114` | 内部 negotiate flag，值为 `0x00080000`。 |
-| `NTLMSSP_TARGET_TYPE_SERVER` | macro | `lib/ntlmssp.c:115` | 内部 target type flag，值为 `0x00020000`。 |
-| `NTLMSSP_NEGOTIATE_ALWAYS_SIGN` | macro | `lib/ntlmssp.c:116` | 内部 negotiate flag，值为 `0x00008000`。 |
-| `NTLMSSP_NEGOTIATE_ANONYMOUS` | macro | `lib/ntlmssp.c:117` | 内部 negotiate flag，值为 `0x00000800`。 |
-| `NTLMSSP_NEGOTIATE_NTLM` | macro | `lib/ntlmssp.c:118` | 内部 negotiate flag，值为 `0x00000200`。 |
-| `NTLMSSP_NEGOTIATE_SEAL` | macro | `lib/ntlmssp.c:119` | 内部 negotiate flag，值为 `0x00000020`。 |
-| `NTLMSSP_NEGOTIATE_SIGN` | macro | `lib/ntlmssp.c:120` | 内部 negotiate flag，值为 `0x00000010`。 |
-| `NTLMSSP_REQUEST_TARGET` | macro | `lib/ntlmssp.c:121` | 内部 negotiate flag，值为 `0x00000004`。 |
-| `NTLMSSP_NEGOTIATE_OEM` | macro | `lib/ntlmssp.c:122` | 内部 negotiate flag，值为 `0x00000002`。 |
-| `NTLMSSP_NEGOTIATE_UNICODE` | macro | `lib/ntlmssp.c:123` | 内部 negotiate flag，值为 `0x00000001`。 |
+| struct auth_data | struct | lib/ntlmssp.c:84 | NTLMSSP 私有上下文，保存编码缓冲区、凭据、challenge、target info、认证状态和导出会话密钥。 |
+| NEGOTIATE_MESSAGE | macro | lib/ntlmssp.h:33 | NTLMSSP message type 常量，值为 `0x00000001`。 |
+| CHALLENGE_MESSAGE | macro | lib/ntlmssp.h:34 | NTLMSSP message type 常量，值为 `0x00000002`。 |
+| AUTHENTICATION_MESSAGE | macro | lib/ntlmssp.h:35 | NTLMSSP message type 常量，值为 `0x00000003`。 |
+| NTLMSSP_NEGOTIATE_56 | macro | lib/ntlmssp.c:109 | 内部 negotiate flag，值为 `0x80000000`。 |
+| NTLMSSP_NEGOTIATE_KEY_EXCH | macro | lib/ntlmssp.c:110 | 内部 negotiate flag，值为 `0x40000000`。 |
+| NTLMSSP_NEGOTIATE_128 | macro | lib/ntlmssp.c:111 | 内部 negotiate flag，值为 `0x20000000`。 |
+| NTLMSSP_NEGOTIATE_VERSION | macro | lib/ntlmssp.c:112 | 内部 negotiate flag，值为 `0x02000000`。 |
+| NTLMSSP_NEGOTIATE_TARGET_INFO | macro | lib/ntlmssp.c:113 | 内部 negotiate flag，值为 `0x00800000`。 |
+| NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY | macro | lib/ntlmssp.c:114 | 内部 negotiate flag，值为 `0x00080000`。 |
+| NTLMSSP_TARGET_TYPE_SERVER | macro | lib/ntlmssp.c:115 | 内部 target type flag，值为 `0x00020000`。 |
+| NTLMSSP_NEGOTIATE_ALWAYS_SIGN | macro | lib/ntlmssp.c:116 | 内部 negotiate flag，值为 `0x00008000`。 |
+| NTLMSSP_NEGOTIATE_ANONYMOUS | macro | lib/ntlmssp.c:117 | 内部 negotiate flag，值为 `0x00000800`。 |
+| NTLMSSP_NEGOTIATE_NTLM | macro | lib/ntlmssp.c:118 | 内部 negotiate flag，值为 `0x00000200`。 |
+| NTLMSSP_NEGOTIATE_SEAL | macro | lib/ntlmssp.c:119 | 内部 negotiate flag，值为 `0x00000020`。 |
+| NTLMSSP_NEGOTIATE_SIGN | macro | lib/ntlmssp.c:120 | 内部 negotiate flag，值为 `0x00000010`。 |
+| NTLMSSP_REQUEST_TARGET | macro | lib/ntlmssp.c:121 | 内部 negotiate flag，值为 `0x00000004`。 |
+| NTLMSSP_NEGOTIATE_OEM | macro | lib/ntlmssp.c:122 | 内部 negotiate flag，值为 `0x00000002`。 |
+| NTLMSSP_NEGOTIATE_UNICODE | macro | lib/ntlmssp.c:123 | 内部 negotiate flag，值为 `0x00000001`。 |
 
 ## ADDED Requirements
 
@@ -210,8 +210,8 @@ Trace: `lib/ntlmssp.c:ntlmssp_get_session_key`
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `ntlmssp_init_context` 对 `client_challenge == NULL` 没有显式检查但会 `memcpy` 8 字节，调用方前置条件是否应在头文件中声明？ | `ntlmssp_init_context` | 源码显示直接复制 8 字节，测试传入固定 8 字节数组，但未发现防御路径。 |
-| Q-002 | `ntlmssp_destroy_context` 是否允许 `auth == NULL`？ | `ntlmssp_destroy_context` | 源码直接解引用 `auth`，未发现空指针保护或声明侧约束。 |
-| Q-003 | `ntlmssp_authenticate_blob` 在 `server == NULL` 且用户或密码为空时会读取 `server->allow_anonymous`，该调用形态是否被外部禁止？ | `ntlmssp_authenticate_blob` | 源码无空 server 防护；GitNexus context 仅显示由服务端路径和 `ntlmssp_generate_blob` 调用。 |
-| Q-004 | `ntlmssp_generate_blob` 直接将 `auth_data->len` 截断为 `uint16_t` 写入 `output_len`，大于 65535 的输出是否可能或是否应失败？ | `ntlmssp_generate_blob` | 源码无长度上限检查，未发现测试覆盖超长 target-info/SPNEGO 输出。 |
-| Q-005 | GitNexus `impact ntlmssp_generate_blob --include-tests` 在定义和头文件声明之间返回 ambiguous，后续主 Agent 是否应使用 UID 复查精确风险？ | `ntlmssp_generate_blob` | 本 worker 记录了 `context` 调用者，但 impact 命令未能消歧。 |
+| Q-001 | `ntlmssp_init_context` 对 `client_challenge == NULL` 没有显式检查但会 `memcpy` 8 字节，调用方前置条件是否应在头文件中声明？ | ntlmssp_init_context | 源码显示直接复制 8 字节，测试传入固定 8 字节数组，但未发现防御路径。 |
+| Q-002 | `ntlmssp_destroy_context` 是否允许 `auth == NULL`？ | ntlmssp_destroy_context | 源码直接解引用 `auth`，未发现空指针保护或声明侧约束。 |
+| Q-003 | `ntlmssp_authenticate_blob` 在 `server == NULL` 且用户或密码为空时会读取 `server->allow_anonymous`，该调用形态是否被外部禁止？ | ntlmssp_authenticate_blob | 源码无空 server 防护；GitNexus context 仅显示由服务端路径和 `ntlmssp_generate_blob` 调用。 |
+| Q-004 | `ntlmssp_generate_blob` 直接将 `auth_data->len` 截断为 `uint16_t` 写入 `output_len`，大于 65535 的输出是否可能或是否应失败？ | ntlmssp_generate_blob | 源码无长度上限检查，未发现测试覆盖超长 target-info/SPNEGO 输出。 |
+| Q-005 | GitNexus `impact ntlmssp_generate_blob --include-tests` 在定义和头文件声明之间返回 ambiguous，后续主 Agent 是否应使用 UID 复查精确风险？ | ntlmssp_generate_blob | 本 worker 记录了 `context` 调用者，但 impact 命令未能消歧。 |

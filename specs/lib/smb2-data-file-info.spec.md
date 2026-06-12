@@ -12,34 +12,34 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_decode_file_basic_info | function | `int smb2_decode_file_basic_info(struct smb2_context *smb2, void *memctx, struct smb2_file_basic_info *fs, struct smb2_iovec *vec);` | Include | 解码 FILE_BASIC_INFORMATION 的跨文件私有接口，被 query-info variable parser 和 all-info decoder 调用。 |
-| smb2_encode_file_basic_info | function | `int smb2_encode_file_basic_info(struct smb2_context *smb2, struct smb2_file_basic_info *fs, struct smb2_iovec *vec);` | Include | 编码 FILE_BASIC_INFORMATION 的跨文件私有接口，被 query-info reply、set-info request 和 all-info encoder 调用。 |
-| smb2_tv_timeval_to_win | function | `static uint64_t smb2_tv_timeval_to_win(struct smb2_timeval *tv);` | Skip | 纯内部 helper，仅为本文件 encode 接口处理特殊 timeval 哨兵值，无独立跨文件契约。 |
-| smb2_decode_file_standard_info | function | `int smb2_decode_file_standard_info(struct smb2_context *smb2, void *memctx, struct smb2_file_standard_info *fs, struct smb2_iovec *vec);` | Include | 解码 FILE_STANDARD_INFORMATION 的跨文件私有接口，被 query-info variable parser 和 all-info decoder 调用。 |
-| smb2_encode_file_standard_info | function | `int smb2_encode_file_standard_info(struct smb2_context *smb2, struct smb2_file_standard_info *fs, struct smb2_iovec *vec);` | Include | 编码 FILE_STANDARD_INFORMATION 的跨文件私有接口，被 query-info reply 和 all-info encoder 调用。 |
-| smb2_decode_file_stream_info | function | `int smb2_decode_file_stream_info(struct smb2_context *smb2, void *memctx, struct smb2_file_stream_info *fs, struct smb2_iovec *vec);` | Include | 解码 FILE_STREAM_INFORMATION 链表并分配 stream name，存在资源和截断语义。 |
-| smb2_encode_file_stream_info | function | `int smb2_encode_file_stream_info(struct smb2_context *smb2, struct smb2_file_stream_info *fs, struct smb2_iovec *vec);` | Include | 编码 FILE_STREAM_INFORMATION 链表并执行 UTF-16 转换和 64-bit padding，存在长度和失败语义。 |
-| smb2_decode_file_position_info | function | `int smb2_decode_file_position_info(struct smb2_context *smb2, void *memctx, struct smb2_file_position_info *fs, struct smb2_iovec *vec);` | Include | 解码 FILE_POSITION_INFORMATION 的跨文件私有接口，被 query-info variable parser 调用。 |
-| smb2_encode_file_position_info | function | `int smb2_encode_file_position_info(struct smb2_context *smb2, struct smb2_file_position_info *fs, struct smb2_iovec *vec);` | Include | 编码 FILE_POSITION_INFORMATION 的跨文件私有接口，被 query-info reply 调用。 |
-| smb2_decode_file_all_info | function | `int smb2_decode_file_all_info(struct smb2_context *smb2, void *memctx, struct smb2_file_all_info *fs, struct smb2_iovec *vec);` | Include | 解码 FILE_ALL_INFORMATION 聚合结构，包含最小长度检查、子结构解码和可变名称分配。 |
-| smb2_encode_file_all_info | function | `int smb2_encode_file_all_info(struct smb2_context *smb2, struct smb2_file_all_info *fs, struct smb2_iovec *vec);` | Include | 编码 FILE_ALL_INFORMATION 聚合结构，包含固定区长度检查和可变名称编码。 |
-| smb2_decode_file_network_open_info | function | `int smb2_decode_file_network_open_info(struct smb2_context *smb2, void *memctx, struct smb2_file_network_open_info *fs, struct smb2_iovec *vec);` | Include | 解码 FILE_NETWORK_OPEN_INFORMATION，显式检查 56 字节固定长度。 |
-| smb2_encode_file_network_open_info | function | `int smb2_encode_file_network_open_info(struct smb2_context *smb2, struct smb2_file_network_open_info *fs, struct smb2_iovec *vec);` | Include | 编码 FILE_NETWORK_OPEN_INFORMATION，显式检查 56 字节固定长度并写保留字段。 |
-| smb2_decode_file_normalized_name_info | function | `int smb2_decode_file_normalized_name_info(struct smb2_context *smb2, void *memctx, struct smb2_file_name_info *fs, struct smb2_iovec *vec);` | Include | 解码 FILE_NAME_INFORMATION 名称载荷，包含截断、UTF-16 转 UTF-8 和 memctx 分配语义。 |
-| smb2_encode_file_normalized_name_info | function | `int smb2_encode_file_normalized_name_info(struct smb2_context *smb2, struct smb2_file_name_info *fs, struct smb2_iovec *vec);` | Include | 编码 FILE_NAME_INFORMATION 名称载荷，包含缓冲区检查、UTF-8 转 UTF-16 和零填充语义。 |
+| smb2_decode_file_basic_info | function | int smb2_decode_file_basic_info(struct smb2_context *smb2, void *memctx, struct smb2_file_basic_info *fs, struct smb2_iovec *vec); | Include | 解码 FILE_BASIC_INFORMATION 的跨文件私有接口，被 query-info variable parser 和 all-info decoder 调用。 |
+| smb2_encode_file_basic_info | function | int smb2_encode_file_basic_info(struct smb2_context *smb2, struct smb2_file_basic_info *fs, struct smb2_iovec *vec); | Include | 编码 FILE_BASIC_INFORMATION 的跨文件私有接口，被 query-info reply、set-info request 和 all-info encoder 调用。 |
+| smb2_tv_timeval_to_win | function | static uint64_t smb2_tv_timeval_to_win(struct smb2_timeval *tv); | Skip | 纯内部 helper，仅为本文件 encode 接口处理特殊 timeval 哨兵值，无独立跨文件契约。 |
+| smb2_decode_file_standard_info | function | int smb2_decode_file_standard_info(struct smb2_context *smb2, void *memctx, struct smb2_file_standard_info *fs, struct smb2_iovec *vec); | Include | 解码 FILE_STANDARD_INFORMATION 的跨文件私有接口，被 query-info variable parser 和 all-info decoder 调用。 |
+| smb2_encode_file_standard_info | function | int smb2_encode_file_standard_info(struct smb2_context *smb2, struct smb2_file_standard_info *fs, struct smb2_iovec *vec); | Include | 编码 FILE_STANDARD_INFORMATION 的跨文件私有接口，被 query-info reply 和 all-info encoder 调用。 |
+| smb2_decode_file_stream_info | function | int smb2_decode_file_stream_info(struct smb2_context *smb2, void *memctx, struct smb2_file_stream_info *fs, struct smb2_iovec *vec); | Include | 解码 FILE_STREAM_INFORMATION 链表并分配 stream name，存在资源和截断语义。 |
+| smb2_encode_file_stream_info | function | int smb2_encode_file_stream_info(struct smb2_context *smb2, struct smb2_file_stream_info *fs, struct smb2_iovec *vec); | Include | 编码 FILE_STREAM_INFORMATION 链表并执行 UTF-16 转换和 64-bit padding，存在长度和失败语义。 |
+| smb2_decode_file_position_info | function | int smb2_decode_file_position_info(struct smb2_context *smb2, void *memctx, struct smb2_file_position_info *fs, struct smb2_iovec *vec); | Include | 解码 FILE_POSITION_INFORMATION 的跨文件私有接口，被 query-info variable parser 调用。 |
+| smb2_encode_file_position_info | function | int smb2_encode_file_position_info(struct smb2_context *smb2, struct smb2_file_position_info *fs, struct smb2_iovec *vec); | Include | 编码 FILE_POSITION_INFORMATION 的跨文件私有接口，被 query-info reply 调用。 |
+| smb2_decode_file_all_info | function | int smb2_decode_file_all_info(struct smb2_context *smb2, void *memctx, struct smb2_file_all_info *fs, struct smb2_iovec *vec); | Include | 解码 FILE_ALL_INFORMATION 聚合结构，包含最小长度检查、子结构解码和可变名称分配。 |
+| smb2_encode_file_all_info | function | int smb2_encode_file_all_info(struct smb2_context *smb2, struct smb2_file_all_info *fs, struct smb2_iovec *vec); | Include | 编码 FILE_ALL_INFORMATION 聚合结构，包含固定区长度检查和可变名称编码。 |
+| smb2_decode_file_network_open_info | function | int smb2_decode_file_network_open_info(struct smb2_context *smb2, void *memctx, struct smb2_file_network_open_info *fs, struct smb2_iovec *vec); | Include | 解码 FILE_NETWORK_OPEN_INFORMATION，显式检查 56 字节固定长度。 |
+| smb2_encode_file_network_open_info | function | int smb2_encode_file_network_open_info(struct smb2_context *smb2, struct smb2_file_network_open_info *fs, struct smb2_iovec *vec); | Include | 编码 FILE_NETWORK_OPEN_INFORMATION，显式检查 56 字节固定长度并写保留字段。 |
+| smb2_decode_file_normalized_name_info | function | int smb2_decode_file_normalized_name_info(struct smb2_context *smb2, void *memctx, struct smb2_file_name_info *fs, struct smb2_iovec *vec); | Include | 解码 FILE_NAME_INFORMATION 名称载荷，包含截断、UTF-16 转 UTF-8 和 memctx 分配语义。 |
+| smb2_encode_file_normalized_name_info | function | int smb2_encode_file_normalized_name_info(struct smb2_context *smb2, struct smb2_file_name_info *fs, struct smb2_iovec *vec); | Include | 编码 FILE_NAME_INFORMATION 名称载荷，包含缓冲区检查、UTF-8 转 UTF-16 和零填充语义。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| smb2_file_basic_info | struct | `include/smb2/smb2.h:612` | FILE_BASIC_INFORMATION 数据模型，保存四个 SMB 时间戳和文件属性。 |
-| smb2_file_standard_info | struct | `include/smb2/smb2.h:623` | FILE_STANDARD_INFORMATION 数据模型，保存 allocation/eof/link/delete/directory 字段。 |
-| smb2_file_stream_info | struct | `include/smb2/smb2.h:634` | FILE_STREAM_INFORMATION 数据模型，保存 next offset、stream 名称长度、大小和名称指针。 |
-| smb2_file_position_info | struct | `include/smb2/smb2.h:645` | FILE_POSITION_INFORMATION 数据模型，保存 current byte offset。 |
-| smb2_file_name_info | struct | `include/smb2/smb2.h:652` | FILE_NAME_INFORMATION 数据模型，保存名称长度和名称指针。 |
-| smb2_file_all_info | struct | `include/smb2/smb2.h:660` | FILE_ALL_INFORMATION 聚合数据模型，组合 basic、standard、索引、访问、模式、对齐和名称字段。 |
-| smb2_file_network_open_info | struct | `include/smb2/smb2.h:710` | FILE_NETWORK_OPEN_INFORMATION 数据模型，保存四个 SMB 时间戳、allocation/eof 和属性。 |
-| PAD_TO_64BIT | macro | `include/libsmb2-private.h:symbol` | stream info 编码使用的 64-bit 对齐宏；具体定义归属到 private header spec。 |
+| smb2_file_basic_info | struct | include/smb2/smb2.h:612 | FILE_BASIC_INFORMATION 数据模型，保存四个 SMB 时间戳和文件属性。 |
+| smb2_file_standard_info | struct | include/smb2/smb2.h:623 | FILE_STANDARD_INFORMATION 数据模型，保存 allocation/eof/link/delete/directory 字段。 |
+| smb2_file_stream_info | struct | include/smb2/smb2.h:634 | FILE_STREAM_INFORMATION 数据模型，保存 next offset、stream 名称长度、大小和名称指针。 |
+| smb2_file_position_info | struct | include/smb2/smb2.h:645 | FILE_POSITION_INFORMATION 数据模型，保存 current byte offset。 |
+| smb2_file_name_info | struct | include/smb2/smb2.h:652 | FILE_NAME_INFORMATION 数据模型，保存名称长度和名称指针。 |
+| smb2_file_all_info | struct | include/smb2/smb2.h:660 | FILE_ALL_INFORMATION 聚合数据模型，组合 basic、standard、索引、访问、模式、对齐和名称字段。 |
+| smb2_file_network_open_info | struct | include/smb2/smb2.h:710 | FILE_NETWORK_OPEN_INFORMATION 数据模型，保存四个 SMB 时间戳、allocation/eof 和属性。 |
+| PAD_TO_64BIT | macro | include/libsmb2-private.h:symbol | stream info 编码使用的 64-bit 对齐宏；具体定义归属到 private header spec。 |
 
 ## ADDED Requirements
 

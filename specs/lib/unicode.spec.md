@@ -12,19 +12,19 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| `l1` | function | `static int l1(char c)` | Skip | 文件内 UTF-8 leading-bit helper，无独立对外契约。 |
-| `validate_utf8_cp` | function | `static int validate_utf8_cp(const char **utf8, uint16_t *ret)` | Skip | 文件内 UTF-8 codepoint 校验和 UTF-16 单元写入 helper，行为归属到公开转换接口。 |
-| `validate_utf8_str` | function | `static int validate_utf8_str(const char *utf8)` | Skip | 文件内 UTF-8 字符串校验和长度计算 helper，行为归属到 `smb2_utf8_to_utf16`。 |
-| `smb2_utf8_to_utf16` | function | `struct smb2_utf16 *smb2_utf8_to_utf16(const char *utf8)` | Include | 公开 header 声明的 UTF-8 到 SMB UTF-16LE 转换接口，调用方观察到分配、长度、字节序和错误语义。 |
-| `utf16_size` | function | `static int utf16_size(const uint16_t *utf16, size_t utf16_len)` | Skip | 文件内 UTF-16LE 到 UTF-8 输出长度 helper，行为归属到 `smb2_utf16_to_utf8`。 |
-| `smb2_utf16_to_utf8` | function | `const char *smb2_utf16_to_utf8(const uint16_t *str, size_t len)` | Include | 公开 header 声明的 SMB UTF-16LE 到 UTF-8 转换接口，调用方观察到分配、NUL 终止、替换字符和错误语义。 |
+| l1 | function | static int l1(char c) | Skip | 文件内 UTF-8 leading-bit helper，无独立对外契约。 |
+| validate_utf8_cp | function | static int validate_utf8_cp(const char **utf8, uint16_t *ret) | Skip | 文件内 UTF-8 codepoint 校验和 UTF-16 单元写入 helper，行为归属到公开转换接口。 |
+| validate_utf8_str | function | static int validate_utf8_str(const char *utf8) | Skip | 文件内 UTF-8 字符串校验和长度计算 helper，行为归属到 `smb2_utf8_to_utf16`。 |
+| smb2_utf8_to_utf16 | function | struct smb2_utf16 *smb2_utf8_to_utf16(const char *utf8) | Include | 公开 header 声明的 UTF-8 到 SMB UTF-16LE 转换接口，调用方观察到分配、长度、字节序和错误语义。 |
+| utf16_size | function | static int utf16_size(const uint16_t *utf16, size_t utf16_len) | Skip | 文件内 UTF-16LE 到 UTF-8 输出长度 helper，行为归属到 `smb2_utf16_to_utf8`。 |
+| smb2_utf16_to_utf8 | function | const char *smb2_utf16_to_utf8(const uint16_t *str, size_t len) | Include | 公开 header 声明的 SMB UTF-16LE 到 UTF-8 转换接口，调用方观察到分配、NUL 终止、替换字符和错误语义。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| `struct smb2_utf16` | struct | `include/smb2/libsmb2.h:1283` | 公开转换结果容器；`len` 记录 UTF-16 code unit 数量，`val` 存储 little-endian UTF-16 单元。 |
-| `0xef 0xbf 0xbd` | macro | `lib/unicode.c:278` | 源码内联写入 Unicode replacement character 的 UTF-8 字节序列，用于无法成对的 UTF-16 surrogate。 |
+| struct smb2_utf16 | struct | include/smb2/libsmb2.h:1283 | 公开转换结果容器；`len` 记录 UTF-16 code unit 数量，`val` 存储 little-endian UTF-16 单元。 |
+| 0xef 0xbf 0xbd | macro | lib/unicode.c:278 | 源码内联写入 Unicode replacement character 的 UTF-8 字节序列，用于无法成对的 UTF-16 surrogate。 |
 
 ## ADDED Requirements
 
@@ -94,7 +94,7 @@ Trace: `lib/unicode.c:smb2_utf16_to_utf8`, `include/smb2/libsmb2.h:smb2_utf16_to
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `smb2_utf8_to_utf16` 是否要求 `utf8` 非 NULL 且以 NUL 结束需要由调用方保证？ | `smb2_utf8_to_utf16` | 源码直接解引用并扫描输入，未发现空指针或最大长度保护。 |
-| Q-002 | `smb2_utf8_to_utf16` 分配大小是否应包含 `struct smb2_utf16.val[1]` flexible-array 风格 ABI 的额外尾部终止单元？ | `smb2_utf8_to_utf16` | 源码分配 `offsetof(struct smb2_utf16, val) + 2 * len`，header 注释未说明是否 NUL 终止 UTF-16。 |
-| Q-003 | `smb2_utf16_to_utf8` 的返回类型为 `const char *` 但 header 注释要求调用方 `free()`，是否应视为调用方拥有的 mutable allocation？ | `smb2_utf16_to_utf8` | 源码返回 `malloc` 分配的 `char *`，公开签名使用 `const char *`。 |
-| Q-004 | `utf16_size` 和 `smb2_utf16_to_utf8` 使用 `int` 保存输出长度，超大 `utf16_len` 溢出时的行为是否定义？ | `smb2_utf16_to_utf8` | 源码未发现 `int` 上限或 `size_t` 到 `int` 溢出检查。 |
+| Q-001 | `smb2_utf8_to_utf16` 是否要求 `utf8` 非 NULL 且以 NUL 结束需要由调用方保证？ | smb2_utf8_to_utf16 | 源码直接解引用并扫描输入，未发现空指针或最大长度保护。 |
+| Q-002 | `smb2_utf8_to_utf16` 分配大小是否应包含 `struct smb2_utf16.val[1]` flexible-array 风格 ABI 的额外尾部终止单元？ | smb2_utf8_to_utf16 | 源码分配 `offsetof(struct smb2_utf16, val) + 2 * len`，header 注释未说明是否 NUL 终止 UTF-16。 |
+| Q-003 | `smb2_utf16_to_utf8` 的返回类型为 `const char *` 但 header 注释要求调用方 `free()`，是否应视为调用方拥有的 mutable allocation？ | smb2_utf16_to_utf8 | 源码返回 `malloc` 分配的 `char *`，公开签名使用 `const char *`。 |
+| Q-004 | `utf16_size` 和 `smb2_utf16_to_utf8` 使用 `int` 保存输出长度，超大 `utf16_len` 溢出时的行为是否定义？ | smb2_utf16_to_utf8 | 源码未发现 `int` 上限或 `size_t` 到 `int` 溢出检查。 |

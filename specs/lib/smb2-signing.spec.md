@@ -12,22 +12,22 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| `smb3_aes_cmac_128` | function | `void smb3_aes_cmac_128(uint8_t key[AES128_KEY_LEN], uint8_t * msg, uint64_t msg_len, uint8_t mac[AES128_KEY_LEN])` | Include | AES-CMAC 结果被 SMB3 签名路径调用，影响调用方可观察的 SMB2/3 signature bytes。 |
-| `smb2_calc_signature` | function | `int smb2_calc_signature(struct smb2_context *smb2, uint8_t *signature, struct smb2_iovec *iov, size_t niov)` | Include | 由接收校验和发送签名路径跨文件调用，负责选择 HMAC-SHA256 或 AES-CMAC 并写入 16 字节签名。 |
-| `smb2_pdu_add_signature` | function | `int smb2_pdu_add_signature(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 由 PDU queue 路径跨文件调用，设置 signed flag、校验输出向量并写回 header signature。 |
-| `smb2_pdu_check_signature` | function | `int smb2_pdu_check_signature(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 头文件公开声明且实现固定返回成功，调用方可观察到该占位校验行为。 |
-| `aes_cmac_shift_left` | function | `static int aes_cmac_shift_left(uint8_t data[AES128_KEY_LEN])` | Skip | 纯内部 helper，仅服务 AES-CMAC subkey 生成，无独立跨文件契约。 |
-| `aes_cmac_xor` | function | `static void aes_cmac_xor(uint8_t data[AES128_KEY_LEN], const uint8_t value[AES128_KEY_LEN])` | Skip | 纯内部 helper，仅执行 CMAC 块异或，无独立跨文件契约。 |
-| `aes_cmac_sub_keys` | function | `static void aes_cmac_sub_keys(uint8_t key[AES128_KEY_LEN], uint8_t sub_key1[AES128_KEY_LEN], uint8_t sub_key2[AES128_KEY_LEN])` | Skip | 纯内部 helper，仅生成 CMAC 子密钥并由 `smb3_aes_cmac_128` 覆盖。 |
+| smb3_aes_cmac_128 | function | void smb3_aes_cmac_128(uint8_t key[AES128_KEY_LEN], uint8_t * msg, uint64_t msg_len, uint8_t mac[AES128_KEY_LEN]) | Include | AES-CMAC 结果被 SMB3 签名路径调用，影响调用方可观察的 SMB2/3 signature bytes。 |
+| smb2_calc_signature | function | int smb2_calc_signature(struct smb2_context *smb2, uint8_t *signature, struct smb2_iovec *iov, size_t niov) | Include | 由接收校验和发送签名路径跨文件调用，负责选择 HMAC-SHA256 或 AES-CMAC 并写入 16 字节签名。 |
+| smb2_pdu_add_signature | function | int smb2_pdu_add_signature(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 由 PDU queue 路径跨文件调用，设置 signed flag、校验输出向量并写回 header signature。 |
+| smb2_pdu_check_signature | function | int smb2_pdu_check_signature(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 头文件公开声明且实现固定返回成功，调用方可观察到该占位校验行为。 |
+| aes_cmac_shift_left | function | static int aes_cmac_shift_left(uint8_t data[AES128_KEY_LEN]) | Skip | 纯内部 helper，仅服务 AES-CMAC subkey 生成，无独立跨文件契约。 |
+| aes_cmac_xor | function | static void aes_cmac_xor(uint8_t data[AES128_KEY_LEN], const uint8_t value[AES128_KEY_LEN]) | Skip | 纯内部 helper，仅执行 CMAC 块异或，无独立跨文件契约。 |
+| aes_cmac_sub_keys | function | static void aes_cmac_sub_keys(uint8_t key[AES128_KEY_LEN], uint8_t sub_key1[AES128_KEY_LEN], uint8_t sub_key2[AES128_KEY_LEN]) | Skip | 纯内部 helper，仅生成 CMAC 子密钥并由 `smb3_aes_cmac_128` 覆盖。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| `EBC` | macro | `lib/smb2-signing.c:62` | 本文件在包含 AES 头之前定义为 `1`；拼写是否应为 ECB 未在源码中确认。 |
-| `CBC` | macro | `lib/smb2-signing.c:64` | 如果调用方尚未定义 `CBC`，本文件默认定义为 `1` 以影响 AES 依赖编译路径。 |
-| `AES128_KEY_LEN` | macro | `lib/smb2-signing.c:72` | AES-CMAC key、subkey 和 MAC 缓冲区长度固定为 16 字节。 |
-| `AES_BLOCK_SIZE` | macro | `lib/smb2-signing.c:73` | AES-CMAC 临时块长度固定为 16 字节。 |
+| EBC | macro | lib/smb2-signing.c:62 | 本文件在包含 AES 头之前定义为 `1`；拼写是否应为 ECB 未在源码中确认。 |
+| CBC | macro | lib/smb2-signing.c:64 | 如果调用方尚未定义 `CBC`，本文件默认定义为 `1` 以影响 AES 依赖编译路径。 |
+| AES128_KEY_LEN | macro | lib/smb2-signing.c:72 | AES-CMAC key、subkey 和 MAC 缓冲区长度固定为 16 字节。 |
+| AES_BLOCK_SIZE | macro | lib/smb2-signing.c:73 | AES-CMAC 临时块长度固定为 16 字节。 |
 
 ## ADDED Requirements
 
@@ -131,8 +131,8 @@ Trace: `lib/smb2-signing.c:smb2_pdu_check_signature`
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `smb3_aes_cmac_128` 对 `msg == NULL` 且 `msg_len == 0` 是否允许？ | `smb3_aes_cmac_128` | 源码在不完整最终块路径会读取 `&msg[i*AES128_KEY_LEN]`，前置条件未由声明或测试确认。 |
-| Q-002 | `smb2_calc_signature` 的 SMB3 分支对 `len` 的 size_t 累加溢出是否需要显式错误语义？ | `smb2_calc_signature` | 源码直接累加所有 iov 长度并分配，未确认调用方是否保证长度不会溢出。 |
-| Q-003 | `smb2_pdu_add_signature` 在 `session_key_size == 0` 返回 `-1` 时是否应设置 `smb2` 错误信息？ | `smb2_pdu_add_signature` | 其他拒绝路径设置错误字符串，该路径未设置错误，调用方 `smb2_queue_pdu` 会拼接现有错误。 |
-| Q-004 | `smb2_pdu_check_signature` 是否计划实现真正的 signature 校验？ | `smb2_pdu_check_signature` | 头文件公开声明但实现固定返回 `0`，GitNexus 未定位调用方。 |
+| Q-001 | `smb3_aes_cmac_128` 对 `msg == NULL` 且 `msg_len == 0` 是否允许？ | smb3_aes_cmac_128 | 源码在不完整最终块路径会读取 `&msg[i*AES128_KEY_LEN]`，前置条件未由声明或测试确认。 |
+| Q-002 | `smb2_calc_signature` 的 SMB3 分支对 `len` 的 size_t 累加溢出是否需要显式错误语义？ | smb2_calc_signature | 源码直接累加所有 iov 长度并分配，未确认调用方是否保证长度不会溢出。 |
+| Q-003 | `smb2_pdu_add_signature` 在 `session_key_size == 0` 返回 `-1` 时是否应设置 `smb2` 错误信息？ | smb2_pdu_add_signature | 其他拒绝路径设置错误字符串，该路径未设置错误，调用方 `smb2_queue_pdu` 会拼接现有错误。 |
+| Q-004 | `smb2_pdu_check_signature` 是否计划实现真正的 signature 校验？ | smb2_pdu_check_signature | 头文件公开声明但实现固定返回 `0`，GitNexus 未定位调用方。 |
 | Q-005 | `EBC` 宏是否为 `ECB` 拼写错误或外部依赖约定？ | file-level | 本文件定义 `EBC 1`，但 AES 语义通常使用 ECB，源码未说明该宏用途。 |

@@ -12,29 +12,29 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_encode_ioctl_request | function | `static int smb2_encode_ioctl_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_ioctl_request *req)` | Skip | 静态编码 helper，仅由本文件公开构造入口调用，行为归属到 `smb2_cmd_ioctl_async`。 |
-| smb2_cmd_ioctl_async | function | `struct smb2_pdu *smb2_cmd_ioctl_async(struct smb2_context *smb2, struct smb2_ioctl_request *req, smb2_command_cb cb, void *cb_data)` | Include | RAW SMB2 ioctl 公开构造入口，被 DCERPC 和 readlink 流程跨文件调用。 |
-| smb2_encode_ioctl_reply | function | `static int smb2_encode_ioctl_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_ioctl_reply *rep)` | Skip | 静态编码 helper，仅由本文件 reply 构造入口调用，行为归属到 `smb2_cmd_ioctl_reply_async`。 |
-| smb2_cmd_ioctl_reply_async | function | `struct smb2_pdu *smb2_cmd_ioctl_reply_async(struct smb2_context *smb2, struct smb2_ioctl_reply *rep, smb2_command_cb cb, void *cb_data)` | Include | 服务器端 ioctl reply PDU 构造入口，被 `smb2_ioctl_request_cb` 跨文件调用。 |
-| IOV_OFFSET_IOCTL | macro | `#define IOV_OFFSET_IOCTL (rep->output_offset - SMB2_HEADER_SIZE - (SMB2_IOCTL_REPLY_SIZE & 0xfffe))` | Skip | 本文件内部偏移计算宏，调用方不可直接使用，行为归属到 reply variable 解析。 |
-| smb2_process_ioctl_fixed | function | `int smb2_process_ioctl_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | PDU reply fixed payload 解析入口，由 `lib/pdu.c` 分派并影响 ioctl reply 解码状态。 |
-| smb2_process_ioctl_variable | function | `int smb2_process_ioctl_variable(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | PDU reply variable payload 解析入口，负责 ioctl 输出缓冲区解码和分配。 |
-| IOVREQ_OFFSET_IOCTL | macro | `#define IOVREQ_OFFSET_IOCTL (req->input_offset - SMB2_HEADER_SIZE - (SMB2_IOCTL_REQUEST_SIZE & 0xfffe))` | Skip | 本文件内部偏移计算宏，调用方不可直接使用，行为归属到 request variable 解析。 |
-| smb2_process_ioctl_request_fixed | function | `int smb2_process_ioctl_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 服务器端 request fixed payload 解析入口，由 `lib/pdu.c` 分派并填充 ioctl request。 |
-| smb2_process_ioctl_request_variable | function | `int smb2_process_ioctl_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 服务器端 request variable payload 解析入口，负责 validate negotiate 和 passthrough 输入处理。 |
+| smb2_encode_ioctl_request | function | static int smb2_encode_ioctl_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_ioctl_request *req) | Skip | 静态编码 helper，仅由本文件公开构造入口调用，行为归属到 `smb2_cmd_ioctl_async`。 |
+| smb2_cmd_ioctl_async | function | struct smb2_pdu *smb2_cmd_ioctl_async(struct smb2_context *smb2, struct smb2_ioctl_request *req, smb2_command_cb cb, void *cb_data) | Include | RAW SMB2 ioctl 公开构造入口，被 DCERPC 和 readlink 流程跨文件调用。 |
+| smb2_encode_ioctl_reply | function | static int smb2_encode_ioctl_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_ioctl_reply *rep) | Skip | 静态编码 helper，仅由本文件 reply 构造入口调用，行为归属到 `smb2_cmd_ioctl_reply_async`。 |
+| smb2_cmd_ioctl_reply_async | function | struct smb2_pdu *smb2_cmd_ioctl_reply_async(struct smb2_context *smb2, struct smb2_ioctl_reply *rep, smb2_command_cb cb, void *cb_data) | Include | 服务器端 ioctl reply PDU 构造入口，被 `smb2_ioctl_request_cb` 跨文件调用。 |
+| IOV_OFFSET_IOCTL | macro | #define IOV_OFFSET_IOCTL (rep->output_offset - SMB2_HEADER_SIZE - (SMB2_IOCTL_REPLY_SIZE & 0xfffe)) | Skip | 本文件内部偏移计算宏，调用方不可直接使用，行为归属到 reply variable 解析。 |
+| smb2_process_ioctl_fixed | function | int smb2_process_ioctl_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | PDU reply fixed payload 解析入口，由 `lib/pdu.c` 分派并影响 ioctl reply 解码状态。 |
+| smb2_process_ioctl_variable | function | int smb2_process_ioctl_variable(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | PDU reply variable payload 解析入口，负责 ioctl 输出缓冲区解码和分配。 |
+| IOVREQ_OFFSET_IOCTL | macro | #define IOVREQ_OFFSET_IOCTL (req->input_offset - SMB2_HEADER_SIZE - (SMB2_IOCTL_REQUEST_SIZE & 0xfffe)) | Skip | 本文件内部偏移计算宏，调用方不可直接使用，行为归属到 request variable 解析。 |
+| smb2_process_ioctl_request_fixed | function | int smb2_process_ioctl_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 服务器端 request fixed payload 解析入口，由 `lib/pdu.c` 分派并填充 ioctl request。 |
+| smb2_process_ioctl_request_variable | function | int smb2_process_ioctl_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 服务器端 request variable payload 解析入口，负责 validate negotiate 和 passthrough 输入处理。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SMB2_IOCTL_REQUEST_SIZE | macro | `include/smb2/smb2.h:961` | ioctl request fixed structure size is encoded as 57 and masked to even wire length by this implementation. |
-| SMB2_IOCTL_REPLY_SIZE | macro | `include/smb2/smb2.h:1016` | ioctl reply fixed structure size is encoded as 49 and masked to even wire length by this implementation. |
-| struct smb2_ioctl_request | struct | `include/smb2/smb2.h:1003` | request carries ctl code, file id, input/output offsets and counts, response limits, flags, and input pointer. |
-| struct smb2_ioctl_reply | struct | `include/smb2/smb2.h:1018` | reply carries ctl code, file id, input/output offsets and counts, flags, and output pointer. |
-| SMB2_IOCTL_VALIDIATE_NEGOTIATE_INFO_SIZE | macro | `include/smb2/smb2.h:1029` | validate-negotiate ioctl output is encoded as 24 bytes. |
-| struct smb2_ioctl_validate_negotiate_info | struct | `include/smb2/smb2.h:1031` | validate-negotiate payload contains capabilities, GUID, security mode, and dialect. |
-| IOV_OFFSET_IOCTL | macro | `lib/smb2-cmd-ioctl.c:247` | internal reply output offset calculation relative to SMB2 header and fixed reply body. |
-| IOVREQ_OFFSET_IOCTL | macro | `lib/smb2-cmd-ioctl.c:344` | internal request input offset calculation relative to SMB2 header and fixed request body. |
+| SMB2_IOCTL_REQUEST_SIZE | macro | include/smb2/smb2.h:961 | ioctl request fixed structure size is encoded as 57 and masked to even wire length by this implementation. |
+| SMB2_IOCTL_REPLY_SIZE | macro | include/smb2/smb2.h:1016 | ioctl reply fixed structure size is encoded as 49 and masked to even wire length by this implementation. |
+| struct smb2_ioctl_request | struct | include/smb2/smb2.h:1003 | request carries ctl code, file id, input/output offsets and counts, response limits, flags, and input pointer. |
+| struct smb2_ioctl_reply | struct | include/smb2/smb2.h:1018 | reply carries ctl code, file id, input/output offsets and counts, flags, and output pointer. |
+| SMB2_IOCTL_VALIDIATE_NEGOTIATE_INFO_SIZE | macro | include/smb2/smb2.h:1029 | validate-negotiate ioctl output is encoded as 24 bytes. |
+| struct smb2_ioctl_validate_negotiate_info | struct | include/smb2/smb2.h:1031 | validate-negotiate payload contains capabilities, GUID, security mode, and dialect. |
+| IOV_OFFSET_IOCTL | macro | lib/smb2-cmd-ioctl.c:247 | internal reply output offset calculation relative to SMB2 header and fixed reply body. |
+| IOVREQ_OFFSET_IOCTL | macro | lib/smb2-cmd-ioctl.c:344 | internal request input offset calculation relative to SMB2 header and fixed request body. |
 
 ## ADDED Requirements
 

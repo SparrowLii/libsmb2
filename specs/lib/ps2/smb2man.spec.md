@@ -12,21 +12,21 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| `_start` | function | `int _start(int argc, char *argv[])` | Include | PS2 IRX 模块入口，调用方可观察到版本输出和设备注册返回码。 |
-| `malloc` | function | `void *malloc(int size)` | Include | PS2 IOP 环境下替代标准分配入口，封装中断保护和系统内存分配，影响同文件 `calloc` 以及链接到 IRX 的分配调用。 |
-| `free` | function | `void free(void *ptr)` | Include | PS2 IOP 环境下替代标准释放入口，封装中断保护和系统内存释放。 |
-| `calloc` | function | `void *calloc(size_t nmemb, size_t size)` | Include | PS2 IOP 环境下替代标准清零分配入口，调用 `malloc` 并清零分配区域。 |
-| `MODNAME` | macro | `#define MODNAME   "smb2man"` | Skip | 模块元数据宏由 `_start` 和 `IRX_ID` 入口行为覆盖，无独立调用方行为。 |
-| `VER_MAJOR` | macro | `#define VER_MAJOR 2` | Skip | 模块版本宏由 `_start` 和 `IRX_ID` 入口行为覆盖，无独立调用方行为。 |
-| `VER_MINOR` | macro | `#define VER_MINOR 2` | Skip | 模块版本宏由 `_start` 和 `IRX_ID` 入口行为覆盖，无独立调用方行为。 |
+| _start | function | int _start(int argc, char *argv[]) | Include | PS2 IRX 模块入口，调用方可观察到版本输出和设备注册返回码。 |
+| malloc | function | void *malloc(int size) | Include | PS2 IOP 环境下替代标准分配入口，封装中断保护和系统内存分配，影响同文件 `calloc` 以及链接到 IRX 的分配调用。 |
+| free | function | void free(void *ptr) | Include | PS2 IOP 环境下替代标准释放入口，封装中断保护和系统内存释放。 |
+| calloc | function | void *calloc(size_t nmemb, size_t size) | Include | PS2 IOP 环境下替代标准清零分配入口，调用 `malloc` 并清零分配区域。 |
+| MODNAME | macro | #define MODNAME   "smb2man" | Skip | 模块元数据宏由 `_start` 和 `IRX_ID` 入口行为覆盖，无独立调用方行为。 |
+| VER_MAJOR | macro | #define VER_MAJOR 2 | Skip | 模块版本宏由 `_start` 和 `IRX_ID` 入口行为覆盖，无独立调用方行为。 |
+| VER_MINOR | macro | #define VER_MINOR 2 | Skip | 模块版本宏由 `_start` 和 `IRX_ID` 入口行为覆盖，无独立调用方行为。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| `MODNAME` | macro | `lib/ps2/smb2man.c:23` | 定义 IRX 模块名和 `_start` 日志前缀。 |
-| `VER_MAJOR` | macro | `lib/ps2/smb2man.c:24` | 定义 IRX 模块主版本并参与 `IRX_ID` 和 `_start` 输出。 |
-| `VER_MINOR` | macro | `lib/ps2/smb2man.c:25` | 定义 IRX 模块次版本并参与 `IRX_ID` 和 `_start` 输出。 |
+| MODNAME | macro | lib/ps2/smb2man.c:23 | 定义 IRX 模块名和 `_start` 日志前缀。 |
+| VER_MAJOR | macro | lib/ps2/smb2man.c:24 | 定义 IRX 模块主版本并参与 `IRX_ID` 和 `_start` 输出。 |
+| VER_MINOR | macro | lib/ps2/smb2man.c:25 | 定义 IRX 模块次版本并参与 `IRX_ID` 和 `_start` 输出。 |
 
 ## ADDED Requirements
 
@@ -74,7 +74,7 @@ Trace: `lib/ps2/smb2man.c:calloc`, `lib/ps2/smb2man.c:malloc`
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `calloc` 在 `malloc` 返回 `NULL` 时仍调用 `memset(ptr, 0, s)`，该失败路径是否由 PS2SDK 分配器保证不会发生或应视为调用方前置条件？ | `calloc` | 源码未在清零前检查空指针，未发现测试覆盖。 |
-| Q-002 | `nmemb * size` 乘法溢出是否需要作为稳定行为记录，还是由 PS2 IOP 调用方保证参数范围？ | `calloc` | 源码直接使用 `size_t` 乘法且无溢出检查，未发现外部契约说明。 |
-| Q-003 | `free(NULL)` 的行为是否完全继承 `FreeSysMemory(NULL)`，以及是否允许空指针释放？ | `free` | 源码无空指针分支，PS2SDK 外部函数语义未在仓库内确认。 |
-| Q-004 | `_start` 打印版本 `2.2` 与 top-level CMake `smb2man` project version `2.3.0` 的差异是否有发布语义？ | `_start` | 源码宏和构建元数据版本不一致，未发现说明文档解释差异。 |
+| Q-001 | `calloc` 在 `malloc` 返回 `NULL` 时仍调用 `memset(ptr, 0, s)`，该失败路径是否由 PS2SDK 分配器保证不会发生或应视为调用方前置条件？ | calloc | 源码未在清零前检查空指针，未发现测试覆盖。 |
+| Q-002 | `nmemb * size` 乘法溢出是否需要作为稳定行为记录，还是由 PS2 IOP 调用方保证参数范围？ | calloc | 源码直接使用 `size_t` 乘法且无溢出检查，未发现外部契约说明。 |
+| Q-003 | `free(NULL)` 的行为是否完全继承 `FreeSysMemory(NULL)`，以及是否允许空指针释放？ | free | 源码无空指针分支，PS2SDK 外部函数语义未在仓库内确认。 |
+| Q-004 | `_start` 打印版本 `2.2` 与 top-level CMake `smb2man` project version `2.3.0` 的差异是否有发布语义？ | _start | 源码宏和构建元数据版本不一致，未发现说明文档解释差异。 |

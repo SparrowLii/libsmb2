@@ -12,24 +12,24 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_encode_session_setup_request | function | `static int smb2_encode_session_setup_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_session_setup_request *req)` | Skip | 文件内部编码 helper；行为通过公开 `smb2_cmd_session_setup_async` 体现。 |
-| smb2_cmd_session_setup_async | function | `struct smb2_pdu *smb2_cmd_session_setup_async(struct smb2_context *smb2, struct smb2_session_setup_request *req, smb2_command_cb cb, void *cb_data)` | Include | 公开 RAW API，构造客户端 SESSION_SETUP 请求 PDU 并定义失败返回语义。 |
-| smb2_encode_session_setup_reply | function | `static int smb2_encode_session_setup_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_session_setup_reply *rep)` | Skip | 文件内部编码 helper；行为通过 `smb2_cmd_session_setup_reply_async` 体现。 |
-| smb2_cmd_session_setup_reply_async | function | `struct smb2_pdu *smb2_cmd_session_setup_reply_async(struct smb2_context *smb2, struct smb2_session_setup_reply *rep, smb2_command_cb cb, void *cb_data)` | Include | 跨模块服务端/响应路径入口，构造 SESSION_SETUP reply PDU。 |
-| IOV_OFFSET_SESSION | macro | `#define IOV_OFFSET_SESSION (rep->security_buffer_offset - SMB2_HEADER_SIZE - (SMB2_SESSION_SETUP_REPLY_SIZE & 0xfffe))` | Skip | 文件内部 offset 计算宏，无独立外部调用契约。 |
-| smb2_process_session_setup_fixed | function | `int smb2_process_session_setup_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有跨文件 reply fixed parser，被 PDU dispatcher 调用并更新会话状态。 |
-| smb2_process_session_setup_variable | function | `int smb2_process_session_setup_variable(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有跨文件 reply variable parser，绑定 security buffer 指针。 |
-| smb2_process_session_setup_request_fixed | function | `int smb2_process_session_setup_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有跨文件 request fixed parser，被服务端 request dispatcher 调用。 |
-| smb2_process_session_setup_request_variable | function | `int smb2_process_session_setup_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有跨文件 request variable parser，绑定 request security buffer。 |
+| smb2_encode_session_setup_request | function | static int smb2_encode_session_setup_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_session_setup_request *req) | Skip | 文件内部编码 helper；行为通过公开 `smb2_cmd_session_setup_async` 体现。 |
+| smb2_cmd_session_setup_async | function | struct smb2_pdu *smb2_cmd_session_setup_async(struct smb2_context *smb2, struct smb2_session_setup_request *req, smb2_command_cb cb, void *cb_data) | Include | 公开 RAW API，构造客户端 SESSION_SETUP 请求 PDU 并定义失败返回语义。 |
+| smb2_encode_session_setup_reply | function | static int smb2_encode_session_setup_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_session_setup_reply *rep) | Skip | 文件内部编码 helper；行为通过 `smb2_cmd_session_setup_reply_async` 体现。 |
+| smb2_cmd_session_setup_reply_async | function | struct smb2_pdu *smb2_cmd_session_setup_reply_async(struct smb2_context *smb2, struct smb2_session_setup_reply *rep, smb2_command_cb cb, void *cb_data) | Include | 跨模块服务端/响应路径入口，构造 SESSION_SETUP reply PDU。 |
+| IOV_OFFSET_SESSION | macro | #define IOV_OFFSET_SESSION (rep->security_buffer_offset - SMB2_HEADER_SIZE - (SMB2_SESSION_SETUP_REPLY_SIZE & 0xfffe)) | Skip | 文件内部 offset 计算宏，无独立外部调用契约。 |
+| smb2_process_session_setup_fixed | function | int smb2_process_session_setup_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有跨文件 reply fixed parser，被 PDU dispatcher 调用并更新会话状态。 |
+| smb2_process_session_setup_variable | function | int smb2_process_session_setup_variable(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有跨文件 reply variable parser，绑定 security buffer 指针。 |
+| smb2_process_session_setup_request_fixed | function | int smb2_process_session_setup_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有跨文件 request fixed parser，被服务端 request dispatcher 调用。 |
+| smb2_process_session_setup_request_variable | function | int smb2_process_session_setup_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有跨文件 request variable parser，绑定 request security buffer。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SMB2_SESSION_SETUP_REQUEST_SIZE | macro | `include/smb2/smb2.h:156` | SESSION_SETUP request fixed structure size is 25, with even-length wire header checks using `& 0xfffe`. |
-| smb2_session_setup_request | struct | `include/smb2/smb2.h:158` | Carries request flags, security mode, capabilities, channel, previous session id, security buffer length, and security buffer pointer. |
-| SMB2_SESSION_SETUP_REPLY_SIZE | macro | `include/smb2/smb2.h:172` | SESSION_SETUP reply fixed structure size is 9, with even-length wire header checks using `& 0xfffe`. |
-| smb2_session_setup_reply | struct | `include/smb2/smb2.h:174` | Carries reply session flags, security buffer length, offset, and security buffer pointer. |
+| SMB2_SESSION_SETUP_REQUEST_SIZE | macro | include/smb2/smb2.h:156 | SESSION_SETUP request fixed structure size is 25, with even-length wire header checks using `& 0xfffe`. |
+| smb2_session_setup_request | struct | include/smb2/smb2.h:158 | Carries request flags, security mode, capabilities, channel, previous session id, security buffer length, and security buffer pointer. |
+| SMB2_SESSION_SETUP_REPLY_SIZE | macro | include/smb2/smb2.h:172 | SESSION_SETUP reply fixed structure size is 9, with even-length wire header checks using `& 0xfffe`. |
+| smb2_session_setup_reply | struct | include/smb2/smb2.h:174 | Carries reply session flags, security buffer length, offset, and security buffer pointer. |
 
 ## ADDED Requirements
 

@@ -12,28 +12,28 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| `NEGOTIATE_MESSAGE` | macro | `#define NEGOTIATE_MESSAGE      0x00000001` | Include | NTLMSSP negotiate message type constant is externally observable through message parsing and generation. |
-| `CHALLENGE_MESSAGE` | macro | `#define CHALLENGE_MESSAGE      0x00000002` | Include | NTLMSSP challenge message type constant is externally observable through client challenge handling. |
-| `AUTHENTICATION_MESSAGE` | macro | `#define AUTHENTICATION_MESSAGE 0x00000003` | Include | NTLMSSP authenticate message type constant is externally observable through server authentication handling. |
-| `struct auth_data` | type | `struct auth_data;` | Include | Opaque authentication context type is the shared handle for all declared NTLMSSP operations. |
-| `ntlmssp_init_context` | function | `struct auth_data * ntlmssp_init_context(const char *user, const char *password, const char *domain, const char *workstation, const char *client_challenge);` | Include | Creates the opaque authentication context used by all NTLMSSP message and state APIs. |
-| `ntlmssp_destroy_context` | function | `void ntlmssp_destroy_context(struct auth_data *auth);` | Include | Releases authentication context allocations and terminates context lifetime. |
-| `ntlmssp_set_spnego_wrapping` | function | `void ntlmssp_set_spnego_wrapping(struct auth_data *auth, int wrap);` | Include | Configures whether generated NTLMSSP blobs are wrapped in SPNEGO. |
-| `ntlmssp_get_spnego_wrapping` | function | `int ntlmssp_get_spnego_wrapping(struct auth_data *auth);` | Include | Returns the context SPNEGO wrapping flag used by callers and blob generation. |
-| `ntlmssp_get_message_type` | function | `int ntlmssp_get_message_type(struct smb2_context *smb2, uint8_t *ntlmssp_buffer, int len, int suppress_errors, uint32_t *message_type, uint8_t **ntlmssp_ptr, int *ntlmssp_len, int *is_wrapped);` | Include | Parses raw or SPNEGO-wrapped NTLMSSP data and reports type, payload pointer, payload length, and wrapping state. |
-| `ntlmssp_generate_blob` | function | `int ntlmssp_generate_blob(struct smb2_server *server, struct smb2_context *smb2, time_t t, struct auth_data *auth_data, unsigned char *input_buf, int input_len, unsigned char **output_buf, uint16_t *output_len);` | Include | Drives NTLMSSP negotiate/challenge/authenticate blob generation for client and server authentication flows. |
-| `ntlmssp_authenticate_blob` | function | `int ntlmssp_authenticate_blob(struct smb2_server *server, struct smb2_context *smb2, struct auth_data *auth_data, unsigned char *input_buf, int input_len);` | Include | Validates an NTLMSSP authentication message and updates SMB2 server credential/session state. |
-| `ntlmssp_get_authenticated` | function | `int ntlmssp_get_authenticated(struct auth_data *auth);` | Include | Exposes whether server-side authentication has succeeded for the context. |
-| `ntlmssp_get_session_key` | function | `int ntlmssp_get_session_key(struct auth_data *auth, uint8_t **key, uint8_t *key_size);` | Include | Copies the exported session key for downstream signing or sealing setup. |
+| NEGOTIATE_MESSAGE | macro | #define NEGOTIATE_MESSAGE      0x00000001 | Include | NTLMSSP negotiate message type constant is externally observable through message parsing and generation. |
+| CHALLENGE_MESSAGE | macro | #define CHALLENGE_MESSAGE      0x00000002 | Include | NTLMSSP challenge message type constant is externally observable through client challenge handling. |
+| AUTHENTICATION_MESSAGE | macro | #define AUTHENTICATION_MESSAGE 0x00000003 | Include | NTLMSSP authenticate message type constant is externally observable through server authentication handling. |
+| struct auth_data | type | struct auth_data; | Include | Opaque authentication context type is the shared handle for all declared NTLMSSP operations. |
+| ntlmssp_init_context | function | struct auth_data * ntlmssp_init_context(const char *user, const char *password, const char *domain, const char *workstation, const char *client_challenge); | Include | Creates the opaque authentication context used by all NTLMSSP message and state APIs. |
+| ntlmssp_destroy_context | function | void ntlmssp_destroy_context(struct auth_data *auth); | Include | Releases authentication context allocations and terminates context lifetime. |
+| ntlmssp_set_spnego_wrapping | function | void ntlmssp_set_spnego_wrapping(struct auth_data *auth, int wrap); | Include | Configures whether generated NTLMSSP blobs are wrapped in SPNEGO. |
+| ntlmssp_get_spnego_wrapping | function | int ntlmssp_get_spnego_wrapping(struct auth_data *auth); | Include | Returns the context SPNEGO wrapping flag used by callers and blob generation. |
+| ntlmssp_get_message_type | function | int ntlmssp_get_message_type(struct smb2_context *smb2, uint8_t *ntlmssp_buffer, int len, int suppress_errors, uint32_t *message_type, uint8_t **ntlmssp_ptr, int *ntlmssp_len, int *is_wrapped); | Include | Parses raw or SPNEGO-wrapped NTLMSSP data and reports type, payload pointer, payload length, and wrapping state. |
+| ntlmssp_generate_blob | function | int ntlmssp_generate_blob(struct smb2_server *server, struct smb2_context *smb2, time_t t, struct auth_data *auth_data, unsigned char *input_buf, int input_len, unsigned char **output_buf, uint16_t *output_len); | Include | Drives NTLMSSP negotiate/challenge/authenticate blob generation for client and server authentication flows. |
+| ntlmssp_authenticate_blob | function | int ntlmssp_authenticate_blob(struct smb2_server *server, struct smb2_context *smb2, struct auth_data *auth_data, unsigned char *input_buf, int input_len); | Include | Validates an NTLMSSP authentication message and updates SMB2 server credential/session state. |
+| ntlmssp_get_authenticated | function | int ntlmssp_get_authenticated(struct auth_data *auth); | Include | Exposes whether server-side authentication has succeeded for the context. |
+| ntlmssp_get_session_key | function | int ntlmssp_get_session_key(struct auth_data *auth, uint8_t **key, uint8_t *key_size); | Include | Copies the exported session key for downstream signing or sealing setup. |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| `NEGOTIATE_MESSAGE` | macro | `lib/ntlmssp.h:33` | NTLMSSP negotiate message type value `0x00000001`. |
-| `CHALLENGE_MESSAGE` | macro | `lib/ntlmssp.h:34` | NTLMSSP challenge message type value `0x00000002`. |
-| `AUTHENTICATION_MESSAGE` | macro | `lib/ntlmssp.h:35` | NTLMSSP authenticate message type value `0x00000003`. |
-| `struct auth_data` | struct | `lib/ntlmssp.h:37` | Opaque context declaration; concrete fields are private to `lib/ntlmssp.c`. |
+| NEGOTIATE_MESSAGE | macro | lib/ntlmssp.h:33 | NTLMSSP negotiate message type value `0x00000001`. |
+| CHALLENGE_MESSAGE | macro | lib/ntlmssp.h:34 | NTLMSSP challenge message type value `0x00000002`. |
+| AUTHENTICATION_MESSAGE | macro | lib/ntlmssp.h:35 | NTLMSSP authenticate message type value `0x00000003`. |
+| struct auth_data | struct | lib/ntlmssp.h:37 | Opaque context declaration; concrete fields are private to `lib/ntlmssp.c`. |
 
 ## ADDED Requirements
 
@@ -213,7 +213,7 @@ Trace: `lib/ntlmssp.h:ntlmssp_get_session_key`, `lib/ntlmssp.c:ntlmssp_get_sessi
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `ntlmssp_init_context` 对 `client_challenge == NULL` 的前置条件是否由调用方保证？ | `ntlmssp_init_context` | 实现无 NULL 检查且直接复制 8 字节；头文件未声明该约束。 |
-| Q-002 | `ntlmssp_destroy_context` 是否允许传入 NULL 指针？ | `ntlmssp_destroy_context` | 实现直接解引用 `auth` 字段后释放，头文件未声明调用方责任。 |
-| Q-003 | SPNEGO 包装失败、输出缓冲区所有权和 `output_buf` 生命周期是否需要公开为调用方契约？ | `ntlmssp_generate_blob` | 实现返回内部 `auth_data->buf`，所有权与后续调用释放关系需要与调用方文档确认。 |
-| Q-004 | `ntlmssp_authenticate_blob` 在 `server == NULL` 且缺少用户或密码时是否可能解引用 NULL server？ | `ntlmssp_authenticate_blob` | 实现匿名分支访问 `server->allow_anonymous`，头文件未声明 server 参数前置条件。 |
+| Q-001 | `ntlmssp_init_context` 对 `client_challenge == NULL` 的前置条件是否由调用方保证？ | ntlmssp_init_context | 实现无 NULL 检查且直接复制 8 字节；头文件未声明该约束。 |
+| Q-002 | `ntlmssp_destroy_context` 是否允许传入 NULL 指针？ | ntlmssp_destroy_context | 实现直接解引用 `auth` 字段后释放，头文件未声明调用方责任。 |
+| Q-003 | SPNEGO 包装失败、输出缓冲区所有权和 `output_buf` 生命周期是否需要公开为调用方契约？ | ntlmssp_generate_blob | 实现返回内部 `auth_data->buf`，所有权与后续调用释放关系需要与调用方文档确认。 |
+| Q-004 | `ntlmssp_authenticate_blob` 在 `server == NULL` 且缺少用户或密码时是否可能解引用 NULL server？ | ntlmssp_authenticate_blob | 实现匿名分支访问 `server->allow_anonymous`，头文件未声明 server 参数前置条件。 |

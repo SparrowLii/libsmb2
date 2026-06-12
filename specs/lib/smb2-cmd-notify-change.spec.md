@@ -12,22 +12,22 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_encode_change_notify_request | function | `static int smb2_encode_change_notify_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_change_notify_request *req)` | Skip | 静态 helper，仅服务 `smb2_cmd_change_notify_async` 的请求缓冲区编码，无独立跨文件契约。 |
-| smb2_cmd_change_notify_async | function | `struct smb2_pdu *smb2_cmd_change_notify_async(struct smb2_context *smb2, struct smb2_change_notify_request *req, smb2_command_cb cb, void *cb_data)` | Include | RAW 头文件声明的跨模块 PDU 构造入口，被客户端 notify-change API 调用。 |
-| smb2_encode_change_notify_reply | function | `static int smb2_encode_change_notify_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_change_notify_reply *rep)` | Skip | 静态 helper，仅服务 `smb2_cmd_change_notify_reply_async` 的服务端回复缓冲区编码，无独立跨文件契约。 |
-| smb2_cmd_change_notify_reply_async | function | `struct smb2_pdu *smb2_cmd_change_notify_reply_async(struct smb2_context *smb2, struct smb2_change_notify_reply *rep, smb2_command_cb cb, void *cb_data)` | Include | RAW 头文件声明的跨模块服务端回复 PDU 构造入口，被 change-notify 请求回调调用。 |
-| smb2_process_change_notify_fixed | function | `int smb2_process_change_notify_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有头文件声明的回复 fixed payload 解析入口，由 PDU 分发器按 SMB2_CHANGE_NOTIFY 调用。 |
-| smb2_process_change_notify_variable | function | `int smb2_process_change_notify_variable(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有头文件声明的回复 variable payload 解析入口，由 PDU 分发器按 SMB2_CHANGE_NOTIFY 调用。 |
-| smb2_process_change_notify_request_fixed | function | `int smb2_process_change_notify_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | 私有头文件声明的服务端请求 fixed payload 解析入口，由请求 PDU 分发器调用。 |
+| smb2_encode_change_notify_request | function | static int smb2_encode_change_notify_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_change_notify_request *req) | Skip | 静态 helper，仅服务 `smb2_cmd_change_notify_async` 的请求缓冲区编码，无独立跨文件契约。 |
+| smb2_cmd_change_notify_async | function | struct smb2_pdu *smb2_cmd_change_notify_async(struct smb2_context *smb2, struct smb2_change_notify_request *req, smb2_command_cb cb, void *cb_data) | Include | RAW 头文件声明的跨模块 PDU 构造入口，被客户端 notify-change API 调用。 |
+| smb2_encode_change_notify_reply | function | static int smb2_encode_change_notify_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_change_notify_reply *rep) | Skip | 静态 helper，仅服务 `smb2_cmd_change_notify_reply_async` 的服务端回复缓冲区编码，无独立跨文件契约。 |
+| smb2_cmd_change_notify_reply_async | function | struct smb2_pdu *smb2_cmd_change_notify_reply_async(struct smb2_context *smb2, struct smb2_change_notify_reply *rep, smb2_command_cb cb, void *cb_data) | Include | RAW 头文件声明的跨模块服务端回复 PDU 构造入口，被 change-notify 请求回调调用。 |
+| smb2_process_change_notify_fixed | function | int smb2_process_change_notify_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有头文件声明的回复 fixed payload 解析入口，由 PDU 分发器按 SMB2_CHANGE_NOTIFY 调用。 |
+| smb2_process_change_notify_variable | function | int smb2_process_change_notify_variable(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有头文件声明的回复 variable payload 解析入口，由 PDU 分发器按 SMB2_CHANGE_NOTIFY 调用。 |
+| smb2_process_change_notify_request_fixed | function | int smb2_process_change_notify_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | 私有头文件声明的服务端请求 fixed payload 解析入口，由请求 PDU 分发器调用。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SMB2_CHANGE_NOTIFY_REQUEST_SIZE | macro | `include/smb2/smb2.h:1053` | 请求 fixed payload 结构大小常量，编码和解析均使用该值。 |
-| SMB2_CHANGE_NOTIFY_REPLY_SIZE | macro | `include/smb2/smb2.h:1071` | 回复 fixed payload 结构大小常量，编码和解析均使用该值。 |
-| struct smb2_change_notify_request | struct | `include/smb2/smb2.h:1064` | 请求数据模型包含 flags、output_buffer_length、file_id 和 completion_filter。 |
-| struct smb2_change_notify_reply | struct | `include/smb2/smb2.h:1073` | 回复数据模型包含 output_buffer_offset、output_buffer_length 和 output 指针。 |
+| SMB2_CHANGE_NOTIFY_REQUEST_SIZE | macro | include/smb2/smb2.h:1053 | 请求 fixed payload 结构大小常量，编码和解析均使用该值。 |
+| SMB2_CHANGE_NOTIFY_REPLY_SIZE | macro | include/smb2/smb2.h:1071 | 回复 fixed payload 结构大小常量，编码和解析均使用该值。 |
+| struct smb2_change_notify_request | struct | include/smb2/smb2.h:1064 | 请求数据模型包含 flags、output_buffer_length、file_id 和 completion_filter。 |
+| struct smb2_change_notify_reply | struct | include/smb2/smb2.h:1073 | 回复数据模型包含 output_buffer_offset、output_buffer_length 和 output 指针。 |
 
 ## ADDED Requirements
 

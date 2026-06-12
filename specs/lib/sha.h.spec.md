@@ -12,72 +12,72 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| USE_SHA1 | macro | `#define USE_SHA1 0` | Include | 公开编译期开关，控制 SHA-1 枚举、上下文和函数声明是否可见。 |
-| USE_SHA224 | macro | `#define USE_SHA224 0` | Include | 公开编译期开关，控制 SHA-224 枚举、上下文别名和函数声明是否可见。 |
-| USE_SHA384_SHA512 | macro | `#define USE_SHA384_SHA512 1` | Include | 公开编译期开关，控制 SHA-384/SHA-512 枚举、上下文别名和函数声明是否可见。 |
-| shaSuccess | enum constant | `shaSuccess = 0` | Include | 所有 SHA/HMAC 接口共享成功返回码。 |
-| shaNull | enum constant | `shaNull` | Include | 所有 SHA/HMAC 接口共享空指针参数返回码。 |
-| shaInputTooLong | enum constant | `shaInputTooLong` | Include | 头文件声明的输入过长返回码，属于调用方可见错误码集合。 |
-| shaStateError | enum constant | `shaStateError` | Include | 所有 SHA/HMAC 输入终结后状态错误返回码。 |
-| shaBadParam | enum constant | `shaBadParam` | Include | 统一 SHA 接口用于非法 SHA 版本的返回码。 |
-| SHA1Context | typedef struct | `typedef struct SHA1Context { ... } SHA1Context;` | Include | `USE_SHA1` 启用时公开的调用方持有 SHA-1 可变上下文。 |
-| SHA256Context | typedef struct | `typedef struct SHA256Context { ... } SHA256Context;` | Include | SHA-256 公开上下文，保存摘要中间状态、长度、消息块和状态标志。 |
-| SHA512Context | typedef struct | `typedef struct SHA512Context { ... } SHA512Context;` | Include | SHA-512/SHA-384 公开上下文，布局受 `USE_32BIT_ONLY` 影响。 |
-| SHA224Context | typedef | `typedef struct SHA256Context SHA224Context;` | Include | `USE_SHA224` 启用时的 SHA-224 上下文别名，复用 SHA-256 布局。 |
-| SHA384Context | typedef | `typedef struct SHA512Context SHA384Context;` | Include | `USE_SHA384_SHA512` 启用时的 SHA-384 上下文别名，复用 SHA-512 布局。 |
-| SHAversion | typedef enum | `typedef enum SHAversion { ... } SHAversion;` | Include | 统一 SHA 和 HMAC API 的算法选择枚举，成员随编译期开关变化。 |
-| USHAContext | typedef struct | `typedef struct USHAContext { ... } USHAContext;` | Include | 统一 SHA 上下文，保存所选算法和对应具体 SHA context union。 |
-| HMACContext | typedef struct | `typedef struct HMACContext { ... } HMACContext;` | Include | 流式 HMAC 上下文，保存算法、尺寸、内层 SHA context 和 outer pad。 |
-| SHA1Reset | function | `extern int SHA1Reset (SHA1Context *);` | Include | `USE_SHA1` 启用时声明 SHA-1 reset 入口，实现 spec 已覆盖行为。 |
-| SHA1Input | function | `extern int SHA1Input (SHA1Context *, const uint8_t * bytes, size_t bytecount);` | Include | `USE_SHA1` 启用时声明 SHA-1 增量输入入口。 |
-| SHA1FinalBits | function | `extern int SHA1FinalBits (SHA1Context *, const uint8_t bits, size_t bitcount);` | Include | `USE_SHA1` 启用时声明 SHA-1 final bits 入口。 |
-| SHA1Result | function | `extern int SHA1Result (SHA1Context *, uint8_t Message_Digest[SHA1HashSize]);` | Include | `USE_SHA1` 启用时声明 SHA-1 digest 输出入口。 |
-| SHA224Reset | function | `extern int SHA224Reset (SHA224Context *);` | Include | `USE_SHA224` 启用时声明 SHA-224 reset 入口。 |
-| SHA224Input | function | `extern int SHA224Input (SHA224Context *, const uint8_t * bytes, size_t bytecount);` | Include | `USE_SHA224` 启用时声明 SHA-224 增量输入入口。 |
-| SHA224FinalBits | function | `extern int SHA224FinalBits (SHA224Context *, const uint8_t bits, size_t bitcount);` | Include | `USE_SHA224` 启用时声明 SHA-224 final bits 入口。 |
-| SHA224Result | function | `extern int SHA224Result (SHA224Context *, uint8_t Message_Digest[SHA224HashSize]);` | Include | `USE_SHA224` 启用时声明 SHA-224 digest 输出入口。 |
-| SHA256Reset | function | `extern int SHA256Reset (SHA256Context *);` | Include | 始终声明的 SHA-256 reset 入口。 |
-| SHA256Input | function | `extern int SHA256Input (SHA256Context *, const uint8_t * bytes, size_t bytecount);` | Include | 始终声明的 SHA-256 增量输入入口。 |
-| SHA256FinalBits | function | `extern int SHA256FinalBits (SHA256Context *, const uint8_t bits, size_t bitcount);` | Include | 始终声明的 SHA-256 final bits 入口。 |
-| SHA256Result | function | `extern int SHA256Result (SHA256Context *, uint8_t Message_Digest[SHA256HashSize]);` | Include | 始终声明的 SHA-256 digest 输出入口。 |
-| SHA384Reset | function | `extern int SHA384Reset (SHA384Context *);` | Include | `USE_SHA384_SHA512` 启用时声明 SHA-384 reset 入口。 |
-| SHA384Input | function | `extern int SHA384Input (SHA384Context *, const uint8_t * bytes, size_t bytecount);` | Include | `USE_SHA384_SHA512` 启用时声明 SHA-384 增量输入入口。 |
-| SHA384FinalBits | function | `extern int SHA384FinalBits (SHA384Context *, const uint8_t bits, size_t bitcount);` | Include | `USE_SHA384_SHA512` 启用时声明 SHA-384 final bits 入口。 |
-| SHA384Result | function | `extern int SHA384Result (SHA384Context *, uint8_t Message_Digest[SHA384HashSize]);` | Include | `USE_SHA384_SHA512` 启用时声明 SHA-384 digest 输出入口。 |
-| SHA512Reset | function | `extern int SHA512Reset (SHA512Context *);` | Include | `USE_SHA384_SHA512` 启用时声明 SHA-512 reset 入口。 |
-| SHA512Input | function | `extern int SHA512Input (SHA512Context *, const uint8_t * bytes, size_t bytecount);` | Include | `USE_SHA384_SHA512` 启用时声明 SHA-512 增量输入入口。 |
-| SHA512FinalBits | function | `extern int SHA512FinalBits (SHA512Context *, const uint8_t bits, size_t bitcount);` | Include | `USE_SHA384_SHA512` 启用时声明 SHA-512 final bits 入口。 |
-| SHA512Result | function | `extern int SHA512Result (SHA512Context *, uint8_t Message_Digest[SHA512HashSize]);` | Include | `USE_SHA384_SHA512` 启用时声明 SHA-512 digest 输出入口。 |
-| USHAReset | function | `extern int USHAReset (USHAContext *, SHAversion whichSha);` | Include | 声明统一 SHA reset 分派入口。 |
-| USHAInput | function | `extern int USHAInput (USHAContext *, const uint8_t * bytes, size_t bytecount);` | Include | 声明统一 SHA 增量输入分派入口。 |
-| USHAFinalBits | function | `extern int USHAFinalBits (USHAContext *, const uint8_t bits, size_t bitcount);` | Include | 声明统一 SHA final bits 分派入口。 |
-| USHAResult | function | `extern int USHAResult (USHAContext *, uint8_t Message_Digest[USHAMaxHashSize]);` | Include | 声明统一 SHA digest 输出分派入口。 |
-| USHABlockSize | function | `extern int USHABlockSize (enum SHAversion whichSha);` | Include | 声明按算法查询消息块大小的工具入口。 |
-| USHAHashSize | function | `extern int USHAHashSize (enum SHAversion whichSha);` | Include | 声明按算法查询 digest 字节数的工具入口。 |
-| USHAHashSizeBits | function | `extern int USHAHashSizeBits (enum SHAversion whichSha);` | Include | 声明按算法查询 digest bit 数的工具入口。 |
-| hmac | function | `extern int hmac (SHAversion whichSha, const unsigned char *text, size_t text_len, const unsigned char *key, size_t key_len, uint8_t digest[USHAMaxHashSize]);` | Include | 声明一次性 HMAC keyed-hash 入口。 |
-| hmacReset | function | `extern int hmacReset (HMACContext * ctx, enum SHAversion whichSha, const unsigned char *key, size_t key_len);` | Include | 声明流式 HMAC 初始化入口。 |
-| hmacInput | function | `extern int hmacInput (HMACContext * ctx, const unsigned char *text, size_t text_len);` | Include | 声明流式 HMAC 消息输入入口。 |
-| hmacFinalBits | function | `extern int hmacFinalBits (HMACContext * ctx, const uint8_t bits, size_t bitcount);` | Include | 声明流式 HMAC final bits 输入入口。 |
-| hmacResult | function | `extern int hmacResult (HMACContext * ctx, uint8_t *digest);` | Include | 声明流式 HMAC digest 输出入口。 |
+| USE_SHA1 | macro | #define USE_SHA1 0 | Include | 公开编译期开关，控制 SHA-1 枚举、上下文和函数声明是否可见。 |
+| USE_SHA224 | macro | #define USE_SHA224 0 | Include | 公开编译期开关，控制 SHA-224 枚举、上下文别名和函数声明是否可见。 |
+| USE_SHA384_SHA512 | macro | #define USE_SHA384_SHA512 1 | Include | 公开编译期开关，控制 SHA-384/SHA-512 枚举、上下文别名和函数声明是否可见。 |
+| shaSuccess | enum constant | shaSuccess = 0 | Include | 所有 SHA/HMAC 接口共享成功返回码。 |
+| shaNull | enum constant | shaNull | Include | 所有 SHA/HMAC 接口共享空指针参数返回码。 |
+| shaInputTooLong | enum constant | shaInputTooLong | Include | 头文件声明的输入过长返回码，属于调用方可见错误码集合。 |
+| shaStateError | enum constant | shaStateError | Include | 所有 SHA/HMAC 输入终结后状态错误返回码。 |
+| shaBadParam | enum constant | shaBadParam | Include | 统一 SHA 接口用于非法 SHA 版本的返回码。 |
+| SHA1Context | typedef struct | typedef struct SHA1Context { ... } SHA1Context; | Include | `USE_SHA1` 启用时公开的调用方持有 SHA-1 可变上下文。 |
+| SHA256Context | typedef struct | typedef struct SHA256Context { ... } SHA256Context; | Include | SHA-256 公开上下文，保存摘要中间状态、长度、消息块和状态标志。 |
+| SHA512Context | typedef struct | typedef struct SHA512Context { ... } SHA512Context; | Include | SHA-512/SHA-384 公开上下文，布局受 `USE_32BIT_ONLY` 影响。 |
+| SHA224Context | typedef | typedef struct SHA256Context SHA224Context; | Include | `USE_SHA224` 启用时的 SHA-224 上下文别名，复用 SHA-256 布局。 |
+| SHA384Context | typedef | typedef struct SHA512Context SHA384Context; | Include | `USE_SHA384_SHA512` 启用时的 SHA-384 上下文别名，复用 SHA-512 布局。 |
+| SHAversion | typedef enum | typedef enum SHAversion { ... } SHAversion; | Include | 统一 SHA 和 HMAC API 的算法选择枚举，成员随编译期开关变化。 |
+| USHAContext | typedef struct | typedef struct USHAContext { ... } USHAContext; | Include | 统一 SHA 上下文，保存所选算法和对应具体 SHA context union。 |
+| HMACContext | typedef struct | typedef struct HMACContext { ... } HMACContext; | Include | 流式 HMAC 上下文，保存算法、尺寸、内层 SHA context 和 outer pad。 |
+| SHA1Reset | function | extern int SHA1Reset (SHA1Context *); | Include | `USE_SHA1` 启用时声明 SHA-1 reset 入口，实现 spec 已覆盖行为。 |
+| SHA1Input | function | extern int SHA1Input (SHA1Context *, const uint8_t * bytes, size_t bytecount); | Include | `USE_SHA1` 启用时声明 SHA-1 增量输入入口。 |
+| SHA1FinalBits | function | extern int SHA1FinalBits (SHA1Context *, const uint8_t bits, size_t bitcount); | Include | `USE_SHA1` 启用时声明 SHA-1 final bits 入口。 |
+| SHA1Result | function | extern int SHA1Result (SHA1Context *, uint8_t Message_Digest[SHA1HashSize]); | Include | `USE_SHA1` 启用时声明 SHA-1 digest 输出入口。 |
+| SHA224Reset | function | extern int SHA224Reset (SHA224Context *); | Include | `USE_SHA224` 启用时声明 SHA-224 reset 入口。 |
+| SHA224Input | function | extern int SHA224Input (SHA224Context *, const uint8_t * bytes, size_t bytecount); | Include | `USE_SHA224` 启用时声明 SHA-224 增量输入入口。 |
+| SHA224FinalBits | function | extern int SHA224FinalBits (SHA224Context *, const uint8_t bits, size_t bitcount); | Include | `USE_SHA224` 启用时声明 SHA-224 final bits 入口。 |
+| SHA224Result | function | extern int SHA224Result (SHA224Context *, uint8_t Message_Digest[SHA224HashSize]); | Include | `USE_SHA224` 启用时声明 SHA-224 digest 输出入口。 |
+| SHA256Reset | function | extern int SHA256Reset (SHA256Context *); | Include | 始终声明的 SHA-256 reset 入口。 |
+| SHA256Input | function | extern int SHA256Input (SHA256Context *, const uint8_t * bytes, size_t bytecount); | Include | 始终声明的 SHA-256 增量输入入口。 |
+| SHA256FinalBits | function | extern int SHA256FinalBits (SHA256Context *, const uint8_t bits, size_t bitcount); | Include | 始终声明的 SHA-256 final bits 入口。 |
+| SHA256Result | function | extern int SHA256Result (SHA256Context *, uint8_t Message_Digest[SHA256HashSize]); | Include | 始终声明的 SHA-256 digest 输出入口。 |
+| SHA384Reset | function | extern int SHA384Reset (SHA384Context *); | Include | `USE_SHA384_SHA512` 启用时声明 SHA-384 reset 入口。 |
+| SHA384Input | function | extern int SHA384Input (SHA384Context *, const uint8_t * bytes, size_t bytecount); | Include | `USE_SHA384_SHA512` 启用时声明 SHA-384 增量输入入口。 |
+| SHA384FinalBits | function | extern int SHA384FinalBits (SHA384Context *, const uint8_t bits, size_t bitcount); | Include | `USE_SHA384_SHA512` 启用时声明 SHA-384 final bits 入口。 |
+| SHA384Result | function | extern int SHA384Result (SHA384Context *, uint8_t Message_Digest[SHA384HashSize]); | Include | `USE_SHA384_SHA512` 启用时声明 SHA-384 digest 输出入口。 |
+| SHA512Reset | function | extern int SHA512Reset (SHA512Context *); | Include | `USE_SHA384_SHA512` 启用时声明 SHA-512 reset 入口。 |
+| SHA512Input | function | extern int SHA512Input (SHA512Context *, const uint8_t * bytes, size_t bytecount); | Include | `USE_SHA384_SHA512` 启用时声明 SHA-512 增量输入入口。 |
+| SHA512FinalBits | function | extern int SHA512FinalBits (SHA512Context *, const uint8_t bits, size_t bitcount); | Include | `USE_SHA384_SHA512` 启用时声明 SHA-512 final bits 入口。 |
+| SHA512Result | function | extern int SHA512Result (SHA512Context *, uint8_t Message_Digest[SHA512HashSize]); | Include | `USE_SHA384_SHA512` 启用时声明 SHA-512 digest 输出入口。 |
+| USHAReset | function | extern int USHAReset (USHAContext *, SHAversion whichSha); | Include | 声明统一 SHA reset 分派入口。 |
+| USHAInput | function | extern int USHAInput (USHAContext *, const uint8_t * bytes, size_t bytecount); | Include | 声明统一 SHA 增量输入分派入口。 |
+| USHAFinalBits | function | extern int USHAFinalBits (USHAContext *, const uint8_t bits, size_t bitcount); | Include | 声明统一 SHA final bits 分派入口。 |
+| USHAResult | function | extern int USHAResult (USHAContext *, uint8_t Message_Digest[USHAMaxHashSize]); | Include | 声明统一 SHA digest 输出分派入口。 |
+| USHABlockSize | function | extern int USHABlockSize (enum SHAversion whichSha); | Include | 声明按算法查询消息块大小的工具入口。 |
+| USHAHashSize | function | extern int USHAHashSize (enum SHAversion whichSha); | Include | 声明按算法查询 digest 字节数的工具入口。 |
+| USHAHashSizeBits | function | extern int USHAHashSizeBits (enum SHAversion whichSha); | Include | 声明按算法查询 digest bit 数的工具入口。 |
+| hmac | function | extern int hmac (SHAversion whichSha, const unsigned char *text, size_t text_len, const unsigned char *key, size_t key_len, uint8_t digest[USHAMaxHashSize]); | Include | 声明一次性 HMAC keyed-hash 入口。 |
+| hmacReset | function | extern int hmacReset (HMACContext * ctx, enum SHAversion whichSha, const unsigned char *key, size_t key_len); | Include | 声明流式 HMAC 初始化入口。 |
+| hmacInput | function | extern int hmacInput (HMACContext * ctx, const unsigned char *text, size_t text_len); | Include | 声明流式 HMAC 消息输入入口。 |
+| hmacFinalBits | function | extern int hmacFinalBits (HMACContext * ctx, const uint8_t bits, size_t bitcount); | Include | 声明流式 HMAC final bits 输入入口。 |
+| hmacResult | function | extern int hmacResult (HMACContext * ctx, uint8_t *digest); | Include | 声明流式 HMAC digest 输出入口。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| USE_SHA1 | macro | `lib/sha.h:6` | 默认关闭 SHA-1 声明，除非构建或调用方预定义为非零。 |
-| USE_SHA224 | macro | `lib/sha.h:10` | 默认关闭 SHA-224 声明，除非构建或调用方预定义为非零。 |
-| USE_SHA384_SHA512 | macro | `lib/sha.h:14` | 默认启用 SHA-384/SHA-512 声明，除非构建或调用方覆盖。 |
-| shaSuccess, shaNull, shaInputTooLong, shaStateError, shaBadParam | enum constants | `lib/sha.h:67` | 所有 SHA、USHA 和 HMAC 接口共享的返回码枚举。 |
-| SHA*_Message_Block_Size, SHA*HashSize, SHA*HashSizeBits | enum constants | `lib/sha.h:81` | 各 SHA 算法的消息块大小、digest 字节数和 digest bit 数常量。 |
-| SHAversion | typedef enum | `lib/sha.h:113` | 统一 SHA/HMAC 算法选择枚举，成员随 `USE_SHA1`、`USE_SHA224`、`USE_SHA384_SHA512` 条件变化。 |
-| SHA1Context | typedef struct | `lib/sha.h:133` | `USE_SHA1` 启用时的 SHA-1 mutable context。 |
-| SHA256Context | typedef struct | `lib/sha.h:153` | SHA-256 mutable context；SHA-224 通过 typedef 复用该布局。 |
-| SHA512Context | typedef struct | `lib/sha.h:172` | SHA-512 mutable context；`USE_32BIT_ONLY` 改变长度和中间 hash 字段表示。 |
-| SHA224Context | typedef | `lib/sha.h:194` | `USE_SHA224` 启用时映射到 `SHA256Context`。 |
-| SHA384Context | typedef | `lib/sha.h:202` | `USE_SHA384_SHA512` 启用时映射到 `SHA512Context`。 |
-| USHAContext | typedef struct | `lib/sha.h:209` | 保存 `whichSha` 和对应 concrete context union。 |
-| HMACContext | typedef struct | `lib/sha.h:232` | 保存 HMAC 算法、尺寸、内部 SHA context 和 outer pad。 |
+| USE_SHA1 | macro | lib/sha.h:6 | 默认关闭 SHA-1 声明，除非构建或调用方预定义为非零。 |
+| USE_SHA224 | macro | lib/sha.h:10 | 默认关闭 SHA-224 声明，除非构建或调用方预定义为非零。 |
+| USE_SHA384_SHA512 | macro | lib/sha.h:14 | 默认启用 SHA-384/SHA-512 声明，除非构建或调用方覆盖。 |
+| shaSuccess, shaNull, shaInputTooLong, shaStateError, shaBadParam | enum constants | lib/sha.h:67 | 所有 SHA、USHA 和 HMAC 接口共享的返回码枚举。 |
+| SHA*_Message_Block_Size, SHA*HashSize, SHA*HashSizeBits | enum constants | lib/sha.h:81 | 各 SHA 算法的消息块大小、digest 字节数和 digest bit 数常量。 |
+| SHAversion | typedef enum | lib/sha.h:113 | 统一 SHA/HMAC 算法选择枚举，成员随 `USE_SHA1`、`USE_SHA224`、`USE_SHA384_SHA512` 条件变化。 |
+| SHA1Context | typedef struct | lib/sha.h:133 | `USE_SHA1` 启用时的 SHA-1 mutable context。 |
+| SHA256Context | typedef struct | lib/sha.h:153 | SHA-256 mutable context；SHA-224 通过 typedef 复用该布局。 |
+| SHA512Context | typedef struct | lib/sha.h:172 | SHA-512 mutable context；`USE_32BIT_ONLY` 改变长度和中间 hash 字段表示。 |
+| SHA224Context | typedef | lib/sha.h:194 | `USE_SHA224` 启用时映射到 `SHA256Context`。 |
+| SHA384Context | typedef | lib/sha.h:202 | `USE_SHA384_SHA512` 启用时映射到 `SHA512Context`。 |
+| USHAContext | typedef struct | lib/sha.h:209 | 保存 `whichSha` 和对应 concrete context union。 |
+| HMACContext | typedef struct | lib/sha.h:232 | 保存 HMAC 算法、尺寸、内部 SHA context 和 outer pad。 |
 
 ## ADDED Requirements
 

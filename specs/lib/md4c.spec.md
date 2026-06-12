@@ -12,40 +12,40 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| MD4Init | function | `void MD4Init(MD4_CTX *context)` | Include | 公开 MD4 上下文初始化入口，被 NTLM 密码哈希流程调用并定义调用序列起点。 |
-| MD4Update | function | `void MD4Update(MD4_CTX *context, unsigned char *input, unsigned int inputLen)` | Include | 公开 MD4 分块输入入口，维护 bit count、缓冲区和块转换状态，影响最终摘要。 |
-| MD4Final | function | `void MD4Final(unsigned char digest[16], MD4_CTX *context)` | Include | 公开 MD4 完成入口，输出 16 字节摘要并清零上下文。 |
-| MD4Transform | function | `static void MD4Transform(uint32_t state[4], unsigned char block[64])` | Skip | 静态内部块压缩 helper，仅由本文件 `MD4Update` 调用，无独立外部契约。 |
-| Encode | function | `static void Encode(unsigned char *output, uint32_t *input, unsigned int len)` | Skip | 静态内部 little-endian 编码 helper，仅支撑 `MD4Final`，无独立外部契约。 |
-| Decode | function | `static void Decode(uint32_t *output, unsigned char *input, unsigned int len)` | Skip | 静态内部 little-endian 解码 helper，仅支撑 `MD4Transform`，无独立外部契约。 |
-| MD4_memcpy | function | `static void MD4_memcpy(unsigned char *output, unsigned char *input, unsigned int len)` | Skip | 静态内部字节复制 helper，无独立外部契约。 |
-| MD4_memset | function | `static void MD4_memset(unsigned char *output, int value, unsigned int len)` | Skip | 静态内部字节填充 helper，无独立外部契约。 |
+| MD4Init | function | void MD4Init(MD4_CTX *context) | Include | 公开 MD4 上下文初始化入口，被 NTLM 密码哈希流程调用并定义调用序列起点。 |
+| MD4Update | function | void MD4Update(MD4_CTX *context, unsigned char *input, unsigned int inputLen) | Include | 公开 MD4 分块输入入口，维护 bit count、缓冲区和块转换状态，影响最终摘要。 |
+| MD4Final | function | void MD4Final(unsigned char digest[16], MD4_CTX *context) | Include | 公开 MD4 完成入口，输出 16 字节摘要并清零上下文。 |
+| MD4Transform | function | static void MD4Transform(uint32_t state[4], unsigned char block[64]) | Skip | 静态内部块压缩 helper，仅由本文件 `MD4Update` 调用，无独立外部契约。 |
+| Encode | function | static void Encode(unsigned char *output, uint32_t *input, unsigned int len) | Skip | 静态内部 little-endian 编码 helper，仅支撑 `MD4Final`，无独立外部契约。 |
+| Decode | function | static void Decode(uint32_t *output, unsigned char *input, unsigned int len) | Skip | 静态内部 little-endian 解码 helper，仅支撑 `MD4Transform`，无独立外部契约。 |
+| MD4_memcpy | function | static void MD4_memcpy(unsigned char *output, unsigned char *input, unsigned int len) | Skip | 静态内部字节复制 helper，无独立外部契约。 |
+| MD4_memset | function | static void MD4_memset(unsigned char *output, int value, unsigned int len) | Skip | 静态内部字节填充 helper，无独立外部契约。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| MD4_CTX | typedef | `lib/md4.h:33` | 调用方可见的 MD4 上下文，包含 `state[4]`、`count[2]` 和 `buffer[64]`。 |
-| S11 | macro | `lib/md4c.c:40` | 内部轮函数移位常量，不作为公开宏契约。 |
-| S12 | macro | `lib/md4c.c:41` | 内部轮函数移位常量，不作为公开宏契约。 |
-| S13 | macro | `lib/md4c.c:42` | 内部轮函数移位常量，不作为公开宏契约。 |
-| S14 | macro | `lib/md4c.c:43` | 内部轮函数移位常量，不作为公开宏契约。 |
-| S21 | macro | `lib/md4c.c:44` | 内部轮函数移位常量，不作为公开宏契约。 |
-| S22 | macro | `lib/md4c.c:45` | 内部轮函数移位常量，不作为公开宏契约。 |
-| S23 | macro | `lib/md4c.c:46` | 内部轮函数移位常量，不作为公开宏契约。 |
-| S24 | macro | `lib/md4c.c:47` | 内部轮函数移位常量，不作为公开宏契约。 |
-| S31 | macro | `lib/md4c.c:48` | 内部轮函数移位常量，不作为公开宏契约。 |
-| S32 | macro | `lib/md4c.c:49` | 内部轮函数移位常量，不作为公开宏契约。 |
-| S33 | macro | `lib/md4c.c:50` | 内部轮函数移位常量，不作为公开宏契约。 |
-| S34 | macro | `lib/md4c.c:51` | 内部轮函数移位常量，不作为公开宏契约。 |
-| PADDING | static data | `lib/md4c.c:59` | 内部 finalization padding，以 `0x80` 开头并补零。 |
-| F | macro | `lib/md4c.c:67` | 内部 MD4 基本函数宏，不作为公开宏契约。 |
-| G | macro | `lib/md4c.c:68` | 内部 MD4 基本函数宏，不作为公开宏契约。 |
-| H | macro | `lib/md4c.c:69` | 内部 MD4 基本函数宏，不作为公开宏契约。 |
-| ROTATE_LEFT | macro | `lib/md4c.c:73` | 内部 32-bit 左旋宏，不作为公开宏契约。 |
-| FF | macro | `lib/md4c.c:78` | 内部 round 1 转换宏，不作为公开宏契约。 |
-| GG | macro | `lib/md4c.c:82` | 内部 round 2 转换宏，不作为公开宏契约。 |
-| HH | macro | `lib/md4c.c:86` | 内部 round 3 转换宏，不作为公开宏契约。 |
+| MD4_CTX | typedef | lib/md4.h:33 | 调用方可见的 MD4 上下文，包含 `state[4]`、`count[2]` 和 `buffer[64]`。 |
+| S11 | macro | lib/md4c.c:40 | 内部轮函数移位常量，不作为公开宏契约。 |
+| S12 | macro | lib/md4c.c:41 | 内部轮函数移位常量，不作为公开宏契约。 |
+| S13 | macro | lib/md4c.c:42 | 内部轮函数移位常量，不作为公开宏契约。 |
+| S14 | macro | lib/md4c.c:43 | 内部轮函数移位常量，不作为公开宏契约。 |
+| S21 | macro | lib/md4c.c:44 | 内部轮函数移位常量，不作为公开宏契约。 |
+| S22 | macro | lib/md4c.c:45 | 内部轮函数移位常量，不作为公开宏契约。 |
+| S23 | macro | lib/md4c.c:46 | 内部轮函数移位常量，不作为公开宏契约。 |
+| S24 | macro | lib/md4c.c:47 | 内部轮函数移位常量，不作为公开宏契约。 |
+| S31 | macro | lib/md4c.c:48 | 内部轮函数移位常量，不作为公开宏契约。 |
+| S32 | macro | lib/md4c.c:49 | 内部轮函数移位常量，不作为公开宏契约。 |
+| S33 | macro | lib/md4c.c:50 | 内部轮函数移位常量，不作为公开宏契约。 |
+| S34 | macro | lib/md4c.c:51 | 内部轮函数移位常量，不作为公开宏契约。 |
+| PADDING | static data | lib/md4c.c:59 | 内部 finalization padding，以 `0x80` 开头并补零。 |
+| F | macro | lib/md4c.c:67 | 内部 MD4 基本函数宏，不作为公开宏契约。 |
+| G | macro | lib/md4c.c:68 | 内部 MD4 基本函数宏，不作为公开宏契约。 |
+| H | macro | lib/md4c.c:69 | 内部 MD4 基本函数宏，不作为公开宏契约。 |
+| ROTATE_LEFT | macro | lib/md4c.c:73 | 内部 32-bit 左旋宏，不作为公开宏契约。 |
+| FF | macro | lib/md4c.c:78 | 内部 round 1 转换宏，不作为公开宏契约。 |
+| GG | macro | lib/md4c.c:82 | 内部 round 2 转换宏，不作为公开宏契约。 |
+| HH | macro | lib/md4c.c:86 | 内部 round 3 转换宏，不作为公开宏契约。 |
 
 ## ADDED Requirements
 

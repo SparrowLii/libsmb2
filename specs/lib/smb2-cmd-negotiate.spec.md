@@ -12,34 +12,34 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_cmd_negotiate_async | function | `struct smb2_pdu *smb2_cmd_negotiate_async(struct smb2_context *smb2, struct smb2_negotiate_request *req, smb2_command_cb cb, void *cb_data);` | Include | 公开 RAW SMB2 Negotiate 异步入口，构造请求 PDU 并决定错误时是否返回 NULL。 |
-| smb2_cmd_negotiate_reply_async | function | `struct smb2_pdu *smb2_cmd_negotiate_reply_async(struct smb2_context *smb2, struct smb2_negotiate_reply *rep, smb2_command_cb cb, void *cb_data);` | Include | 公开/服务端使用的 Negotiate reply PDU 构造入口，影响服务器 negotiate 回调响应。 |
-| smb2_process_negotiate_fixed | function | `int smb2_process_negotiate_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 内部跨文件 reply fixed parser，被 PDU 分发层调用并建立 negotiate reply payload。 |
-| smb2_process_negotiate_variable | function | `int smb2_process_negotiate_variable(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 内部跨文件 reply variable parser，解析 security buffer 与 SMB 3.1.1 negotiate contexts。 |
-| smb2_process_negotiate_request_fixed | function | `int smb2_process_negotiate_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 内部跨文件 request fixed parser，被服务端请求分发层调用并建立 negotiate request payload。 |
-| smb2_process_negotiate_request_variable | function | `int smb2_process_negotiate_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 内部跨文件 request variable parser，填充 dialect 数组并按 SMB 3.1.1 条件解析 contexts。 |
-| smb2_encode_preauth_context | function | `static int smb2_encode_preauth_context(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Skip | 静态 helper，仅为本文件请求/回复编码追加 preauth context，无独立跨文件接口。 |
-| smb2_encode_encryption_context | function | `static int smb2_encode_encryption_context(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Skip | 静态 helper，仅为本文件请求/回复编码追加 encryption context，无独立跨文件接口。 |
-| smb2_encode_negotiate_request | function | `static int smb2_encode_negotiate_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_negotiate_request *req)` | Skip | 静态编码 helper，其行为归属 `smb2_cmd_negotiate_async`。 |
-| smb2_encode_negotiate_reply | function | `static int smb2_encode_negotiate_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_negotiate_reply *rep)` | Skip | 静态编码 helper，其行为归属 `smb2_cmd_negotiate_reply_async`。 |
-| smb2_parse_encryption_context | function | `static int smb2_parse_encryption_context(struct smb2_context *smb2, struct smb2_negotiate_reply *rep, struct smb2_iovec *iov, int offset)` | Skip | 静态 parser helper，仅写入 reply cypher，行为归属 variable reply parser。 |
-| smb2_parse_negotiate_contexts | function | `static int smb2_parse_negotiate_contexts(struct smb2_context *smb2, struct smb2_negotiate_reply *rep, struct smb2_iovec *iov, int offset, int count)` | Skip | 静态 parser helper，错误语义归属 `smb2_process_negotiate_variable`。 |
-| smb2_parse_encryption_request_context | function | `static int smb2_parse_encryption_request_context(struct smb2_context *smb2, struct smb2_negotiate_request *req, struct smb2_iovec *iov, int offset, int len)` | Skip | 静态空实现 helper，无调用方可观察独立状态变化。 |
-| smb2_parse_netname_request_context | function | `static int smb2_parse_netname_request_context(struct smb2_context *smb2, struct smb2_negotiate_request *req, struct smb2_iovec *iov, int offset, int len)` | Skip | 静态 helper 转换并释放 netname，行为归属 request context parser。 |
-| smb2_parse_negotiate_request_contexts | function | `static int smb2_parse_negotiate_request_contexts(struct smb2_context *smb2, struct smb2_negotiate_request *req, struct smb2_iovec *iov, int offset, int count)` | Skip | 静态 parser helper，错误语义归属 `smb2_process_negotiate_request_variable`。 |
+| smb2_cmd_negotiate_async | function | struct smb2_pdu *smb2_cmd_negotiate_async(struct smb2_context *smb2, struct smb2_negotiate_request *req, smb2_command_cb cb, void *cb_data); | Include | 公开 RAW SMB2 Negotiate 异步入口，构造请求 PDU 并决定错误时是否返回 NULL。 |
+| smb2_cmd_negotiate_reply_async | function | struct smb2_pdu *smb2_cmd_negotiate_reply_async(struct smb2_context *smb2, struct smb2_negotiate_reply *rep, smb2_command_cb cb, void *cb_data); | Include | 公开/服务端使用的 Negotiate reply PDU 构造入口，影响服务器 negotiate 回调响应。 |
+| smb2_process_negotiate_fixed | function | int smb2_process_negotiate_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 内部跨文件 reply fixed parser，被 PDU 分发层调用并建立 negotiate reply payload。 |
+| smb2_process_negotiate_variable | function | int smb2_process_negotiate_variable(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 内部跨文件 reply variable parser，解析 security buffer 与 SMB 3.1.1 negotiate contexts。 |
+| smb2_process_negotiate_request_fixed | function | int smb2_process_negotiate_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 内部跨文件 request fixed parser，被服务端请求分发层调用并建立 negotiate request payload。 |
+| smb2_process_negotiate_request_variable | function | int smb2_process_negotiate_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 内部跨文件 request variable parser，填充 dialect 数组并按 SMB 3.1.1 条件解析 contexts。 |
+| smb2_encode_preauth_context | function | static int smb2_encode_preauth_context(struct smb2_context *smb2, struct smb2_pdu *pdu) | Skip | 静态 helper，仅为本文件请求/回复编码追加 preauth context，无独立跨文件接口。 |
+| smb2_encode_encryption_context | function | static int smb2_encode_encryption_context(struct smb2_context *smb2, struct smb2_pdu *pdu) | Skip | 静态 helper，仅为本文件请求/回复编码追加 encryption context，无独立跨文件接口。 |
+| smb2_encode_negotiate_request | function | static int smb2_encode_negotiate_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_negotiate_request *req) | Skip | 静态编码 helper，其行为归属 `smb2_cmd_negotiate_async`。 |
+| smb2_encode_negotiate_reply | function | static int smb2_encode_negotiate_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_negotiate_reply *rep) | Skip | 静态编码 helper，其行为归属 `smb2_cmd_negotiate_reply_async`。 |
+| smb2_parse_encryption_context | function | static int smb2_parse_encryption_context(struct smb2_context *smb2, struct smb2_negotiate_reply *rep, struct smb2_iovec *iov, int offset) | Skip | 静态 parser helper，仅写入 reply cypher，行为归属 variable reply parser。 |
+| smb2_parse_negotiate_contexts | function | static int smb2_parse_negotiate_contexts(struct smb2_context *smb2, struct smb2_negotiate_reply *rep, struct smb2_iovec *iov, int offset, int count) | Skip | 静态 parser helper，错误语义归属 `smb2_process_negotiate_variable`。 |
+| smb2_parse_encryption_request_context | function | static int smb2_parse_encryption_request_context(struct smb2_context *smb2, struct smb2_negotiate_request *req, struct smb2_iovec *iov, int offset, int len) | Skip | 静态空实现 helper，无调用方可观察独立状态变化。 |
+| smb2_parse_netname_request_context | function | static int smb2_parse_netname_request_context(struct smb2_context *smb2, struct smb2_negotiate_request *req, struct smb2_iovec *iov, int offset, int len) | Skip | 静态 helper 转换并释放 netname，行为归属 request context parser。 |
+| smb2_parse_negotiate_request_contexts | function | static int smb2_parse_negotiate_request_contexts(struct smb2_context *smb2, struct smb2_negotiate_request *req, struct smb2_iovec *iov, int offset, int count) | Skip | 静态 parser helper，错误语义归属 `smb2_process_negotiate_request_variable`。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| struct smb2_negotiate_request | struct | `include/smb2/smb2.h:117` | 请求字段包括 dialect count/security mode/capabilities/client GUID/context offset/context count 与最多 `SMB2_NEGOTIATE_MAX_DIALECTS` 个 dialect。 |
-| struct smb2_negotiate_reply | struct | `include/smb2/smb2.h:129` | 回复字段包括 security mode/dialect/cypher/server GUID/capabilities/大小限制/时间/security buffer 与 negotiate context 元数据。 |
-| SMB2_NEGOTIATE_REQUEST_SIZE | macro | `include/smb2/smb2.h:112` | 固定请求结构大小为 36，用于编码和 fixed parser 校验。 |
-| SMB2_NEGOTIATE_REPLY_SIZE | macro | `include/smb2/smb2.h:127` | 固定回复结构大小为 65，代码按 `& 0xfffe` 处理 wire fixed iovec 长度。 |
-| SMB2_PREAUTH_INTEGRITY_CAP | macro | `include/smb2/smb2.h:95` | SMB 3.1.1 negotiate context 类型，编码 SHA-512 preauth capability 并在 parser 中被接受。 |
-| SMB2_ENCRYPTION_CAP | macro | `include/smb2/smb2.h:96` | negotiate context 类型，编码 AES-128-CCM 能力并在 reply parser 中读取 cypher。 |
-| IOV_OFFSET_NEGOTIATE | macro | `lib/smb2-cmd-negotiate.c:320` | 根据 reply security buffer offset 计算 variable iovec 内 security buffer 起点。 |
-| IOVREQ_OFFSET_NEGOTIATE | macro | `lib/smb2-cmd-negotiate.c:481` | request security buffer 偏移宏在当前文件未被使用，保留为实现细节。 |
+| struct smb2_negotiate_request | struct | include/smb2/smb2.h:117 | 请求字段包括 dialect count/security mode/capabilities/client GUID/context offset/context count 与最多 `SMB2_NEGOTIATE_MAX_DIALECTS` 个 dialect。 |
+| struct smb2_negotiate_reply | struct | include/smb2/smb2.h:129 | 回复字段包括 security mode/dialect/cypher/server GUID/capabilities/大小限制/时间/security buffer 与 negotiate context 元数据。 |
+| SMB2_NEGOTIATE_REQUEST_SIZE | macro | include/smb2/smb2.h:112 | 固定请求结构大小为 36，用于编码和 fixed parser 校验。 |
+| SMB2_NEGOTIATE_REPLY_SIZE | macro | include/smb2/smb2.h:127 | 固定回复结构大小为 65，代码按 `& 0xfffe` 处理 wire fixed iovec 长度。 |
+| SMB2_PREAUTH_INTEGRITY_CAP | macro | include/smb2/smb2.h:95 | SMB 3.1.1 negotiate context 类型，编码 SHA-512 preauth capability 并在 parser 中被接受。 |
+| SMB2_ENCRYPTION_CAP | macro | include/smb2/smb2.h:96 | negotiate context 类型，编码 AES-128-CCM 能力并在 reply parser 中读取 cypher。 |
+| IOV_OFFSET_NEGOTIATE | macro | lib/smb2-cmd-negotiate.c:320 | 根据 reply security buffer offset 计算 variable iovec 内 security buffer 起点。 |
+| IOVREQ_OFFSET_NEGOTIATE | macro | lib/smb2-cmd-negotiate.c:481 | request security buffer 偏移宏在当前文件未被使用，保留为实现细节。 |
 
 ## ADDED Requirements
 

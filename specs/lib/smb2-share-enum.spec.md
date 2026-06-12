@@ -12,20 +12,20 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| `smb2_share_enum_async` | function | `int smb2_share_enum_async(struct smb2_context *smb2, enum SHARE_INFO_enum level, smb2_command_cb cb, void *cb_data);` | Include | 公开异步 SRVSVC ShareEnum 入口，声明在 public DCERPC SRVSVC 头文件中，并由示例程序和同步包装层调用。 |
-| `nse_free` | function | `static void nse_free(struct smb2nse *nse)` | Skip | 静态释放 helper，仅释放当前文件私有状态，无独立对外契约。 |
-| `srvsvc_ioctl_cb` | function | `static void srvsvc_ioctl_cb(struct dcerpc_context *dce, int status, void *command_data, void *cb_data)` | Skip | 静态 DCERPC 调用回调，行为归属到 `smb2_share_enum_async` 的异步完成契约。 |
-| `share_enum_bind_cb` | function | `static void share_enum_bind_cb(struct dcerpc_context *dce, int status, void *command_data, void *cb_data)` | Skip | 静态 bind 回调，行为归属到 `smb2_share_enum_async` 的连接与调用分派契约。 |
+| smb2_share_enum_async | function | int smb2_share_enum_async(struct smb2_context *smb2, enum SHARE_INFO_enum level, smb2_command_cb cb, void *cb_data); | Include | 公开异步 SRVSVC ShareEnum 入口，声明在 public DCERPC SRVSVC 头文件中，并由示例程序和同步包装层调用。 |
+| nse_free | function | static void nse_free(struct smb2nse *nse) | Skip | 静态释放 helper，仅释放当前文件私有状态，无独立对外契约。 |
+| srvsvc_ioctl_cb | function | static void srvsvc_ioctl_cb(struct dcerpc_context *dce, int status, void *command_data, void *cb_data) | Skip | 静态 DCERPC 调用回调，行为归属到 `smb2_share_enum_async` 的异步完成契约。 |
+| share_enum_bind_cb | function | static void share_enum_bind_cb(struct dcerpc_context *dce, int status, void *command_data, void *cb_data) | Skip | 静态 bind 回调，行为归属到 `smb2_share_enum_async` 的连接与调用分派契约。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| `struct smb2nse` | struct | `lib/smb2-share-enum.c:70` | 当前文件私有异步状态，保存调用方 callback、callback 数据和 `srvsvc_NetrShareEnum_req` 请求体。 |
-| `SRVSVC_NETRSHAREENUM` | macro | `include/smb2/libsmb2-dcerpc-srvsvc.h:28` | DCERPC SRVSVC ShareEnum 操作号，异步 bind 成功后传入 `dcerpc_call_async`。 |
-| `enum SHARE_INFO_enum` | enum | `include/smb2/libsmb2-dcerpc-srvsvc.h:44` | 调用方可传入的 share info level，目前头文件定义 `SHARE_INFO_0` 和 `SHARE_INFO_1`。 |
-| `struct srvsvc_NetrShareEnum_req` | struct | `include/smb2/libsmb2-dcerpc-srvsvc.h:95` | ShareEnum 请求体，当前实现填充服务器名、level、preferred maximum length 和 resume handle。 |
-| `struct srvsvc_NetrShareEnum_rep` | struct | `include/smb2/libsmb2-dcerpc-srvsvc.h:102` | ShareEnum 成功响应体，public header 要求调用方使用 `smb2_free_data()` 释放。 |
+| struct smb2nse | struct | lib/smb2-share-enum.c:70 | 当前文件私有异步状态，保存调用方 callback、callback 数据和 `srvsvc_NetrShareEnum_req` 请求体。 |
+| SRVSVC_NETRSHAREENUM | macro | include/smb2/libsmb2-dcerpc-srvsvc.h:28 | DCERPC SRVSVC ShareEnum 操作号，异步 bind 成功后传入 `dcerpc_call_async`。 |
+| enum SHARE_INFO_enum | enum | include/smb2/libsmb2-dcerpc-srvsvc.h:44 | 调用方可传入的 share info level，目前头文件定义 `SHARE_INFO_0` 和 `SHARE_INFO_1`。 |
+| struct srvsvc_NetrShareEnum_req | struct | include/smb2/libsmb2-dcerpc-srvsvc.h:95 | ShareEnum 请求体，当前实现填充服务器名、level、preferred maximum length 和 resume handle。 |
+| struct srvsvc_NetrShareEnum_rep | struct | include/smb2/libsmb2-dcerpc-srvsvc.h:102 | ShareEnum 成功响应体，public header 要求调用方使用 `smb2_free_data()` 释放。 |
 
 ## ADDED Requirements
 
@@ -85,6 +85,6 @@ Trace: `lib/smb2-share-enum.c:srvsvc_ioctl_cb`, `include/smb2/libsmb2-dcerpc-srv
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `level` 既不是 `SHARE_INFO_0` 也不是 `SHARE_INFO_1` 时是否应立即失败，还是允许发送未完整初始化的 `ses` 字段？ | `smb2_share_enum_async` | 源码 switch 没有 default 分支，头文件只声明两个枚举值但未写非法 level 行为。 |
-| Q-002 | `dcerpc_connect_context_async` 立即返回错误时是否应调用用户 callback？ | `smb2_share_enum_async` | public header 写明启动失败时 callback 不会被调用，源码立即失败路径也不调用 callback；bind 后 `dcerpc_call_async` 失败路径会调用 callback，两个阶段语义需要确认。 |
-| Q-003 | 传入 `smb2 == NULL`、`cb == NULL` 或 `smb2->server == NULL` 的行为是否属于调用方前置条件？ | `smb2_share_enum_async` | 源码直接解引用 `smb2->server` 和 callback，未显式校验空指针。 |
+| Q-001 | `level` 既不是 `SHARE_INFO_0` 也不是 `SHARE_INFO_1` 时是否应立即失败，还是允许发送未完整初始化的 `ses` 字段？ | smb2_share_enum_async | 源码 switch 没有 default 分支，头文件只声明两个枚举值但未写非法 level 行为。 |
+| Q-002 | `dcerpc_connect_context_async` 立即返回错误时是否应调用用户 callback？ | smb2_share_enum_async | public header 写明启动失败时 callback 不会被调用，源码立即失败路径也不调用 callback；bind 后 `dcerpc_call_async` 失败路径会调用 callback，两个阶段语义需要确认。 |
+| Q-003 | 传入 `smb2 == NULL`、`cb == NULL` 或 `smb2->server == NULL` 的行为是否属于调用方前置条件？ | smb2_share_enum_async | 源码直接解引用 `smb2->server` 和 callback，未显式校验空指针。 |

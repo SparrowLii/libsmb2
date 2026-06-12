@@ -12,24 +12,24 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| decode_sid | function | `static struct smb2_sid * decode_sid(struct smb2_context *smb2, void *memctx, struct smb2_iovec *v)` | Skip | 文件内 SID 解码 helper；行为由公开的 security descriptor 解码入口统一承载。 |
-| decode_ace | function | `static struct smb2_ace * decode_ace(struct smb2_context *smb2, void *memctx, struct smb2_iovec *vec)` | Skip | 文件内 ACE 解码 helper；错误、分配和类型分派语义由公开入口间接暴露。 |
-| decode_acl | function | `static struct smb2_acl * decode_acl(struct smb2_context *smb2, void *memctx, struct smb2_iovec *vec)` | Skip | 文件内 ACL 解码 helper；链表追加和 ACE 遍历语义归属到公开入口。 |
-| smb2_decode_security_descriptor | function | `int smb2_decode_security_descriptor(struct smb2_context *smb2, void *memctx, struct smb2_security_descriptor *sd, struct smb2_iovec *vec)` | Include | 私有跨文件接口，由 Query Info security reply 解码路径调用并向调用方暴露解析结果和错误返回。 |
+| decode_sid | function | static struct smb2_sid * decode_sid(struct smb2_context *smb2, void *memctx, struct smb2_iovec *v) | Skip | 文件内 SID 解码 helper；行为由公开的 security descriptor 解码入口统一承载。 |
+| decode_ace | function | static struct smb2_ace * decode_ace(struct smb2_context *smb2, void *memctx, struct smb2_iovec *vec) | Skip | 文件内 ACE 解码 helper；错误、分配和类型分派语义由公开入口间接暴露。 |
+| decode_acl | function | static struct smb2_acl * decode_acl(struct smb2_context *smb2, void *memctx, struct smb2_iovec *vec) | Skip | 文件内 ACL 解码 helper；链表追加和 ACE 遍历语义归属到公开入口。 |
+| smb2_decode_security_descriptor | function | int smb2_decode_security_descriptor(struct smb2_context *smb2, void *memctx, struct smb2_security_descriptor *sd, struct smb2_iovec *vec) | Include | 私有跨文件接口，由 Query Info security reply 解码路径调用并向调用方暴露解析结果和错误返回。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SID_ID_AUTH_LEN | macro | `include/smb2/smb2.h:737` | SID identifier authority 固定为 6 字节，SID 边界检查和复制依赖该长度。 |
-| struct smb2_sid | struct | `include/smb2/smb2.h:744` | 承载 SID revision、sub-authority count、identifier authority 和变长 sub_auth 数组。 |
-| SMB2_ACCESS_ALLOWED_ACE_TYPE | macro | `include/smb2/smb2.h:759` | 与同类 ACE type 宏共同决定 ACE body 按 mask+SID、object ACE、callback data 或 raw blob 解码。 |
-| SMB2_OBJECT_TYPE_SIZE | macro | `include/smb2/smb2.h:788` | Object ACE 中 object_type 与 inherited_object_type 字段固定长度。 |
-| struct smb2_ace | struct | `include/smb2/smb2.h:790` | 承载 ACE header、mask、flags、SID、object GUID、application data 或未知 raw blob。 |
-| SMB2_ACL_REVISION | macro | `include/smb2/smb2.h:820` | ACL decoder 接受的普通 ACL revision。 |
-| SMB2_ACL_REVISION_DS | macro | `include/smb2/smb2.h:821` | ACL decoder 接受的 directory service ACL revision。 |
-| struct smb2_acl | struct | `include/smb2/smb2.h:823` | 承载 ACL revision、ACE count 和 ACE 链表。 |
-| struct smb2_security_descriptor | struct | `include/smb2/smb2.h:850` | 输出 security descriptor revision、control、owner、group 和 DACL 指针；当前实现未填充 SACL。 |
+| SID_ID_AUTH_LEN | macro | include/smb2/smb2.h:737 | SID identifier authority 固定为 6 字节，SID 边界检查和复制依赖该长度。 |
+| struct smb2_sid | struct | include/smb2/smb2.h:744 | 承载 SID revision、sub-authority count、identifier authority 和变长 sub_auth 数组。 |
+| SMB2_ACCESS_ALLOWED_ACE_TYPE | macro | include/smb2/smb2.h:759 | 与同类 ACE type 宏共同决定 ACE body 按 mask+SID、object ACE、callback data 或 raw blob 解码。 |
+| SMB2_OBJECT_TYPE_SIZE | macro | include/smb2/smb2.h:788 | Object ACE 中 object_type 与 inherited_object_type 字段固定长度。 |
+| struct smb2_ace | struct | include/smb2/smb2.h:790 | 承载 ACE header、mask、flags、SID、object GUID、application data 或未知 raw blob。 |
+| SMB2_ACL_REVISION | macro | include/smb2/smb2.h:820 | ACL decoder 接受的普通 ACL revision。 |
+| SMB2_ACL_REVISION_DS | macro | include/smb2/smb2.h:821 | ACL decoder 接受的 directory service ACL revision。 |
+| struct smb2_acl | struct | include/smb2/smb2.h:823 | 承载 ACL revision、ACE count 和 ACE 链表。 |
+| struct smb2_security_descriptor | struct | include/smb2/smb2.h:850 | 输出 security descriptor revision、control、owner、group 和 DACL 指针；当前实现未填充 SACL。 |
 
 ## ADDED Requirements
 

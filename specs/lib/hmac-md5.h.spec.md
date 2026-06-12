@@ -12,17 +12,17 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_hmac_md5 | function | `void smb2_hmac_md5(unsigned char *text, int text_len, unsigned char *key, unsigned int key_len, unsigned char *digest);` | Include | 公开声明供 NTLMSSP 认证路径调用，调用方可观察 digest 输出契约。 |
-| UWORD32 | type | `typedef uint32_t UWORD32;` | Include | 头文件在非 `__PS2__` 且非 `PICO_PLATFORM` 条件下暴露兼容整型别名，并受 `UWORD32_DEFINED` include guard 约束。 |
-| WORDS_BIGENDIAN | macro | `#define WORDS_BIGENDIAN 1` | Include | 头文件在大端或 Xbox 360 条件下暴露 endian 编译宏，影响共享 MD5 兼容类型上下文。 |
-| HMAC_MD5_H | macro | `#define HMAC_MD5_H` | Skip | 头文件 include guard，无独立调用方可观察行为契约。 |
+| smb2_hmac_md5 | function | void smb2_hmac_md5(unsigned char *text, int text_len, unsigned char *key, unsigned int key_len, unsigned char *digest); | Include | 公开声明供 NTLMSSP 认证路径调用，调用方可观察 digest 输出契约。 |
+| UWORD32 | type | typedef uint32_t UWORD32; | Include | 头文件在非 `__PS2__` 且非 `PICO_PLATFORM` 条件下暴露兼容整型别名，并受 `UWORD32_DEFINED` include guard 约束。 |
+| WORDS_BIGENDIAN | macro | #define WORDS_BIGENDIAN 1 | Include | 头文件在大端或 Xbox 360 条件下暴露 endian 编译宏，影响共享 MD5 兼容类型上下文。 |
+| HMAC_MD5_H | macro | #define HMAC_MD5_H | Skip | 头文件 include guard，无独立调用方可观察行为契约。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| UWORD32 | typedef | `lib/hmac-md5.h:25` | 在 `!defined(__PS2__) && !defined(PICO_PLATFORM)` 且未定义 `UWORD32_DEFINED` 时别名为 `uint32_t`。 |
-| WORDS_BIGENDIAN | macro | `lib/hmac-md5.h:19` | 在 `__BYTE_ORDER == __BIG_ENDIAN` 或 `defined(XBOX_360_PLATFORM)` 时定义为 `1`。 |
+| UWORD32 | typedef | lib/hmac-md5.h:25 | 在 `!defined(__PS2__) && !defined(PICO_PLATFORM)` 且未定义 `UWORD32_DEFINED` 时别名为 `uint32_t`。 |
+| WORDS_BIGENDIAN | macro | lib/hmac-md5.h:19 | 在 `__BYTE_ORDER == __BIG_ENDIAN` 或 `defined(XBOX_360_PLATFORM)` 时定义为 `1`。 |
 
 ## ADDED Requirements
 

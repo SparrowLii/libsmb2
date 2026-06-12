@@ -12,17 +12,17 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_encode_error_reply | function | `static int smb2_encode_error_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_error_reply *rep);` | Skip | 文件内部编码 helper，仅由 `smb2_cmd_error_reply_async` 调用，错误与资源语义归属到公开 reply builder。 |
-| smb2_cmd_error_reply_async | function | `struct smb2_pdu *smb2_cmd_error_reply_async(struct smb2_context *smb2, struct smb2_error_reply *rep, uint8_t causing_command, int status, smb2_command_cb cb, void *cb_data);` | Include | `include/smb2/libsmb2-raw.h` 公开声明的 SMB2 error response PDU builder，被多种 server request callback 直接调用。 |
-| smb2_process_error_fixed | function | `int smb2_process_error_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | `include/libsmb2-private.h` 声明的内部回复解析入口，被通用固定 payload 分派调用并承担错误回复结构校验和 payload 分配。 |
-| smb2_process_error_variable | function | `int smb2_process_error_variable(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | `include/libsmb2-private.h` 声明的内部 variable payload 解析入口，被通用 variable payload 分派调用并设置 error data 指针。 |
+| smb2_encode_error_reply | function | static int smb2_encode_error_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_error_reply *rep); | Skip | 文件内部编码 helper，仅由 `smb2_cmd_error_reply_async` 调用，错误与资源语义归属到公开 reply builder。 |
+| smb2_cmd_error_reply_async | function | struct smb2_pdu *smb2_cmd_error_reply_async(struct smb2_context *smb2, struct smb2_error_reply *rep, uint8_t causing_command, int status, smb2_command_cb cb, void *cb_data); | Include | `include/smb2/libsmb2-raw.h` 公开声明的 SMB2 error response PDU builder，被多种 server request callback 直接调用。 |
+| smb2_process_error_fixed | function | int smb2_process_error_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | `include/libsmb2-private.h` 声明的内部回复解析入口，被通用固定 payload 分派调用并承担错误回复结构校验和 payload 分配。 |
+| smb2_process_error_variable | function | int smb2_process_error_variable(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | `include/libsmb2-private.h` 声明的内部 variable payload 解析入口，被通用 variable payload 分派调用并设置 error data 指针。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SMB2_ERROR_REPLY_SIZE | macro | `include/smb2/smb2.h:40` | SMB2 error reply 固定结构大小为 9；固定 payload 读取使用 `SMB2_ERROR_REPLY_SIZE & 0xfffe`，编码字段写入 9。 |
-| struct smb2_error_reply | struct | `include/smb2/smb2.h:42` | 保存 `error_context_count`、`byte_count` 和指向 variable error data 的 `error_data`。 |
+| SMB2_ERROR_REPLY_SIZE | macro | include/smb2/smb2.h:40 | SMB2 error reply 固定结构大小为 9；固定 payload 读取使用 `SMB2_ERROR_REPLY_SIZE & 0xfffe`，编码字段写入 9。 |
+| struct smb2_error_reply | struct | include/smb2/smb2.h:42 | 保存 `error_context_count`、`byte_count` 和指向 variable error data 的 `error_data`。 |
 
 ## ADDED Requirements
 

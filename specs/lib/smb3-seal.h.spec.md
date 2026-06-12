@@ -12,15 +12,15 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb3_encrypt_pdu | function | `int smb3_encrypt_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | SMB3 发送路径加密入口，跨文件由 PDU 出队前流程调用，具有可观察的返回值、密文缓冲区和密封状态语义。 |
-| smb3_decrypt_pdu | function | `int smb3_decrypt_pdu(struct smb2_context *smb2);` | Include | SMB3 接收路径解密入口，跨文件由 socket 接收状态机调用，具有可观察的错误设置、接收状态和解密缓冲区生命周期语义。 |
+| smb3_encrypt_pdu | function | int smb3_encrypt_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | SMB3 发送路径加密入口，跨文件由 PDU 出队前流程调用，具有可观察的返回值、密文缓冲区和密封状态语义。 |
+| smb3_decrypt_pdu | function | int smb3_decrypt_pdu(struct smb2_context *smb2); | Include | SMB3 接收路径解密入口，跨文件由 socket 接收状态机调用，具有可观察的错误设置、接收状态和解密缓冲区生命周期语义。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| _SMB3_SEAL_H_ | macro | `lib/smb3-seal.h:2` | 头文件 include guard，防止重复声明。 |
-| _GNU_SOURCE | macro | `lib/smb3-seal.h:25` | 当调用方未定义 `_GNU_SOURCE` 时，本头文件会定义该特性宏。 |
+| _SMB3_SEAL_H_ | macro | lib/smb3-seal.h:2 | 头文件 include guard，防止重复声明。 |
+| _GNU_SOURCE | macro | lib/smb3-seal.h:25 | 当调用方未定义 `_GNU_SOURCE` 时，本头文件会定义该特性宏。 |
 
 ## ADDED Requirements
 

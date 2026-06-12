@@ -20,7 +20,7 @@
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| xfer | macro | `lib/smb3-seal.c:68` | SMB3 transform header 的 4 字节 protocol id `{0xFD, 'S', 'M', 'B'}`，源码为 `static const char`，仅通过加密输出缓冲区对调用方可观察。 |
+| xfer | macro | lib/smb3-seal.c:68 | SMB3 transform header 的 4 字节 protocol id `{0xFD, 'S', 'M', 'B'}`，源码为 `static const char`，仅通过加密输出缓冲区对调用方可观察。 |
 
 ## ADDED Requirements
 

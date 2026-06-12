@@ -12,14 +12,14 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| kos_smb_init | function | `int kos_smb_init(const char *url);` | Include | 公开 Dreamcast/KallistiOS SMB VFS 初始化入口，建立 libsmb2 上下文、解析 URL、连接 share，并注册 `/smb` VFS handler。 |
-| kos_smb_shutdown | function | `void kos_smb_shutdown(void);` | Include | 公开 Dreamcast/KallistiOS SMB VFS 清理入口，注销 `/smb` VFS handler 并释放初始化阶段保存的 SMB 资源。 |
+| kos_smb_init | function | int kos_smb_init(const char *url); | Include | 公开 Dreamcast/KallistiOS SMB VFS 初始化入口，建立 libsmb2 上下文、解析 URL、连接 share，并注册 `/smb` VFS handler。 |
+| kos_smb_shutdown | function | void kos_smb_shutdown(void); | Include | 公开 Dreamcast/KallistiOS SMB VFS 清理入口，注销 `/smb` VFS handler 并释放初始化阶段保存的 SMB 资源。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| __KOS_SMB_VFS_H__ | macro | `lib/dreamcast/vfs.h:8` | 头文件 include guard，防止重复声明。 |
+| __KOS_SMB_VFS_H__ | macro | lib/dreamcast/vfs.h:8 | 头文件 include guard，防止重复声明。 |
 
 ## ADDED Requirements
 

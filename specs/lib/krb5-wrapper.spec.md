@@ -12,31 +12,31 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| `krb5_free_auth_data` | function | `void krb5_free_auth_data(struct private_auth_data *auth);` | Include | 释放 Kerberos/GSSAPI 私有认证状态、票据缓存、上下文、名称、凭据和输出 token，影响客户端和服务端认证生命周期。 |
-| `display_status` | function | `static char *display_status(int type, uint32_t err)` | Skip | 纯内部错误字符串 helper，仅由 `krb5_set_gss_error` 使用，不形成独立调用方契约。 |
-| `krb5_set_gss_error` | function | `void krb5_set_gss_error(struct smb2_context *smb2, char *func, uint32_t maj, uint32_t min);` | Include | 将 GSS major/minor 状态转换为 SMB2 错误文本，是多个公开 Kerberos 路径的错误报告边界。 |
-| `krb5_negotiate_reply` | function | `struct private_auth_data *krb5_negotiate_reply(struct smb2_context *smb2, const char *server, const char *domain, const char *user_name, const char *password);` | Include | 客户端协商阶段创建目标服务名、用户凭据和可选内存 credential cache，被 `negotiate_cb` 调用。 |
-| `krb5_session_get_session_key` | function | `int krb5_session_get_session_key(struct smb2_context *smb2, struct private_auth_data *auth_data);` | Include | 从已建立 GSS context 提取会话密钥并写入 `smb2_context`，影响 SMB2 签名/加密后续流程。 |
-| `krb5_session_request` | function | `int krb5_session_request(struct smb2_context *smb2, struct private_auth_data *auth_data, unsigned char *buf, int len);` | Include | 客户端 session setup 期间生成或推进 GSS init token，并维护输出 token。 |
-| `establish_contexts` | function | `static OM_uint32 establish_contexts(struct smb2_context *smb2, gss_OID imech, gss_cred_id_t icred, gss_cred_id_t acred, gss_name_t tname, OM_uint32 flags, gss_ctx_id_t *ictx, gss_ctx_id_t *actx, gss_name_t *src_name, gss_OID *amech, gss_cred_id_t *deleg_cred)` | Skip | 非 Apple 内部 helper，仅为 S4U/proxy credential 建立临时 initiator/acceptor context，无外部直接调用契约。 |
-| `init_accept_sec_context` | function | `static OM_uint32 init_accept_sec_context(struct smb2_context *smb2, gss_OID mech, gss_cred_id_t claimant_cred_handle, gss_cred_id_t verifier_cred_handle, gss_cred_id_t *deleg_cred_handle)` | Skip | 非 Apple 内部 helper，仅由 `krb5_session_reply` 的 proxy credential 路径使用，行为归属到该接口。 |
-| `krb5_init_server_client_cred` | function | `struct private_auth_data *krb5_init_server_client_cred(struct smb2_server *server, struct smb2_context *smb2, const char *password);` | Include | 服务端 session setup 为接受端创建 GSS 凭据，并可沿用服务端 keytab/ccache 进行受限委派。 |
-| `krb5_session_reply` | function | `int krb5_session_reply(struct smb2_context *smb2, struct private_auth_data *auth_data, unsigned char *buf, int len, int *more_processing_needed);` | Include | 服务端接受客户端 GSS token、解析用户/域、处理继续标志和 proxy credential，是认证状态机核心入口。 |
-| `krb5_renew_server_credentials` | function | `int krb5_renew_server_credentials(struct smb2_server *server);` | Include | 服务端 keytab 模式下续期并存储 Kerberos 初始凭据，被服务端循环路径调用。 |
-| `krb5_init_server_credentials` | function | `int krb5_init_server_credentials(struct smb2_server *server, const char *keytab_path);` | Include | 服务端监听启动时初始化 keytab、principal 和内存 credential cache，并写入 `server->auth_data`。 |
-| `krb5_free_server_credentials` | function | `void krb5_free_server_credentials(struct smb2_server *server);` | Include | 服务端关闭时释放 `server->auth_data` 并清空指针，影响服务端资源生命周期。 |
-| `krb5_get_output_token_length` | function | `int krb5_get_output_token_length(struct private_auth_data *auth_data);` | Include | 向 session setup 调用方暴露当前 GSS output token 长度。 |
-| `krb5_get_output_token_buffer` | function | `unsigned char *krb5_get_output_token_buffer(struct private_auth_data *auth_data);` | Include | 向 session setup 调用方暴露当前 GSS output token buffer 指针。 |
-| `krb5_can_do_ntlmssp` | function | `int krb5_can_do_ntlmssp(void);` | Include | 检测 Kerberos/GSSAPI 运行时是否支持 NTLMSSP 机制，影响认证机制选择能力。 |
+| krb5_free_auth_data | function | void krb5_free_auth_data(struct private_auth_data *auth); | Include | 释放 Kerberos/GSSAPI 私有认证状态、票据缓存、上下文、名称、凭据和输出 token，影响客户端和服务端认证生命周期。 |
+| display_status | function | static char *display_status(int type, uint32_t err) | Skip | 纯内部错误字符串 helper，仅由 `krb5_set_gss_error` 使用，不形成独立调用方契约。 |
+| krb5_set_gss_error | function | void krb5_set_gss_error(struct smb2_context *smb2, char *func, uint32_t maj, uint32_t min); | Include | 将 GSS major/minor 状态转换为 SMB2 错误文本，是多个公开 Kerberos 路径的错误报告边界。 |
+| krb5_negotiate_reply | function | struct private_auth_data *krb5_negotiate_reply(struct smb2_context *smb2, const char *server, const char *domain, const char *user_name, const char *password); | Include | 客户端协商阶段创建目标服务名、用户凭据和可选内存 credential cache，被 `negotiate_cb` 调用。 |
+| krb5_session_get_session_key | function | int krb5_session_get_session_key(struct smb2_context *smb2, struct private_auth_data *auth_data); | Include | 从已建立 GSS context 提取会话密钥并写入 `smb2_context`，影响 SMB2 签名/加密后续流程。 |
+| krb5_session_request | function | int krb5_session_request(struct smb2_context *smb2, struct private_auth_data *auth_data, unsigned char *buf, int len); | Include | 客户端 session setup 期间生成或推进 GSS init token，并维护输出 token。 |
+| establish_contexts | function | static OM_uint32 establish_contexts(struct smb2_context *smb2, gss_OID imech, gss_cred_id_t icred, gss_cred_id_t acred, gss_name_t tname, OM_uint32 flags, gss_ctx_id_t *ictx, gss_ctx_id_t *actx, gss_name_t *src_name, gss_OID *amech, gss_cred_id_t *deleg_cred) | Skip | 非 Apple 内部 helper，仅为 S4U/proxy credential 建立临时 initiator/acceptor context，无外部直接调用契约。 |
+| init_accept_sec_context | function | static OM_uint32 init_accept_sec_context(struct smb2_context *smb2, gss_OID mech, gss_cred_id_t claimant_cred_handle, gss_cred_id_t verifier_cred_handle, gss_cred_id_t *deleg_cred_handle) | Skip | 非 Apple 内部 helper，仅由 `krb5_session_reply` 的 proxy credential 路径使用，行为归属到该接口。 |
+| krb5_init_server_client_cred | function | struct private_auth_data *krb5_init_server_client_cred(struct smb2_server *server, struct smb2_context *smb2, const char *password); | Include | 服务端 session setup 为接受端创建 GSS 凭据，并可沿用服务端 keytab/ccache 进行受限委派。 |
+| krb5_session_reply | function | int krb5_session_reply(struct smb2_context *smb2, struct private_auth_data *auth_data, unsigned char *buf, int len, int *more_processing_needed); | Include | 服务端接受客户端 GSS token、解析用户/域、处理继续标志和 proxy credential，是认证状态机核心入口。 |
+| krb5_renew_server_credentials | function | int krb5_renew_server_credentials(struct smb2_server *server); | Include | 服务端 keytab 模式下续期并存储 Kerberos 初始凭据，被服务端循环路径调用。 |
+| krb5_init_server_credentials | function | int krb5_init_server_credentials(struct smb2_server *server, const char *keytab_path); | Include | 服务端监听启动时初始化 keytab、principal 和内存 credential cache，并写入 `server->auth_data`。 |
+| krb5_free_server_credentials | function | void krb5_free_server_credentials(struct smb2_server *server); | Include | 服务端关闭时释放 `server->auth_data` 并清空指针，影响服务端资源生命周期。 |
+| krb5_get_output_token_length | function | int krb5_get_output_token_length(struct private_auth_data *auth_data); | Include | 向 session setup 调用方暴露当前 GSS output token 长度。 |
+| krb5_get_output_token_buffer | function | unsigned char *krb5_get_output_token_buffer(struct private_auth_data *auth_data); | Include | 向 session setup 调用方暴露当前 GSS output token buffer 指针。 |
+| krb5_can_do_ntlmssp | function | int krb5_can_do_ntlmssp(void); | Include | 检测 Kerberos/GSSAPI 运行时是否支持 NTLMSSP 机制，影响认证机制选择能力。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| `struct private_auth_data` | struct | `lib/krb5-wrapper.h:56` | 保存 GSS context、credential、name、output token、SPNEGO/KRB5 机制选择、Kerberos context/cache/principal/keytab/server creds。 |
-| `gss_mech_spnego` | macro | `lib/krb5-wrapper.h:43` | 非 Apple 构建中的 SPNEGO OID 描述符。 |
-| `spnego_mech_krb5` | macro | `lib/krb5-wrapper.h:48` | KRB5 OID 描述符。 |
-| `spnego_mech_ntlmssp` | macro | `lib/krb5-wrapper.h:52` | NTLMSSP OID 描述符，供 `krb5_can_do_ntlmssp` 和非 Apple proxy/negotiation paths 使用。 |
+| struct private_auth_data | struct | lib/krb5-wrapper.h:56 | 保存 GSS context、credential、name、output token、SPNEGO/KRB5 机制选择、Kerberos context/cache/principal/keytab/server creds。 |
+| gss_mech_spnego | macro | lib/krb5-wrapper.h:43 | 非 Apple 构建中的 SPNEGO OID 描述符。 |
+| spnego_mech_krb5 | macro | lib/krb5-wrapper.h:48 | KRB5 OID 描述符。 |
+| spnego_mech_ntlmssp | macro | lib/krb5-wrapper.h:52 | NTLMSSP OID 描述符，供 `krb5_can_do_ntlmssp` 和非 Apple proxy/negotiation paths 使用。 |
 
 ## ADDED Requirements
 
@@ -258,9 +258,9 @@ Trace: `lib/krb5-wrapper.c:krb5_can_do_ntlmssp`, `lib/krb5-wrapper.c:krb5_set_gs
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `krb5_free_auth_data(NULL)` 是否被调用方视为非法前置条件，还是应具备空指针容忍语义？ | `krb5_free_auth_data` | `krb5_negotiate_reply` 在 `calloc` 失败路径会以 `NULL` 调用该函数，但实现会解引用 `auth`；源码与调用路径存在冲突。 |
-| Q-002 | `krb5_negotiate_reply` 中 `snprintf` 生成 cached principal 失败、`krb5_init_context` 失败、`strdup(password)` 失败路径是否需要释放已分配的 `auth_data` 和 `nc_password`？ | `krb5_negotiate_reply` | 部分失败路径直接返回 `NULL`，源码未统一调用 `krb5_free_auth_data` 或检查 `strdup` 返回值。 |
-| Q-003 | `krb5_session_get_session_key` 在 invalid session key 或 malloc failure 路径是否应释放 `sessionKey` buffer set？ | `krb5_session_get_session_key` | 成功路径释放 `sessionKey`，多个错误路径返回前未释放。 |
-| Q-004 | `krb5_session_reply` 中 `ret_delegated_cred_handle` 在 GSS accept 未返回 delegated credential 时是否有确定初始值？ | `krb5_session_reply` | 局部变量未显式初始化，后续条件读取依赖 GSSAPI 输出约定。 |
-| Q-005 | `krb5_init_server_client_cred` 失败路径是否应释放已分配的 `auth_data`、`g_server` 和 target name？ | `krb5_init_server_client_cred` | 多个错误路径返回 `NULL` 但未调用 `krb5_free_auth_data`。 |
-| Q-006 | `krb5_init_server_credentials` 开头在检查 `server` 是否为 `NULL` 前写入 `server->error[0]` 是否要求调用方保证 `server` 非空？ | `krb5_init_server_credentials` | 源码先解引用 `server`，随后才检查 `!server`。 |
+| Q-001 | `krb5_free_auth_data(NULL)` 是否被调用方视为非法前置条件，还是应具备空指针容忍语义？ | krb5_free_auth_data | `krb5_negotiate_reply` 在 `calloc` 失败路径会以 `NULL` 调用该函数，但实现会解引用 `auth`；源码与调用路径存在冲突。 |
+| Q-002 | `krb5_negotiate_reply` 中 `snprintf` 生成 cached principal 失败、`krb5_init_context` 失败、`strdup(password)` 失败路径是否需要释放已分配的 `auth_data` 和 `nc_password`？ | krb5_negotiate_reply | 部分失败路径直接返回 `NULL`，源码未统一调用 `krb5_free_auth_data` 或检查 `strdup` 返回值。 |
+| Q-003 | `krb5_session_get_session_key` 在 invalid session key 或 malloc failure 路径是否应释放 `sessionKey` buffer set？ | krb5_session_get_session_key | 成功路径释放 `sessionKey`，多个错误路径返回前未释放。 |
+| Q-004 | `krb5_session_reply` 中 `ret_delegated_cred_handle` 在 GSS accept 未返回 delegated credential 时是否有确定初始值？ | krb5_session_reply | 局部变量未显式初始化，后续条件读取依赖 GSSAPI 输出约定。 |
+| Q-005 | `krb5_init_server_client_cred` 失败路径是否应释放已分配的 `auth_data`、`g_server` 和 target name？ | krb5_init_server_client_cred | 多个错误路径返回 `NULL` 但未调用 `krb5_free_auth_data`。 |
+| Q-006 | `krb5_init_server_credentials` 开头在检查 `server` 是否为 `NULL` 前写入 `server->error[0]` 是否要求调用方保证 `server` 非空？ | krb5_init_server_credentials | 源码先解引用 `server`，随后才检查 `!server`。 |

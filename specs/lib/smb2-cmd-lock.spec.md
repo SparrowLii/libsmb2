@@ -12,24 +12,24 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_encode_lock_request | function | `static int smb2_encode_lock_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_lock_request *req)` | Skip | 静态编码 helper，仅由本文件 `smb2_cmd_lock_async` 调用，行为归属到公开 lock PDU 构造接口。 |
-| smb2_cmd_lock_async | function | `struct smb2_pdu *smb2_cmd_lock_async(struct smb2_context *smb2, struct smb2_lock_request *req, smb2_command_cb cb, void *cb_data);` | Include | RAW SMB2 Lock 请求构造入口，声明在公开 raw header 中并返回可排队 PDU。 |
-| smb2_encode_lock_reply | function | `static int smb2_encode_lock_reply(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Skip | 静态编码 helper，仅由本文件 `smb2_cmd_lock_reply_async` 调用，行为归属到服务端 lock reply 构造接口。 |
-| smb2_cmd_lock_reply_async | function | `struct smb2_pdu *smb2_cmd_lock_reply_async(struct smb2_context *smb2, smb2_command_cb cb, void *cb_data);` | Include | SMB2 Lock 成功回复 PDU 构造入口，被服务端 lock request callback 调用。 |
-| smb2_process_lock_fixed | function | `int smb2_process_lock_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 客户端接收 SMB2 Lock reply 固定区解析入口，声明在私有 header 并由 PDU 分发调用。 |
-| smb2_parse_locks | function | `static int smb2_parse_locks(struct smb2_context *smb2, struct smb2_iovec *iov, uint32_t offset, int count, void *locks)` | Skip | 静态 lock element 解析 helper，空指针和循环读取行为归属到 request fixed/variable 解析接口。 |
-| smb2_process_lock_request_fixed | function | `int smb2_process_lock_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 服务端接收 SMB2 Lock request 固定区解析入口，负责 payload 分配、基础字段解析和变量区长度返回。 |
-| smb2_process_lock_request_variable | function | `int smb2_process_lock_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 服务端接收 SMB2 Lock request 变量区解析入口，补充解析剩余 lock elements。 |
+| smb2_encode_lock_request | function | static int smb2_encode_lock_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_lock_request *req) | Skip | 静态编码 helper，仅由本文件 `smb2_cmd_lock_async` 调用，行为归属到公开 lock PDU 构造接口。 |
+| smb2_cmd_lock_async | function | struct smb2_pdu *smb2_cmd_lock_async(struct smb2_context *smb2, struct smb2_lock_request *req, smb2_command_cb cb, void *cb_data); | Include | RAW SMB2 Lock 请求构造入口，声明在公开 raw header 中并返回可排队 PDU。 |
+| smb2_encode_lock_reply | function | static int smb2_encode_lock_reply(struct smb2_context *smb2, struct smb2_pdu *pdu) | Skip | 静态编码 helper，仅由本文件 `smb2_cmd_lock_reply_async` 调用，行为归属到服务端 lock reply 构造接口。 |
+| smb2_cmd_lock_reply_async | function | struct smb2_pdu *smb2_cmd_lock_reply_async(struct smb2_context *smb2, smb2_command_cb cb, void *cb_data); | Include | SMB2 Lock 成功回复 PDU 构造入口，被服务端 lock request callback 调用。 |
+| smb2_process_lock_fixed | function | int smb2_process_lock_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 客户端接收 SMB2 Lock reply 固定区解析入口，声明在私有 header 并由 PDU 分发调用。 |
+| smb2_parse_locks | function | static int smb2_parse_locks(struct smb2_context *smb2, struct smb2_iovec *iov, uint32_t offset, int count, void *locks) | Skip | 静态 lock element 解析 helper，空指针和循环读取行为归属到 request fixed/variable 解析接口。 |
+| smb2_process_lock_request_fixed | function | int smb2_process_lock_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 服务端接收 SMB2 Lock request 固定区解析入口，负责 payload 分配、基础字段解析和变量区长度返回。 |
+| smb2_process_lock_request_variable | function | int smb2_process_lock_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 服务端接收 SMB2 Lock request 变量区解析入口，补充解析剩余 lock elements。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SMB2_LOCK_ELEMENT_SIZE | macro | `include/smb2/smb2.h:1212` | Lock element wire size is 24 bytes and is used for fixed and variable element offsets. |
-| smb2_lock_element | struct | `include/smb2/smb2.h:1214` | Lock element carries `offset`, `length`, `flags`, and `reserved`; this file serializes/deserializes the first three fields. |
-| SMB2_LOCK_REQUEST_SIZE | macro | `include/smb2/smb2.h:1222` | Lock request fixed size is 48 bytes and includes one lock element. |
-| smb2_lock_request | struct | `include/smb2/smb2.h:1224` | Request model carries lock count, sequence fields, file id, and allocated lock element array. |
-| SMB2_LOCK_REPLY_SIZE | macro | `include/smb2/smb2.h:1232` | Lock reply fixed size is 4 bytes. |
+| SMB2_LOCK_ELEMENT_SIZE | macro | include/smb2/smb2.h:1212 | Lock element wire size is 24 bytes and is used for fixed and variable element offsets. |
+| smb2_lock_element | struct | include/smb2/smb2.h:1214 | Lock element carries `offset`, `length`, `flags`, and `reserved`; this file serializes/deserializes the first three fields. |
+| SMB2_LOCK_REQUEST_SIZE | macro | include/smb2/smb2.h:1222 | Lock request fixed size is 48 bytes and includes one lock element. |
+| smb2_lock_request | struct | include/smb2/smb2.h:1224 | Request model carries lock count, sequence fields, file id, and allocated lock element array. |
+| SMB2_LOCK_REPLY_SIZE | macro | include/smb2/smb2.h:1232 | Lock reply fixed size is 4 bytes. |
 
 ## ADDED Requirements
 

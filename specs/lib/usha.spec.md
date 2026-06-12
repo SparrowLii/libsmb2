@@ -12,24 +12,24 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| USHAReset | function | `extern int USHAReset (USHAContext *, SHAversion whichSha);` | Include | 公开统一 SHA 初始化入口，设置算法选择并委托具体 SHA reset，错误码对调用方可见。 |
-| USHAInput | function | `extern int USHAInput (USHAContext *, const uint8_t * bytes, size_t bytecount);` | Include | 公开统一 SHA 输入入口，按上下文算法分发输入字节并传播后端错误码。 |
-| USHAFinalBits | function | `extern int USHAFinalBits (USHAContext *, const uint8_t bits, size_t bitcount);` | Include | 公开统一 SHA final bits 入口，按上下文算法分发尾随 bit 并传播后端错误码。 |
-| USHAResult | function | `extern int USHAResult (USHAContext *, uint8_t Message_Digest[USHAMaxHashSize]);` | Include | 公开统一 SHA digest 输出入口，按上下文算法分发结果计算并传播后端错误码。 |
-| USHABlockSize | function | `extern int USHABlockSize (enum SHAversion whichSha);` | Include | 公开算法 block size 查询入口，返回值直接影响 HMAC block 处理。 |
-| USHAHashSize | function | `extern int USHAHashSize (enum SHAversion whichSha);` | Include | 公开算法 digest 字节数查询入口，返回值直接影响 HMAC digest 长度。 |
-| USHAHashSizeBits | function | `extern int USHAHashSizeBits (enum SHAversion whichSha);` | Include | 公开算法 digest bit 数查询入口，返回值是调用方可见尺寸契约。 |
+| USHAReset | function | extern int USHAReset (USHAContext *, SHAversion whichSha); | Include | 公开统一 SHA 初始化入口，设置算法选择并委托具体 SHA reset，错误码对调用方可见。 |
+| USHAInput | function | extern int USHAInput (USHAContext *, const uint8_t * bytes, size_t bytecount); | Include | 公开统一 SHA 输入入口，按上下文算法分发输入字节并传播后端错误码。 |
+| USHAFinalBits | function | extern int USHAFinalBits (USHAContext *, const uint8_t bits, size_t bitcount); | Include | 公开统一 SHA final bits 入口，按上下文算法分发尾随 bit 并传播后端错误码。 |
+| USHAResult | function | extern int USHAResult (USHAContext *, uint8_t Message_Digest[USHAMaxHashSize]); | Include | 公开统一 SHA digest 输出入口，按上下文算法分发结果计算并传播后端错误码。 |
+| USHABlockSize | function | extern int USHABlockSize (enum SHAversion whichSha); | Include | 公开算法 block size 查询入口，返回值直接影响 HMAC block 处理。 |
+| USHAHashSize | function | extern int USHAHashSize (enum SHAversion whichSha); | Include | 公开算法 digest 字节数查询入口，返回值直接影响 HMAC digest 长度。 |
+| USHAHashSizeBits | function | extern int USHAHashSizeBits (enum SHAversion whichSha); | Include | 公开算法 digest bit 数查询入口，返回值是调用方可见尺寸契约。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SHAversion | enum | `lib/sha.h:113` | 统一 SHA 算法选择枚举，成员受 `USE_SHA1`、`USE_SHA224`、`USE_SHA384_SHA512` 编译条件影响，`SHA256` 始终存在。 |
-| USHAContext | struct | `lib/sha.h:209` | 保存当前 `whichSha` 和各 SHA 后端上下文 union，供统一入口分发。 |
-| shaSuccess/shaNull/shaInputTooLong/shaStateError/shaBadParam | enum constants | `lib/sha.h:67` | SHA 系列接口返回码集合，本文件显式返回 `shaNull` 和 `shaBadParam` 并传播后端返回码。 |
-| SHA*_Message_Block_Size | enum constants | `lib/sha.h:81` | `USHABlockSize` 返回的算法 block size 常量，部分成员受编译条件影响。 |
-| SHA*HashSize | enum constants | `lib/sha.h:81` | `USHAHashSize` 返回的算法 digest 字节数常量，部分成员受编译条件影响。 |
-| SHA*HashSizeBits | enum constants | `lib/sha.h:81` | `USHAHashSizeBits` 返回的算法 digest bit 数常量，部分成员受编译条件影响。 |
+| SHAversion | enum | lib/sha.h:113 | 统一 SHA 算法选择枚举，成员受 `USE_SHA1`、`USE_SHA224`、`USE_SHA384_SHA512` 编译条件影响，`SHA256` 始终存在。 |
+| USHAContext | struct | lib/sha.h:209 | 保存当前 `whichSha` 和各 SHA 后端上下文 union，供统一入口分发。 |
+| shaSuccess/shaNull/shaInputTooLong/shaStateError/shaBadParam | enum constants | lib/sha.h:67 | SHA 系列接口返回码集合，本文件显式返回 `shaNull` 和 `shaBadParam` 并传播后端返回码。 |
+| SHA*_Message_Block_Size | enum constants | lib/sha.h:81 | `USHABlockSize` 返回的算法 block size 常量，部分成员受编译条件影响。 |
+| SHA*HashSize | enum constants | lib/sha.h:81 | `USHAHashSize` 返回的算法 digest 字节数常量，部分成员受编译条件影响。 |
+| SHA*HashSizeBits | enum constants | lib/sha.h:81 | `USHAHashSizeBits` 返回的算法 digest bit 数常量，部分成员受编译条件影响。 |
 
 ## ADDED Requirements
 

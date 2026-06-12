@@ -123,16 +123,16 @@
 | lib/socket.c | c | specs/lib/socket.spec.md | generated | 已生成 socket event loop、连接、读写和 server socket spec；存在索引定位、容量和空指针前置条件 Open Questions。 |
 | lib/spnego-wrapper.c | c | specs/lib/spnego-wrapper.spec.md | generated | 已生成 SPNEGO wrapper 编码、解码和机制识别 spec；存在分配失败返回约定、参数前置条件和解析错误诊断 Open Questions。 |
 | lib/spnego-wrapper.h | header | specs/lib/spnego-wrapper.h.spec.md | generated | 已生成 SPNEGO wrapper header spec；存在 token 前置条件、机制返回语义和 impact 消歧 Open Questions。 |
-| lib/sync.c | c | none | pending | glob 补充发现，等待生成或确认 spec。 |
-| lib/timestamps.c | c | none | pending | glob 补充发现，等待生成或确认 spec。 |
-| lib/unicode.c | c | none | pending | glob 补充发现，等待生成或确认 spec。 |
-| lib/usha.c | c | none | pending | glob 补充发现，等待生成或确认 spec。 |
-| utils/smb2-cp.c | c | none | pending | GitNexus 和 glob 发现，等待生成或确认 spec。 |
-| utils/smb2-ls.c | c | none | pending | glob 补充发现，等待生成或确认 spec。 |
+| lib/sync.c | c | specs/lib/sync.spec.md | generated | 已生成同步 API wrapper spec；存在取消释放、readlink 终止、echo 错误码和 share enum 生命周期 Open Questions。 |
+| lib/timestamps.c | c | specs/lib/timestamps.spec.md | generated | 已生成 Windows FILETIME 与 Unix timeval 双向转换 spec；两个接口 impact 为 CRITICAL。 |
+| lib/unicode.c | c | specs/lib/unicode.spec.md | generated | 已生成 UTF-8/UTF-16LE 转换接口 spec；两个公开转换接口 impact 为 CRITICAL。 |
+| lib/usha.c | c | specs/lib/usha.spec.md | generated | 已生成统一 SHA 入口 spec；USHAReset/USHAInput/USHAResult impact 为 CRITICAL。 |
+| utils/smb2-cp.c | c | specs/utils/smb2-cp.spec.md | generated | 已生成 smb2-cp 工具复制流程、文件上下文和错误路径 spec；存在 st_blocks、lseek 失败和零字节读 Open Questions。 |
+| utils/smb2-ls.c | c | specs/utils/smb2-ls.spec.md | generated | 已生成 smb2-ls 同步目录列举工具 spec；存在 URL 解析失败和 asprintf 失败路径资源释放 Open Questions。 |
 
 ## 统计信息
 
-- generated: 96
+- generated: 102
 - skipped: 25
-- pending: 6
+- pending: 0
 - total: 127

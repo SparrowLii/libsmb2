@@ -12,56 +12,56 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| `smb2_parse_args` | function | `static int smb2_parse_args(struct smb2_context *smb2, const char *args)` | Skip | 文件内部 URL 参数解析 helper，无独立公开声明；行为归属到 `smb2_parse_url`。 |
-| `smb2_parse_url` | function | `struct smb2_url *smb2_parse_url(struct smb2_context *smb2, const char *url);` | Include | 公开 URL 解析入口，分配返回对象并设置 context 认证、版本、签名和错误状态。 |
-| `smb2_destroy_url` | function | `void smb2_destroy_url(struct smb2_url *url);` | Include | 公开 URL 对象释放入口，定义 `smb2_parse_url` 返回对象的释放责任。 |
-| `smb2_init_context` | function | `struct smb2_context *smb2_init_context(void);` | Include | 公开上下文生命周期入口，分配并初始化默认认证、版本、随机挑战和 active list 状态。 |
-| `smb2_destroy_context` | function | `void smb2_destroy_context(struct smb2_context *smb2);` | Include | 公开上下文销毁入口，关闭 fd、取消队列、释放凭据和从 active list 移除。 |
-| `smb2_active_contexts` | function | `struct smb2_context *smb2_active_contexts(void);` | Include | 公开服务器侧 active context 列表读取入口。 |
-| `smb2_context_active` | function | `int smb2_context_active(struct smb2_context *smb2);` | Include | 公开 context 活跃性检测入口，供回调中判断 context 是否仍可引用。 |
-| `smb2_free_iovector` | function | `void smb2_free_iovector(struct smb2_context *smb2, struct smb2_io_vectors *v);` | Include | 私有跨文件 I/O vector 资源释放入口，被 destroy 和 PDU 路径使用。 |
-| `smb2_add_iovector` | function | `struct smb2_iovec *smb2_add_iovector(struct smb2_context *smb2, struct smb2_io_vectors *v, uint8_t *buf, size_t len, void (*free)(void *));` | Include | 私有跨文件 I/O vector 追加入口，包含容量错误和 buffer 释放语义。 |
-| `smb2_set_error_string` | function | `static void smb2_set_error_string(struct smb2_context *smb2, const char * error_string, va_list args)` | Skip | `_IOP` 以外的内部格式化 helper，无独立调用方契约；行为归属到 error setter。 |
-| `smb2_set_error` | function | `void smb2_set_error(struct smb2_context *smb2, const char *error_string, ...);` | Include | 公开错误字符串设置入口，驱动 error callback 并清理 nterror。 |
-| `smb2_register_error_callback` | function | `void smb2_register_error_callback(struct smb2_context *smb, smb2_error_cb error_cb);` | Include | 公开错误回调注册入口，影响后续 `smb2_set_error` 可观察行为。 |
-| `smb2_set_nterror` | function | `void smb2_set_nterror(struct smb2_context *smb2, int nterror, const char *error_string, ...);` | Include | 私有跨文件 NT status 和错误字符串设置入口。 |
-| `smb2_get_error` | function | `const char *smb2_get_error(struct smb2_context *smb2);` | Include | 公开最后错误字符串读取入口。 |
-| `smb2_get_nterror` | function | `int smb2_get_nterror(struct smb2_context *smb2);` | Include | 公开最后 NT status 读取入口。 |
-| `smb2_set_client_guid` | function | `void smb2_set_client_guid(struct smb2_context *smb2, const uint8_t guid[SMB2_GUID_SIZE]);` | Include | 公开 client GUID setter，复制固定长度 GUID 到 context。 |
-| `smb2_get_client_guid` | function | `const char *smb2_get_client_guid(struct smb2_context *smb2);` | Include | 公开 client GUID getter，返回 context 内部 GUID 存储。 |
-| `smb2_get_dialect` | function | `uint16_t smb2_get_dialect(struct smb2_context *smb2);` | Include | 公开协商 dialect getter。 |
-| `smb2_set_security_mode` | function | `void smb2_set_security_mode(struct smb2_context *smb2, uint16_t security_mode);` | Include | 公开 security mode setter，影响 negotiate signing flags。 |
-| `smb2_set_password_from_file` | function | `void smb2_set_password_from_file(struct smb2_context *smb2);` | Include | 公开 NTLM password file 装载入口，依赖环境变量和 user/domain/server 状态。 |
-| `smb2_set_user` | function | `void smb2_set_user(struct smb2_context *smb2, const char *user);` | Include | 公开 user setter，释放旧值并触发 password file 重载。 |
-| `smb2_get_user` | function | `const char *smb2_get_user(struct smb2_context *smb2);` | Include | 公开 user getter。 |
-| `smb2_get_workstation` | function | `const char *smb2_get_workstation(struct smb2_context *smb2);` | Include | 公开 workstation getter。 |
-| `smb2_set_password` | function | `void smb2_set_password(struct smb2_context *smb2, const char *password);` | Include | 公开 password setter，释放旧值并允许清空。 |
-| `smb2_set_domain` | function | `void smb2_set_domain(struct smb2_context *smb2, const char *domain);` | Include | 公开 domain setter，释放旧值并触发 password file 重载。 |
-| `smb2_get_domain` | function | `const char *smb2_get_domain(struct smb2_context *smb2);` | Include | 公开 domain getter。 |
-| `smb2_set_workstation` | function | `void smb2_set_workstation(struct smb2_context *smb2, const char *workstation);` | Include | 公开 workstation setter，释放旧值并允许清空。 |
-| `smb2_set_opaque` | function | `void smb2_set_opaque(struct smb2_context *smb2, void *opaque);` | Include | 公开 opaque pointer setter，供 async callback 附带调用方状态。 |
-| `smb2_get_opaque` | function | `void *smb2_get_opaque(struct smb2_context *smb2);` | Include | 公开 opaque pointer getter。 |
-| `smb2_set_seal` | function | `void smb2_set_seal(struct smb2_context *smb2, int val);` | Include | 公开 SMB3 encryption preference setter。 |
-| `smb2_set_sign` | function | `void smb2_set_sign(struct smb2_context *smb2, int val);` | Include | 公开 SMB signing preference setter。 |
-| `smb2_set_authentication` | function | `void smb2_set_authentication(struct smb2_context *smb2, int val);` | Include | 公开 authentication method setter。 |
-| `smb2_set_timeout` | function | `void smb2_set_timeout(struct smb2_context *smb2, int seconds);` | Include | 公开 command timeout setter。 |
-| `smb2_set_version` | function | `void smb2_set_version(struct smb2_context *smb2, enum smb2_negotiate_version version);` | Include | 公开 negotiate dialect preference setter。 |
-| `smb2_get_libsmb2Version` | function | `void smb2_get_libsmb2Version(struct smb2_libversion *smb2_ver);` | Include | 公开库版本 getter，写入 `struct smb2_libversion`。 |
-| `smb2_set_passthrough` | function | `void smb2_set_passthrough(struct smb2_context *smb2, int passthrough);` | Include | 公开 passthrough mode setter，影响复杂命令额外数据解析。 |
-| `smb2_get_passthrough` | function | `void smb2_get_passthrough(struct smb2_context *smb2, int *passthrough);` | Include | 公开 passthrough mode getter，通过输出参数返回。 |
-| `smb2_set_oplock_or_lease_break_callback` | function | `void smb2_set_oplock_or_lease_break_callback(struct smb2_context *smb2, smb2_oplock_or_lease_break_cb cb);` | Include | 公开 oplock/lease break callback 注册入口。 |
-| `smb2_delegate_credentials` | function | `int smb2_delegate_credentials(struct smb2_context *in, struct smb2_context *out);` | Include | 公开 Kerberos credential delegation 入口，行为依赖 `HAVE_LIBKRB5`。 |
+| smb2_parse_args | function | static int smb2_parse_args(struct smb2_context *smb2, const char *args) | Skip | 文件内部 URL 参数解析 helper，无独立公开声明；行为归属到 `smb2_parse_url`。 |
+| smb2_parse_url | function | struct smb2_url *smb2_parse_url(struct smb2_context *smb2, const char *url); | Include | 公开 URL 解析入口，分配返回对象并设置 context 认证、版本、签名和错误状态。 |
+| smb2_destroy_url | function | void smb2_destroy_url(struct smb2_url *url); | Include | 公开 URL 对象释放入口，定义 `smb2_parse_url` 返回对象的释放责任。 |
+| smb2_init_context | function | struct smb2_context *smb2_init_context(void); | Include | 公开上下文生命周期入口，分配并初始化默认认证、版本、随机挑战和 active list 状态。 |
+| smb2_destroy_context | function | void smb2_destroy_context(struct smb2_context *smb2); | Include | 公开上下文销毁入口，关闭 fd、取消队列、释放凭据和从 active list 移除。 |
+| smb2_active_contexts | function | struct smb2_context *smb2_active_contexts(void); | Include | 公开服务器侧 active context 列表读取入口。 |
+| smb2_context_active | function | int smb2_context_active(struct smb2_context *smb2); | Include | 公开 context 活跃性检测入口，供回调中判断 context 是否仍可引用。 |
+| smb2_free_iovector | function | void smb2_free_iovector(struct smb2_context *smb2, struct smb2_io_vectors *v); | Include | 私有跨文件 I/O vector 资源释放入口，被 destroy 和 PDU 路径使用。 |
+| smb2_add_iovector | function | struct smb2_iovec *smb2_add_iovector(struct smb2_context *smb2, struct smb2_io_vectors *v, uint8_t *buf, size_t len, void (*free)(void *)); | Include | 私有跨文件 I/O vector 追加入口，包含容量错误和 buffer 释放语义。 |
+| smb2_set_error_string | function | static void smb2_set_error_string(struct smb2_context *smb2, const char * error_string, va_list args) | Skip | `_IOP` 以外的内部格式化 helper，无独立调用方契约；行为归属到 error setter。 |
+| smb2_set_error | function | void smb2_set_error(struct smb2_context *smb2, const char *error_string, ...); | Include | 公开错误字符串设置入口，驱动 error callback 并清理 nterror。 |
+| smb2_register_error_callback | function | void smb2_register_error_callback(struct smb2_context *smb, smb2_error_cb error_cb); | Include | 公开错误回调注册入口，影响后续 `smb2_set_error` 可观察行为。 |
+| smb2_set_nterror | function | void smb2_set_nterror(struct smb2_context *smb2, int nterror, const char *error_string, ...); | Include | 私有跨文件 NT status 和错误字符串设置入口。 |
+| smb2_get_error | function | const char *smb2_get_error(struct smb2_context *smb2); | Include | 公开最后错误字符串读取入口。 |
+| smb2_get_nterror | function | int smb2_get_nterror(struct smb2_context *smb2); | Include | 公开最后 NT status 读取入口。 |
+| smb2_set_client_guid | function | void smb2_set_client_guid(struct smb2_context *smb2, const uint8_t guid[SMB2_GUID_SIZE]); | Include | 公开 client GUID setter，复制固定长度 GUID 到 context。 |
+| smb2_get_client_guid | function | const char *smb2_get_client_guid(struct smb2_context *smb2); | Include | 公开 client GUID getter，返回 context 内部 GUID 存储。 |
+| smb2_get_dialect | function | uint16_t smb2_get_dialect(struct smb2_context *smb2); | Include | 公开协商 dialect getter。 |
+| smb2_set_security_mode | function | void smb2_set_security_mode(struct smb2_context *smb2, uint16_t security_mode); | Include | 公开 security mode setter，影响 negotiate signing flags。 |
+| smb2_set_password_from_file | function | void smb2_set_password_from_file(struct smb2_context *smb2); | Include | 公开 NTLM password file 装载入口，依赖环境变量和 user/domain/server 状态。 |
+| smb2_set_user | function | void smb2_set_user(struct smb2_context *smb2, const char *user); | Include | 公开 user setter，释放旧值并触发 password file 重载。 |
+| smb2_get_user | function | const char *smb2_get_user(struct smb2_context *smb2); | Include | 公开 user getter。 |
+| smb2_get_workstation | function | const char *smb2_get_workstation(struct smb2_context *smb2); | Include | 公开 workstation getter。 |
+| smb2_set_password | function | void smb2_set_password(struct smb2_context *smb2, const char *password); | Include | 公开 password setter，释放旧值并允许清空。 |
+| smb2_set_domain | function | void smb2_set_domain(struct smb2_context *smb2, const char *domain); | Include | 公开 domain setter，释放旧值并触发 password file 重载。 |
+| smb2_get_domain | function | const char *smb2_get_domain(struct smb2_context *smb2); | Include | 公开 domain getter。 |
+| smb2_set_workstation | function | void smb2_set_workstation(struct smb2_context *smb2, const char *workstation); | Include | 公开 workstation setter，释放旧值并允许清空。 |
+| smb2_set_opaque | function | void smb2_set_opaque(struct smb2_context *smb2, void *opaque); | Include | 公开 opaque pointer setter，供 async callback 附带调用方状态。 |
+| smb2_get_opaque | function | void *smb2_get_opaque(struct smb2_context *smb2); | Include | 公开 opaque pointer getter。 |
+| smb2_set_seal | function | void smb2_set_seal(struct smb2_context *smb2, int val); | Include | 公开 SMB3 encryption preference setter。 |
+| smb2_set_sign | function | void smb2_set_sign(struct smb2_context *smb2, int val); | Include | 公开 SMB signing preference setter。 |
+| smb2_set_authentication | function | void smb2_set_authentication(struct smb2_context *smb2, int val); | Include | 公开 authentication method setter。 |
+| smb2_set_timeout | function | void smb2_set_timeout(struct smb2_context *smb2, int seconds); | Include | 公开 command timeout setter。 |
+| smb2_set_version | function | void smb2_set_version(struct smb2_context *smb2, enum smb2_negotiate_version version); | Include | 公开 negotiate dialect preference setter。 |
+| smb2_get_libsmb2Version | function | void smb2_get_libsmb2Version(struct smb2_libversion *smb2_ver); | Include | 公开库版本 getter，写入 `struct smb2_libversion`。 |
+| smb2_set_passthrough | function | void smb2_set_passthrough(struct smb2_context *smb2, int passthrough); | Include | 公开 passthrough mode setter，影响复杂命令额外数据解析。 |
+| smb2_get_passthrough | function | void smb2_get_passthrough(struct smb2_context *smb2, int *passthrough); | Include | 公开 passthrough mode getter，通过输出参数返回。 |
+| smb2_set_oplock_or_lease_break_callback | function | void smb2_set_oplock_or_lease_break_callback(struct smb2_context *smb2, smb2_oplock_or_lease_break_cb cb); | Include | 公开 oplock/lease break callback 注册入口。 |
+| smb2_delegate_credentials | function | int smb2_delegate_credentials(struct smb2_context *in, struct smb2_context *out); | Include | 公开 Kerberos credential delegation 入口，行为依赖 `HAVE_LIBKRB5`。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| `MAX_URL_SIZE` | macro | `lib/init.c:78` | URL 主体临时缓冲区上限为 1024 字节；`smb2_parse_url` 拒绝 `smb://` 后长度大于等于该值的输入。 |
-| `active_contexts` | static variable | `lib/init.c:84` | 进程内 active context 单链表头，用于服务器枚举和活跃性检查；非公开存储但影响公开生命周期查询。 |
-| `struct smb2_url` | struct | `include/smb2/libsmb2.h:598` | URL 解析结果，字段为 `domain`、`user`、`server`、`share`、`path`，由 `smb2_destroy_url` 释放。 |
-| `struct smb2_context` | struct | `include/libsmb2-private.h:141` | 私有 context 状态容器，承载 fd、认证、队列、错误、加密、回调和 active list 链接。 |
-| `struct smb2_io_vectors` | struct | `include/libsmb2-private.h:58` | 私有 I/O vector 聚合，包含 `niov`、`total_size`、`num_done` 和固定数组。 |
-| `SMB2_MAX_VECTORS` | macro | `include/libsmb2-private.h:56` | `smb2_add_iovector` 可追加的最大 vector 数。 |
+| MAX_URL_SIZE | macro | lib/init.c:78 | URL 主体临时缓冲区上限为 1024 字节；`smb2_parse_url` 拒绝 `smb://` 后长度大于等于该值的输入。 |
+| active_contexts | static variable | lib/init.c:84 | 进程内 active context 单链表头，用于服务器枚举和活跃性检查；非公开存储但影响公开生命周期查询。 |
+| struct smb2_url | struct | include/smb2/libsmb2.h:598 | URL 解析结果，字段为 `domain`、`user`、`server`、`share`、`path`，由 `smb2_destroy_url` 释放。 |
+| struct smb2_context | struct | include/libsmb2-private.h:141 | 私有 context 状态容器，承载 fd、认证、队列、错误、加密、回调和 active list 链接。 |
+| struct smb2_io_vectors | struct | include/libsmb2-private.h:58 | 私有 I/O vector 聚合，包含 `niov`、`total_size`、`num_done` 和固定数组。 |
+| SMB2_MAX_VECTORS | macro | include/libsmb2-private.h:56 | `smb2_add_iovector` 可追加的最大 vector 数。 |
 
 ## ADDED Requirements
 
@@ -516,8 +516,8 @@ Trace: `lib/init.c:smb2_delegate_credentials`, `include/smb2/libsmb2.h:smb2_dele
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `smb2_parse_url` 在已分配 `struct smb2_url` 后遇到 `Wrong URL format` 是否泄漏该对象？ | `smb2_parse_url` | 源码在 `calloc` 后对缺少 share slash 的路径直接返回 `NULL`，未看到释放 `u` 的证据。 |
-| Q-002 | `smb2_get_libsmb2Version` 是否应把 patch 字段写为 `LIBSMB2_PATCH_VERSION`？ | `smb2_get_libsmb2Version` | 源码将 `patch_version` 设置为 `LIBSMB2_MAJOR_VERSION`，与 header 宏命名存在差异。 |
-| Q-003 | `smb2_set_password_from_file` 的行尾裁剪循环在空字符串上访问 `buf[strlen(buf) - 1]` 是否有前置约束？ | `smb2_set_password_from_file` | 源码在 switch 前未先检查 `strlen(buf) == 0`，需要测试或平台输入约束确认。 |
+| Q-001 | `smb2_parse_url` 在已分配 `struct smb2_url` 后遇到 `Wrong URL format` 是否泄漏该对象？ | smb2_parse_url | 源码在 `calloc` 后对缺少 share slash 的路径直接返回 `NULL`，未看到释放 `u` 的证据。 |
+| Q-002 | `smb2_get_libsmb2Version` 是否应把 patch 字段写为 `LIBSMB2_PATCH_VERSION`？ | smb2_get_libsmb2Version | 源码将 `patch_version` 设置为 `LIBSMB2_MAJOR_VERSION`，与 header 宏命名存在差异。 |
+| Q-003 | `smb2_set_password_from_file` 的行尾裁剪循环在空字符串上访问 `buf[strlen(buf) - 1]` 是否有前置约束？ | smb2_set_password_from_file | 源码在 switch 前未先检查 `strlen(buf) == 0`，需要测试或平台输入约束确认。 |
 | Q-004 | setter/getter 系列是否要求调用方保证 `smb2` 和输出参数非空？ | setter/getter interfaces | 多数 setter/getter 未做空指针检查，公开 header 未完整声明前置条件。 |
-| Q-005 | active context list 是否需要外部同步？ | `smb2_init_context`, `smb2_destroy_context`, `smb2_active_contexts`, `smb2_context_active` | `active_contexts` 是静态全局链表，源码未显示锁或线程局部状态。 |
+| Q-005 | active context list 是否需要外部同步？ | smb2_init_context`, `smb2_destroy_context`, `smb2_active_contexts`, `smb2_context_active | `active_contexts` 是静态全局链表，源码未显示锁或线程局部状态。 |

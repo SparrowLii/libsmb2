@@ -12,29 +12,29 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| `smb2_spnego_create_negotiate_reply_blob` | function | `int smb2_spnego_create_negotiate_reply_blob(struct smb2_context *smb2, int allow_ntlmssp, void **neg_init_token);` | Include | 生成 SMB2 negotiate reply 的 GSS-SPNEGO 机制列表，服务端协商路径直接调用。 |
-| `smb2_spnego_wrap_gssapi` | function | `int smb2_spnego_wrap_gssapi(struct smb2_context *smb2, const uint8_t *ntlmssp_token, const int token_len, void **blob);` | Include | 将 NTLMSSP negotiate/auth token 包装为 GSS-API/SPNEGO NegTokenInit，NTLMSSP 握手路径直接依赖。 |
-| `smb2_spnego_wrap_ntlmssp_challenge` | function | `int smb2_spnego_wrap_ntlmssp_challenge(struct smb2_context *smb2, const uint8_t *ntlmssp_token, const int token_len, void **neg_targ_token);` | Include | 将服务端 NTLMSSP challenge 包装为 accept-incomplete NegTokenTarg。 |
-| `smb2_spnego_wrap_ntlmssp_auth` | function | `int smb2_spnego_wrap_ntlmssp_auth(struct smb2_context *smb2, const uint8_t *ntlmssp_token, const int token_len, void **neg_targ_token);` | Include | 将客户端 NTLMSSP authenticate token 包装为 NegTokenTarg response token。 |
-| `smb2_spnego_wrap_authenticate_result` | function | `int smb2_spnego_wrap_authenticate_result(struct smb2_context *smb2, const int authorized_ok, void **blob);` | Include | 将服务端认证结果编码为 SPNEGO negResult。 |
-| `smb2_spnego_unwrap_targ` | function | `int smb2_spnego_unwrap_targ(struct smb2_context *smb2, const uint8_t *spnego, const int spnego_len, uint8_t **token, uint32_t *mechanisms);` | Include | 解析 raw NegTokenTarg 并提取 response token 或机制结果，虽未在头文件声明但由本文件公开分派入口调用。 |
-| `smb2_spnego_unwrap_gssapi` | function | `int smb2_spnego_unwrap_gssapi(struct smb2_context *smb2, const uint8_t *spnego, const int spnego_len, const int suppress_errors, uint8_t **token, uint32_t *mechanisms);` | Include | 解析 GSS-API/SPNEGO NegTokenInit，协商路径用其发现 KRB5/NTLMSSP 机制并可提取 mech token。 |
-| `smb2_spnego_unwrap_blob` | function | `int smb2_spnego_unwrap_blob(struct smb2_context *smb2, const uint8_t *spnego, const int spnego_len, const int suppress_errors, uint8_t **response_token, uint32_t *mechanisms);` | Include | NTLMSSP 入口的通用 unwrap 分派，识别 raw NTLMSSP、GSS-API 和 raw SPNEGO blob。 |
-| `oid_compare` | function | `static int oid_compare(const struct asn1ber_oid_value *a, const struct asn1ber_oid_value *b);` | Skip | `static` OID 比较 helper，无独立跨文件接口；行为归属到 unwrap 机制识别 Requirement。 |
-| `require_typecode` | macro | `#define require_typecode(ctx, expected, label)` | Skip | 文件内部解析控制宏，错误跳转行为归属到 unwrap Requirement。 |
-| `require_typeandlen` | macro | `#define require_typeandlen(ctx, expected, minimum, label)` | Skip | 文件内部解析控制宏，错误跳转行为归属到 unwrap Requirement。 |
-| `require_noerr` | macro | `#define require_noerr(errcode, label)` | Skip | 文件内部错误检查宏，错误跳转行为归属到 unwrap Requirement。 |
+| smb2_spnego_create_negotiate_reply_blob | function | int smb2_spnego_create_negotiate_reply_blob(struct smb2_context *smb2, int allow_ntlmssp, void **neg_init_token); | Include | 生成 SMB2 negotiate reply 的 GSS-SPNEGO 机制列表，服务端协商路径直接调用。 |
+| smb2_spnego_wrap_gssapi | function | int smb2_spnego_wrap_gssapi(struct smb2_context *smb2, const uint8_t *ntlmssp_token, const int token_len, void **blob); | Include | 将 NTLMSSP negotiate/auth token 包装为 GSS-API/SPNEGO NegTokenInit，NTLMSSP 握手路径直接依赖。 |
+| smb2_spnego_wrap_ntlmssp_challenge | function | int smb2_spnego_wrap_ntlmssp_challenge(struct smb2_context *smb2, const uint8_t *ntlmssp_token, const int token_len, void **neg_targ_token); | Include | 将服务端 NTLMSSP challenge 包装为 accept-incomplete NegTokenTarg。 |
+| smb2_spnego_wrap_ntlmssp_auth | function | int smb2_spnego_wrap_ntlmssp_auth(struct smb2_context *smb2, const uint8_t *ntlmssp_token, const int token_len, void **neg_targ_token); | Include | 将客户端 NTLMSSP authenticate token 包装为 NegTokenTarg response token。 |
+| smb2_spnego_wrap_authenticate_result | function | int smb2_spnego_wrap_authenticate_result(struct smb2_context *smb2, const int authorized_ok, void **blob); | Include | 将服务端认证结果编码为 SPNEGO negResult。 |
+| smb2_spnego_unwrap_targ | function | int smb2_spnego_unwrap_targ(struct smb2_context *smb2, const uint8_t *spnego, const int spnego_len, uint8_t **token, uint32_t *mechanisms); | Include | 解析 raw NegTokenTarg 并提取 response token 或机制结果，虽未在头文件声明但由本文件公开分派入口调用。 |
+| smb2_spnego_unwrap_gssapi | function | int smb2_spnego_unwrap_gssapi(struct smb2_context *smb2, const uint8_t *spnego, const int spnego_len, const int suppress_errors, uint8_t **token, uint32_t *mechanisms); | Include | 解析 GSS-API/SPNEGO NegTokenInit，协商路径用其发现 KRB5/NTLMSSP 机制并可提取 mech token。 |
+| smb2_spnego_unwrap_blob | function | int smb2_spnego_unwrap_blob(struct smb2_context *smb2, const uint8_t *spnego, const int spnego_len, const int suppress_errors, uint8_t **response_token, uint32_t *mechanisms); | Include | NTLMSSP 入口的通用 unwrap 分派，识别 raw NTLMSSP、GSS-API 和 raw SPNEGO blob。 |
+| oid_compare | function | static int oid_compare(const struct asn1ber_oid_value *a, const struct asn1ber_oid_value *b); | Skip | `static` OID 比较 helper，无独立跨文件接口；行为归属到 unwrap 机制识别 Requirement。 |
+| require_typecode | macro | #define require_typecode(ctx, expected, label) | Skip | 文件内部解析控制宏，错误跳转行为归属到 unwrap Requirement。 |
+| require_typeandlen | macro | #define require_typeandlen(ctx, expected, minimum, label) | Skip | 文件内部解析控制宏，错误跳转行为归属到 unwrap Requirement。 |
+| require_noerr | macro | #define require_noerr(errcode, label) | Skip | 文件内部错误检查宏，错误跳转行为归属到 unwrap Requirement。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| `SPNEGO_MECHANISM_KRB5` | macro | `lib/spnego-wrapper.h:34` | unwrap GSS-API 时识别 KRB5 或 Microsoft KRB5 OID 后设置的机制标志。 |
-| `SPNEGO_MECHANISM_NTLMSSP` | macro | `lib/spnego-wrapper.h:35` | unwrap GSS-API 时识别 NTLMSSP OID 后设置的机制标志。 |
-| `oid_gss_mech_spnego` | static data | `lib/spnego-wrapper.c:73` | GSS-SPNEGO top-level OID，编码和解码都使用。 |
-| `oid_spnego_mech_krb5` | static data | `lib/spnego-wrapper.c:77` | Kerberos V5 mechanism OID；`HAVE_LIBKRB5` 编码路径和 decode 机制识别使用。 |
-| `oid_spnego_mech_ms_krb5` | static data | `lib/spnego-wrapper.c:82` | Microsoft legacy KRB5 OID，decode 时映射到 `SPNEGO_MECHANISM_KRB5`。 |
-| `oid_spnego_mech_ntlmssp` | static data | `lib/spnego-wrapper.c:86` | NTLMSSP mechanism OID，所有 NTLMSSP SPNEGO 包装路径使用。 |
+| SPNEGO_MECHANISM_KRB5 | macro | lib/spnego-wrapper.h:34 | unwrap GSS-API 时识别 KRB5 或 Microsoft KRB5 OID 后设置的机制标志。 |
+| SPNEGO_MECHANISM_NTLMSSP | macro | lib/spnego-wrapper.h:35 | unwrap GSS-API 时识别 NTLMSSP OID 后设置的机制标志。 |
+| oid_gss_mech_spnego | static data | lib/spnego-wrapper.c:73 | GSS-SPNEGO top-level OID，编码和解码都使用。 |
+| oid_spnego_mech_krb5 | static data | lib/spnego-wrapper.c:77 | Kerberos V5 mechanism OID；`HAVE_LIBKRB5` 编码路径和 decode 机制识别使用。 |
+| oid_spnego_mech_ms_krb5 | static data | lib/spnego-wrapper.c:82 | Microsoft legacy KRB5 OID，decode 时映射到 `SPNEGO_MECHANISM_KRB5`。 |
+| oid_spnego_mech_ntlmssp | static data | lib/spnego-wrapper.c:86 | NTLMSSP mechanism OID，所有 NTLMSSP SPNEGO 包装路径使用。 |
 
 ## ADDED Requirements
 
@@ -185,7 +185,7 @@ Trace: `lib/spnego-wrapper.c:smb2_spnego_unwrap_blob`
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `smb2_spnego_wrap_gssapi`、`smb2_spnego_wrap_ntlmssp_challenge` 和 `smb2_spnego_wrap_ntlmssp_auth` 在分配失败时返回 `0`，但调用方只检查 `< 0`；`0` 是否应视为合法空 blob 或失败？ | `smb2_spnego_wrap_gssapi`, `smb2_spnego_wrap_ntlmssp_challenge`, `smb2_spnego_wrap_ntlmssp_auth` | 源码记录错误后返回 `0`，`ntlmssp_generate_blob` 的错误检查与该返回约定不完全一致。 |
-| Q-002 | 包装函数是否要求 `token_len >= 0` 且输出指针非空？ | `smb2_spnego_wrap_gssapi`, `smb2_spnego_wrap_ntlmssp_challenge`, `smb2_spnego_wrap_ntlmssp_auth` | 源码未显式校验负长度或空输出指针，分配长度表达式可能受输入影响。 |
-| Q-003 | `smb2_spnego_unwrap_targ` 对 context 0 调用 `asn1ber_uint32_from_ber(&asn_decoder, mechanisms)` 时是否允许 `mechanisms == NULL`？ | `smb2_spnego_unwrap_targ` | 公开分派入口允许 `mechanisms` 透传，源码未在 raw target 分支保护空指针。 |
-| Q-004 | `smb2_spnego_unwrap_gssapi` 中 `fail_line` 未初始化时错误消息行号是否被视为稳定诊断契约？ | `smb2_spnego_unwrap_gssapi` | 源码声明 `int fail_line;` 且错误宏依赖 `fail_line`，部分失败路径可能未设置。 |
+| Q-001 | `smb2_spnego_wrap_gssapi`、`smb2_spnego_wrap_ntlmssp_challenge` 和 `smb2_spnego_wrap_ntlmssp_auth` 在分配失败时返回 `0`，但调用方只检查 `< 0`；`0` 是否应视为合法空 blob 或失败？ | smb2_spnego_wrap_gssapi`, `smb2_spnego_wrap_ntlmssp_challenge`, `smb2_spnego_wrap_ntlmssp_auth | 源码记录错误后返回 `0`，`ntlmssp_generate_blob` 的错误检查与该返回约定不完全一致。 |
+| Q-002 | 包装函数是否要求 `token_len >= 0` 且输出指针非空？ | smb2_spnego_wrap_gssapi`, `smb2_spnego_wrap_ntlmssp_challenge`, `smb2_spnego_wrap_ntlmssp_auth | 源码未显式校验负长度或空输出指针，分配长度表达式可能受输入影响。 |
+| Q-003 | `smb2_spnego_unwrap_targ` 对 context 0 调用 `asn1ber_uint32_from_ber(&asn_decoder, mechanisms)` 时是否允许 `mechanisms == NULL`？ | smb2_spnego_unwrap_targ | 公开分派入口允许 `mechanisms` 透传，源码未在 raw target 分支保护空指针。 |
+| Q-004 | `smb2_spnego_unwrap_gssapi` 中 `fail_line` 未初始化时错误消息行号是否被视为稳定诊断契约？ | smb2_spnego_unwrap_gssapi | 源码声明 `int fail_line;` 且错误宏依赖 `fail_line`，部分失败路径可能未设置。 |

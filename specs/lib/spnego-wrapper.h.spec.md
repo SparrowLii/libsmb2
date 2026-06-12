@@ -12,24 +12,24 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| `SPNEGO_MECHANISM_KRB5` | macro | `#define SPNEGO_MECHANISM_KRB5       (0x0001)` | Include | 调用方通过该机制标志识别解析出的 Kerberos SPNEGO mechanism。 |
-| `SPNEGO_MECHANISM_NTLMSSP` | macro | `#define SPNEGO_MECHANISM_NTLMSSP    (0x0002)` | Include | 调用方通过该机制标志识别解析出的 NTLMSSP SPNEGO mechanism。 |
-| `smb2_spnego_create_negotiate_reply_blob` | function | `int smb2_spnego_create_negotiate_reply_blob(struct smb2_context *smb2, int allow_ntlmssp, void **neg_init_token);` | Include | SMB 服务端 negotiate reply 使用该接口生成 SPNEGO negTokenInit blob 并返回分配缓冲区。 |
-| `smb2_spnego_wrap_gssapi` | function | `int smb2_spnego_wrap_gssapi(struct smb2_context *smb2, const uint8_t *ntlmssp_token, const int token_len, void **blob);` | Include | NTLMSSP 客户端认证路径使用该接口把可选 NTLMSSP token 包装成 GSS-API SPNEGO blob。 |
-| `smb2_spnego_wrap_ntlmssp_challenge` | function | `int smb2_spnego_wrap_ntlmssp_challenge(struct smb2_context *smb2, const uint8_t *ntlmssp_token, const int token_len, void **neg_targ_token);` | Include | 服务端 NTLMSSP challenge 路径使用该接口生成 accept-incomplete negTokenTarg。 |
-| `smb2_spnego_wrap_ntlmssp_auth` | function | `int smb2_spnego_wrap_ntlmssp_auth(struct smb2_context *smb2, const uint8_t *ntlmssp_token, const int token_len, void **neg_targ_token);` | Include | NTLMSSP authentication token 路径使用该接口生成含 response token 的 negTokenTarg。 |
-| `smb2_spnego_wrap_authenticate_result` | function | `int smb2_spnego_wrap_authenticate_result(struct smb2_context *smb2, const int authorized_ok, void **blob);` | Include | 服务端认证完成路径使用该接口编码 accept-completed 或 accept-fail 结果。 |
-| `smb2_spnego_unwrap_gssapi` | function | `int smb2_spnego_unwrap_gssapi(struct smb2_context *smb2, const uint8_t *spnego, const int spnego_len, const int suppress_errors, uint8_t **token, uint32_t *mechanisms);` | Include | SMB session setup 路径使用该接口解析 GSS-API SPNEGO blob、机制集合和可选 token。 |
-| `smb2_spnego_unwrap_blob` | function | `int smb2_spnego_unwrap_blob(struct smb2_context *smb2, const uint8_t *spnego, const int spnego_len, const int suppress_errors, uint8_t **response_token, uint32_t *mechanisms);` | Include | NTLMSSP 路径使用该接口统一处理 raw NTLMSSP、GSS-API SPNEGO 和 raw negTokenTarg 输入。 |
+| SPNEGO_MECHANISM_KRB5 | macro | #define SPNEGO_MECHANISM_KRB5       (0x0001) | Include | 调用方通过该机制标志识别解析出的 Kerberos SPNEGO mechanism。 |
+| SPNEGO_MECHANISM_NTLMSSP | macro | #define SPNEGO_MECHANISM_NTLMSSP    (0x0002) | Include | 调用方通过该机制标志识别解析出的 NTLMSSP SPNEGO mechanism。 |
+| smb2_spnego_create_negotiate_reply_blob | function | int smb2_spnego_create_negotiate_reply_blob(struct smb2_context *smb2, int allow_ntlmssp, void **neg_init_token); | Include | SMB 服务端 negotiate reply 使用该接口生成 SPNEGO negTokenInit blob 并返回分配缓冲区。 |
+| smb2_spnego_wrap_gssapi | function | int smb2_spnego_wrap_gssapi(struct smb2_context *smb2, const uint8_t *ntlmssp_token, const int token_len, void **blob); | Include | NTLMSSP 客户端认证路径使用该接口把可选 NTLMSSP token 包装成 GSS-API SPNEGO blob。 |
+| smb2_spnego_wrap_ntlmssp_challenge | function | int smb2_spnego_wrap_ntlmssp_challenge(struct smb2_context *smb2, const uint8_t *ntlmssp_token, const int token_len, void **neg_targ_token); | Include | 服务端 NTLMSSP challenge 路径使用该接口生成 accept-incomplete negTokenTarg。 |
+| smb2_spnego_wrap_ntlmssp_auth | function | int smb2_spnego_wrap_ntlmssp_auth(struct smb2_context *smb2, const uint8_t *ntlmssp_token, const int token_len, void **neg_targ_token); | Include | NTLMSSP authentication token 路径使用该接口生成含 response token 的 negTokenTarg。 |
+| smb2_spnego_wrap_authenticate_result | function | int smb2_spnego_wrap_authenticate_result(struct smb2_context *smb2, const int authorized_ok, void **blob); | Include | 服务端认证完成路径使用该接口编码 accept-completed 或 accept-fail 结果。 |
+| smb2_spnego_unwrap_gssapi | function | int smb2_spnego_unwrap_gssapi(struct smb2_context *smb2, const uint8_t *spnego, const int spnego_len, const int suppress_errors, uint8_t **token, uint32_t *mechanisms); | Include | SMB session setup 路径使用该接口解析 GSS-API SPNEGO blob、机制集合和可选 token。 |
+| smb2_spnego_unwrap_blob | function | int smb2_spnego_unwrap_blob(struct smb2_context *smb2, const uint8_t *spnego, const int spnego_len, const int suppress_errors, uint8_t **response_token, uint32_t *mechanisms); | Include | NTLMSSP 路径使用该接口统一处理 raw NTLMSSP、GSS-API SPNEGO 和 raw negTokenTarg 输入。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| `HAVE_CONFIG_H` | macro | `lib/spnego-wrapper.h:22` | 启用配置头包含，影响可见类型和平台条件。 |
-| `_GNU_SOURCE` | macro | `lib/spnego-wrapper.h:26` | 未定义时由头文件定义，以启用 GNU 扩展声明。 |
-| `SPNEGO_MECHANISM_KRB5` | macro | `lib/spnego-wrapper.h:34` | Kerberos mechanism bit，值为 `0x0001`。 |
-| `SPNEGO_MECHANISM_NTLMSSP` | macro | `lib/spnego-wrapper.h:35` | NTLMSSP mechanism bit，值为 `0x0002`。 |
+| HAVE_CONFIG_H | macro | lib/spnego-wrapper.h:22 | 启用配置头包含，影响可见类型和平台条件。 |
+| _GNU_SOURCE | macro | lib/spnego-wrapper.h:26 | 未定义时由头文件定义，以启用 GNU 扩展声明。 |
+| SPNEGO_MECHANISM_KRB5 | macro | lib/spnego-wrapper.h:34 | Kerberos mechanism bit，值为 `0x0001`。 |
+| SPNEGO_MECHANISM_NTLMSSP | macro | lib/spnego-wrapper.h:35 | NTLMSSP mechanism bit，值为 `0x0002`。 |
 
 ## ADDED Requirements
 
@@ -169,6 +169,6 @@ Trace: `lib/spnego-wrapper.h:smb2_spnego_unwrap_blob`, `lib/spnego-wrapper.c:smb
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `smb2_spnego_wrap_ntlmssp_challenge` and `smb2_spnego_wrap_ntlmssp_auth` 对 NULL token 或负 `token_len` 的前置条件是否应由调用方保证？ | `smb2_spnego_wrap_ntlmssp_challenge`, `smb2_spnego_wrap_ntlmssp_auth` | 实现直接按 `token_len` 分配并 `memcpy`，源码未显式校验边界。 |
-| Q-002 | `smb2_spnego_unwrap_gssapi` 在 `token == NULL` 时是否仍应向 `mechanisms` 返回机制集合作为稳定契约？ | `smb2_spnego_unwrap_gssapi` | 实现支持该路径并返回 `0`，但未发现测试或公开文档确认调用方依赖。 |
+| Q-001 | `smb2_spnego_wrap_ntlmssp_challenge` and `smb2_spnego_wrap_ntlmssp_auth` 对 NULL token 或负 `token_len` 的前置条件是否应由调用方保证？ | smb2_spnego_wrap_ntlmssp_challenge`, `smb2_spnego_wrap_ntlmssp_auth | 实现直接按 `token_len` 分配并 `memcpy`，源码未显式校验边界。 |
+| Q-002 | `smb2_spnego_unwrap_gssapi` 在 `token == NULL` 时是否仍应向 `mechanisms` 返回机制集合作为稳定契约？ | smb2_spnego_unwrap_gssapi | 实现支持该路径并返回 `0`，但未发现测试或公开文档确认调用方依赖。 |
 | Q-003 | GitNexus impact 对同名声明和实现返回歧义，具体上游风险需在实现文件 spec 中按 UID 或工具能力补充确认。 | file-level | 当前 `gitnexus impact` CLI 仅接受 symbol name，无法用 `--file` 或 `--target-uid` 消歧。 |

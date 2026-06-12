@@ -12,27 +12,27 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_encode_query_info_request | function | `int smb2_encode_query_info_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_query_info_request *req)` | Skip | 请求编码 helper 未在头文件声明，行为归属到公开 RAW 构造入口 `smb2_cmd_query_info_async`。 |
-| smb2_cmd_query_info_async | function | `struct smb2_pdu *smb2_cmd_query_info_async(struct smb2_context *smb2, struct smb2_query_info_request *req, smb2_command_cb cb, void *cb_data)` | Include | RAW SMB2 Query Info 公开构造入口，跨模块用于 stat/getinfo 和示例流程，GitNexus impact 为 HIGH。 |
-| smb2_encode_query_info_reply | function | `static int smb2_encode_query_info_reply(struct smb2_context *smb2, struct smb2_query_info_request *req, struct smb2_pdu *pdu, struct smb2_query_info_reply *rep)` | Skip | 静态 reply 编码 helper，仅由 reply 构造入口调用，行为归属到 `smb2_cmd_query_info_reply_async`。 |
-| smb2_cmd_query_info_reply_async | function | `struct smb2_pdu *smb2_cmd_query_info_reply_async(struct smb2_context *smb2, struct smb2_query_info_request *req, struct smb2_query_info_reply *rep, smb2_command_cb cb, void *cb_data)` | Include | server-side Query Info reply PDU 构造入口，被 `smb2_query_info_request_cb` 跨文件调用。 |
-| IOV_OFFSET_QUERY | macro | `#define IOV_OFFSET_QUERY (rep->output_buffer_offset - SMB2_HEADER_SIZE - (SMB2_QUERY_INFO_REPLY_SIZE & 0xfffe))` | Skip | 文件内 reply output offset helper，调用方不可直接使用，行为归属到 reply parser。 |
-| smb2_process_query_info_fixed | function | `int smb2_process_query_info_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | Query Info reply fixed payload parser，由 `lib/pdu.c` 分派并决定 payload、边界和 variable 长度。 |
-| smb2_process_query_info_variable | function | `int smb2_process_query_info_variable(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | Query Info reply variable payload parser，负责按 info type/class 解码或 passthrough 输出。 |
-| IOVREQ_OFFSET_QUERY | macro | `#define IOVREQ_OFFSET_QUERY (req->input_buffer_offset - SMB2_HEADER_SIZE - (SMB2_QUERY_INFO_REQUEST_SIZE & 0xfffe))` | Skip | 文件内 request input offset helper，调用方不可直接使用，行为归属到 request parser。 |
-| smb2_process_query_info_request_fixed | function | `int smb2_process_query_info_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | server-side Query Info request fixed payload parser，由 `lib/pdu.c` 分派并填充 request 字段。 |
-| smb2_process_query_info_request_variable | function | `int smb2_process_query_info_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Include | server-side Query Info request variable payload parser，暴露 input buffer 指针。 |
+| smb2_encode_query_info_request | function | int smb2_encode_query_info_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_query_info_request *req) | Skip | 请求编码 helper 未在头文件声明，行为归属到公开 RAW 构造入口 `smb2_cmd_query_info_async`。 |
+| smb2_cmd_query_info_async | function | struct smb2_pdu *smb2_cmd_query_info_async(struct smb2_context *smb2, struct smb2_query_info_request *req, smb2_command_cb cb, void *cb_data) | Include | RAW SMB2 Query Info 公开构造入口，跨模块用于 stat/getinfo 和示例流程，GitNexus impact 为 HIGH。 |
+| smb2_encode_query_info_reply | function | static int smb2_encode_query_info_reply(struct smb2_context *smb2, struct smb2_query_info_request *req, struct smb2_pdu *pdu, struct smb2_query_info_reply *rep) | Skip | 静态 reply 编码 helper，仅由 reply 构造入口调用，行为归属到 `smb2_cmd_query_info_reply_async`。 |
+| smb2_cmd_query_info_reply_async | function | struct smb2_pdu *smb2_cmd_query_info_reply_async(struct smb2_context *smb2, struct smb2_query_info_request *req, struct smb2_query_info_reply *rep, smb2_command_cb cb, void *cb_data) | Include | server-side Query Info reply PDU 构造入口，被 `smb2_query_info_request_cb` 跨文件调用。 |
+| IOV_OFFSET_QUERY | macro | #define IOV_OFFSET_QUERY (rep->output_buffer_offset - SMB2_HEADER_SIZE - (SMB2_QUERY_INFO_REPLY_SIZE & 0xfffe)) | Skip | 文件内 reply output offset helper，调用方不可直接使用，行为归属到 reply parser。 |
+| smb2_process_query_info_fixed | function | int smb2_process_query_info_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | Query Info reply fixed payload parser，由 `lib/pdu.c` 分派并决定 payload、边界和 variable 长度。 |
+| smb2_process_query_info_variable | function | int smb2_process_query_info_variable(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | Query Info reply variable payload parser，负责按 info type/class 解码或 passthrough 输出。 |
+| IOVREQ_OFFSET_QUERY | macro | #define IOVREQ_OFFSET_QUERY (req->input_buffer_offset - SMB2_HEADER_SIZE - (SMB2_QUERY_INFO_REQUEST_SIZE & 0xfffe)) | Skip | 文件内 request input offset helper，调用方不可直接使用，行为归属到 request parser。 |
+| smb2_process_query_info_request_fixed | function | int smb2_process_query_info_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | server-side Query Info request fixed payload parser，由 `lib/pdu.c` 分派并填充 request 字段。 |
+| smb2_process_query_info_request_variable | function | int smb2_process_query_info_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu) | Include | server-side Query Info request variable payload parser，暴露 input buffer 指针。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SMB2_QUERY_INFO_REQUEST_SIZE | macro | `include/smb2/smb2.h:534` | Query Info request fixed structure size is encoded as 41 and masked to even wire length for iovector sizing. |
-| struct smb2_query_info_request | struct | `include/smb2/smb2.h:672` | request carries info type, class, output/input lengths, input offset, additional information, flags, file id, and input pointer. |
-| SMB2_QUERY_INFO_REPLY_SIZE | macro | `include/smb2/smb2.h:953` | Query Info reply fixed structure size is encoded as 9 and masked to even wire length for fixed payload parsing. |
-| struct smb2_query_info_reply | struct | `include/smb2/smb2.h:955` | reply carries output buffer offset, output buffer length, and decoded or passthrough output pointer. |
-| IOV_OFFSET_QUERY | macro | `lib/smb2-cmd-query-info.c:362` | internal reply output offset calculation relative to SMB2 header and fixed Query Info reply body. |
-| IOVREQ_OFFSET_QUERY | macro | `lib/smb2-cmd-query-info.c:688` | internal request input offset calculation relative to SMB2 header and fixed Query Info request body. |
+| SMB2_QUERY_INFO_REQUEST_SIZE | macro | include/smb2/smb2.h:534 | Query Info request fixed structure size is encoded as 41 and masked to even wire length for iovector sizing. |
+| struct smb2_query_info_request | struct | include/smb2/smb2.h:672 | request carries info type, class, output/input lengths, input offset, additional information, flags, file id, and input pointer. |
+| SMB2_QUERY_INFO_REPLY_SIZE | macro | include/smb2/smb2.h:953 | Query Info reply fixed structure size is encoded as 9 and masked to even wire length for fixed payload parsing. |
+| struct smb2_query_info_reply | struct | include/smb2/smb2.h:955 | reply carries output buffer offset, output buffer length, and decoded or passthrough output pointer. |
+| IOV_OFFSET_QUERY | macro | lib/smb2-cmd-query-info.c:362 | internal reply output offset calculation relative to SMB2 header and fixed Query Info reply body. |
+| IOVREQ_OFFSET_QUERY | macro | lib/smb2-cmd-query-info.c:688 | internal request input offset calculation relative to SMB2 header and fixed Query Info request body. |
 
 ## ADDED Requirements
 

@@ -12,19 +12,19 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| hmac | function | `extern int hmac (SHAversion whichSha, const unsigned char *text, size_t text_len, const unsigned char *key, size_t key_len, uint8_t digest[USHAMaxHashSize]);` | Include | 一次性 HMAC 公开入口，组合 reset/input/result 并向调用方返回 SHA 错误码。 |
-| hmacReset | function | `extern int hmacReset (HMACContext * ctx, enum SHAversion whichSha, const unsigned char *key, size_t key_len);` | Include | 流式 HMAC 初始化入口，被 SMB2 key derivation 与 signing 调用，设置上下文、hash/block size 和内外 pad。 |
-| hmacInput | function | `extern int hmacInput (HMACContext * ctx, const unsigned char *text, size_t text_len);` | Include | 流式 HMAC 数据输入入口，被 SMB2 key derivation 与 signing 调用，错误传递对签名结果可见。 |
-| hmacFinalBits | function | `extern int hmacFinalBits (HMACContext * ctx, const uint8_t bits, size_t bitcount);` | Include | 流式 HMAC final bits 入口，公开声明且转发 SHA final bits 语义。 |
-| hmacResult | function | `extern int hmacResult (HMACContext * ctx, uint8_t *digest);` | Include | 流式 HMAC 结果入口，被 SMB2 key derivation 与 signing 调用，执行 outer hash 并写回 digest。 |
+| hmac | function | extern int hmac (SHAversion whichSha, const unsigned char *text, size_t text_len, const unsigned char *key, size_t key_len, uint8_t digest[USHAMaxHashSize]); | Include | 一次性 HMAC 公开入口，组合 reset/input/result 并向调用方返回 SHA 错误码。 |
+| hmacReset | function | extern int hmacReset (HMACContext * ctx, enum SHAversion whichSha, const unsigned char *key, size_t key_len); | Include | 流式 HMAC 初始化入口，被 SMB2 key derivation 与 signing 调用，设置上下文、hash/block size 和内外 pad。 |
+| hmacInput | function | extern int hmacInput (HMACContext * ctx, const unsigned char *text, size_t text_len); | Include | 流式 HMAC 数据输入入口，被 SMB2 key derivation 与 signing 调用，错误传递对签名结果可见。 |
+| hmacFinalBits | function | extern int hmacFinalBits (HMACContext * ctx, const uint8_t bits, size_t bitcount); | Include | 流式 HMAC final bits 入口，公开声明且转发 SHA final bits 语义。 |
+| hmacResult | function | extern int hmacResult (HMACContext * ctx, uint8_t *digest); | Include | 流式 HMAC 结果入口，被 SMB2 key derivation 与 signing 调用，执行 outer hash 并写回 digest。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| HMACContext | typedef | `lib/sha.h:232` | 保存 `whichSha`、`hashSize`、`blockSize`、内部 `USHAContext` 和 outer pad，供流式 HMAC reset/input/result 共享状态。 |
-| USHAMaxHashSize | macro | `lib/sha.h:104` | digest 缓冲区最大长度，`hmac` 和内部临时 hash 使用该上限。 |
-| USHA_Max_Message_Block_Size | macro | `lib/sha.h:100` | HMAC key pad 缓冲区最大块长，`hmacReset` 用于 inner pad 和 context outer pad。 |
+| HMACContext | typedef | lib/sha.h:232 | 保存 `whichSha`、`hashSize`、`blockSize`、内部 `USHAContext` 和 outer pad，供流式 HMAC reset/input/result 共享状态。 |
+| USHAMaxHashSize | macro | lib/sha.h:104 | digest 缓冲区最大长度，`hmac` 和内部临时 hash 使用该上限。 |
+| USHA_Max_Message_Block_Size | macro | lib/sha.h:100 | HMAC key pad 缓冲区最大块长，`hmacReset` 用于 inner pad 和 context outer pad。 |
 
 ## ADDED Requirements
 

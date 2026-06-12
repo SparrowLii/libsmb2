@@ -12,39 +12,39 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| `smb2_close_connecting_fds` | function | `void smb2_close_connecting_fds(struct smb2_context *smb2);` | Include | 私有跨文件连接清理入口，释放 Happy Eyeballs 连接 fd 数组和 addrinfo。 |
-| `smb2_get_real_credit_charge_for_one_pdu` | function | `static int smb2_get_real_credit_charge_for_one_pdu(struct smb2_context *smb2, struct smb2_header *hdr)` | Skip | 纯内部 helper，仅为发送信用计算提供单 PDU 折算，无独立对外契约。 |
-| `smb2_get_credit_charge` | function | `static int smb2_get_credit_charge(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Skip | 纯内部 helper，仅聚合 compound PDU 信用，不作为跨文件接口暴露。 |
-| `smb2_which_events` | function | `int smb2_which_events(struct smb2_context *smb2);` | Include | 公开事件循环集成 API，调用方依赖其 POLLIN/POLLOUT 掩码。 |
-| `smb2_get_fd` | function | `t_socket smb2_get_fd(struct smb2_context *smb2);` | Include | 公开事件循环集成 API，返回当前 socket 或连接中的第一个 fd。 |
-| `smb2_get_fds` | function | `const t_socket *smb2_get_fds(struct smb2_context *smb2, size_t *fd_count, int *timeout);` | Include | 公开 Happy Eyeballs 多 fd 集成 API，输出 fd 数量和连接阶段 timeout。 |
-| `smb2_write_to_socket` | function | `int smb2_write_to_socket(struct smb2_context *smb2);` | Include | 私有跨文件发送入口，管理 outqueue、writev、credit 和 waitqueue 状态。 |
-| `smb2_read_data` | function | `static int smb2_read_data(struct smb2_context *smb2, read_func func, int has_xfrmhdr)` | Skip | 静态读取状态机，被 socket/buffer 读取包装器归属，无独立跨文件入口。 |
-| `smb2_readv_from_socket` | function | `static ssize_t smb2_readv_from_socket(struct smb2_context *smb2, const struct iovec *iov, int iovcnt)` | Skip | 静态 readv 适配器，无独立行为契约。 |
-| `smb2_read_from_socket` | function | `static int smb2_read_from_socket(struct smb2_context *smb2)` | Skip | 静态 socket 读取包装器，仅由 `smb2_service_fd` 驱动。 |
-| `smb2_readv_from_buf` | function | `static ssize_t smb2_readv_from_buf(struct smb2_context *smb2, const struct iovec *iov, int iovcnt)` | Skip | 静态解密缓冲区读取适配器，无独立跨文件入口。 |
-| `smb2_read_from_buf` | function | `int smb2_read_from_buf(struct smb2_context *smb2);` | Include | 私有跨文件解密缓冲区读取入口，复用接收状态机处理已解密载荷。 |
-| `smb2_close_connecting_fd` | function | `static void smb2_close_connecting_fd(struct smb2_context *smb2, t_socket fd)` | Include | 静态连接失败清理 helper，直接影响 Happy Eyeballs 重试路径中的 fd 数组状态。 |
-| `smb2_service_fd` | function | `int smb2_service_fd(struct smb2_context *smb2, t_socket fd, int revents);` | Include | 公开事件处理入口，处理连接完成、错误、读取、写入和 timeout。 |
-| `smb2_service` | function | `int smb2_service(struct smb2_context *smb2, int revents);` | Include | 公开便利事件处理入口，将事件转发到当前连接或首个连接中 fd。 |
-| `set_nonblocking` | function | `static void set_nonblocking(t_socket fd)` | Skip | 平台适配内部 helper，仅设置 fd 非阻塞，无独立 API。 |
-| `set_tcp_sockopt` | function | `static int set_tcp_sockopt(t_socket sockfd, int optname, int value)` | Skip | 内部 TCP setsockopt helper，调用方不可见。 |
-| `connect_async_ai` | function | `static int connect_async_ai(struct smb2_context *smb2, const struct addrinfo *ai, int *fd_out)` | Skip | 静态单地址连接 helper，行为归属 `smb2_connect_async`。 |
-| `smb2_connect_async_next_addr` | function | `static int smb2_connect_async_next_addr(struct smb2_context *smb2, const struct addrinfo *base)` | Skip | 静态 Happy Eyeballs 连接推进 helper，行为归属连接和 service API。 |
-| `interleave_addrinfo` | function | `static void interleave_addrinfo(struct addrinfo *base)` | Skip | 静态地址链表重排 helper，服务 IPv4/IPv6 交错连接策略。 |
-| `smb2_connect_async` | function | `int smb2_connect_async(struct smb2_context *smb2, const char *server, smb2_command_cb cb, void *cb_data);` | Include | 公开异步 TCP 连接入口，解析 host/port、分配连接 fd 数组并注册回调。 |
-| `smb2_bind_and_listen` | function | `int smb2_bind_and_listen(const uint16_t port, const int max_connections, int *out_fd);` | Include | 公开服务端监听 socket 创建入口，返回非阻塞监听 fd。 |
-| `smb2_accept_connection_async` | function | `int smb2_accept_connection_async(const int fd, const int to_msec, smb2_accepted_cb cb, void *cb_data);` | Include | 公开服务端 accept 入口，轮询监听 fd 并通过回调交付非阻塞 client fd。 |
-| `smb2_change_events` | function | `void smb2_change_events(struct smb2_context *smb2, t_socket fd, int events);` | Include | 私有跨文件事件变更通知入口，避免重复通知并更新缓存事件。 |
+| smb2_close_connecting_fds | function | void smb2_close_connecting_fds(struct smb2_context *smb2); | Include | 私有跨文件连接清理入口，释放 Happy Eyeballs 连接 fd 数组和 addrinfo。 |
+| smb2_get_real_credit_charge_for_one_pdu | function | static int smb2_get_real_credit_charge_for_one_pdu(struct smb2_context *smb2, struct smb2_header *hdr) | Skip | 纯内部 helper，仅为发送信用计算提供单 PDU 折算，无独立对外契约。 |
+| smb2_get_credit_charge | function | static int smb2_get_credit_charge(struct smb2_context *smb2, struct smb2_pdu *pdu) | Skip | 纯内部 helper，仅聚合 compound PDU 信用，不作为跨文件接口暴露。 |
+| smb2_which_events | function | int smb2_which_events(struct smb2_context *smb2); | Include | 公开事件循环集成 API，调用方依赖其 POLLIN/POLLOUT 掩码。 |
+| smb2_get_fd | function | t_socket smb2_get_fd(struct smb2_context *smb2); | Include | 公开事件循环集成 API，返回当前 socket 或连接中的第一个 fd。 |
+| smb2_get_fds | function | const t_socket *smb2_get_fds(struct smb2_context *smb2, size_t *fd_count, int *timeout); | Include | 公开 Happy Eyeballs 多 fd 集成 API，输出 fd 数量和连接阶段 timeout。 |
+| smb2_write_to_socket | function | int smb2_write_to_socket(struct smb2_context *smb2); | Include | 私有跨文件发送入口，管理 outqueue、writev、credit 和 waitqueue 状态。 |
+| smb2_read_data | function | static int smb2_read_data(struct smb2_context *smb2, read_func func, int has_xfrmhdr) | Skip | 静态读取状态机，被 socket/buffer 读取包装器归属，无独立跨文件入口。 |
+| smb2_readv_from_socket | function | static ssize_t smb2_readv_from_socket(struct smb2_context *smb2, const struct iovec *iov, int iovcnt) | Skip | 静态 readv 适配器，无独立行为契约。 |
+| smb2_read_from_socket | function | static int smb2_read_from_socket(struct smb2_context *smb2) | Skip | 静态 socket 读取包装器，仅由 `smb2_service_fd` 驱动。 |
+| smb2_readv_from_buf | function | static ssize_t smb2_readv_from_buf(struct smb2_context *smb2, const struct iovec *iov, int iovcnt) | Skip | 静态解密缓冲区读取适配器，无独立跨文件入口。 |
+| smb2_read_from_buf | function | int smb2_read_from_buf(struct smb2_context *smb2); | Include | 私有跨文件解密缓冲区读取入口，复用接收状态机处理已解密载荷。 |
+| smb2_close_connecting_fd | function | static void smb2_close_connecting_fd(struct smb2_context *smb2, t_socket fd) | Include | 静态连接失败清理 helper，直接影响 Happy Eyeballs 重试路径中的 fd 数组状态。 |
+| smb2_service_fd | function | int smb2_service_fd(struct smb2_context *smb2, t_socket fd, int revents); | Include | 公开事件处理入口，处理连接完成、错误、读取、写入和 timeout。 |
+| smb2_service | function | int smb2_service(struct smb2_context *smb2, int revents); | Include | 公开便利事件处理入口，将事件转发到当前连接或首个连接中 fd。 |
+| set_nonblocking | function | static void set_nonblocking(t_socket fd) | Skip | 平台适配内部 helper，仅设置 fd 非阻塞，无独立 API。 |
+| set_tcp_sockopt | function | static int set_tcp_sockopt(t_socket sockfd, int optname, int value) | Skip | 内部 TCP setsockopt helper，调用方不可见。 |
+| connect_async_ai | function | static int connect_async_ai(struct smb2_context *smb2, const struct addrinfo *ai, int *fd_out) | Skip | 静态单地址连接 helper，行为归属 `smb2_connect_async`。 |
+| smb2_connect_async_next_addr | function | static int smb2_connect_async_next_addr(struct smb2_context *smb2, const struct addrinfo *base) | Skip | 静态 Happy Eyeballs 连接推进 helper，行为归属连接和 service API。 |
+| interleave_addrinfo | function | static void interleave_addrinfo(struct addrinfo *base) | Skip | 静态地址链表重排 helper，服务 IPv4/IPv6 交错连接策略。 |
+| smb2_connect_async | function | int smb2_connect_async(struct smb2_context *smb2, const char *server, smb2_command_cb cb, void *cb_data); | Include | 公开异步 TCP 连接入口，解析 host/port、分配连接 fd 数组并注册回调。 |
+| smb2_bind_and_listen | function | int smb2_bind_and_listen(const uint16_t port, const int max_connections, int *out_fd); | Include | 公开服务端监听 socket 创建入口，返回非阻塞监听 fd。 |
+| smb2_accept_connection_async | function | int smb2_accept_connection_async(const int fd, const int to_msec, smb2_accepted_cb cb, void *cb_data); | Include | 公开服务端 accept 入口，轮询监听 fd 并通过回调交付非阻塞 client fd。 |
+| smb2_change_events | function | void smb2_change_events(struct smb2_context *smb2, t_socket fd, int events); | Include | 私有跨文件事件变更通知入口，避免重复通知并更新缓存事件。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| `MAX_URL_SIZE` | macro | `lib/socket.c:114` | 定义但本文件未使用，可能是遗留 URL 缓冲区限制。 |
-| `HAPPY_EYEBALLS_TIMEOUT` | macro | `lib/socket.c:120` | 连接阶段多地址轮询 timeout 固定为 100ms。 |
-| `struct linger` | struct | `lib/socket.c:122` | 当平台未提供 `HAVE_LINGER` 时提供本地兼容定义。 |
-| `read_func` | typedef | `lib/socket.c:337` | 接收状态机读取适配器签名。 |
+| MAX_URL_SIZE | macro | lib/socket.c:114 | 定义但本文件未使用，可能是遗留 URL 缓冲区限制。 |
+| HAPPY_EYEBALLS_TIMEOUT | macro | lib/socket.c:120 | 连接阶段多地址轮询 timeout 固定为 100ms。 |
+| struct linger | struct | lib/socket.c:122 | 当平台未提供 `HAVE_LINGER` 时提供本地兼容定义。 |
+| read_func | typedef | lib/socket.c:337 | 接收状态机读取适配器签名。 |
 
 ## ADDED Requirements
 
@@ -196,7 +196,7 @@ Trace: `lib/socket.c:smb2_change_events`, `include/libsmb2-private.h:smb2_change
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `smb2_service_fd`、`smb2_bind_and_listen` 和 `smb2_read_from_buf` 的实现符号未被 GitNexus `context --file lib/socket.c` 精确定位，是否需要重建索引以补齐调用关系？ | `smb2_service_fd`, `smb2_bind_and_listen`, `smb2_read_from_buf` | GitNexus 对部分实现符号返回 not found，但源码和头文件存在定义/声明。 |
-| Q-002 | `smb2_write_to_socket` 构造 compound iov 时是否由上游保证 `SMB2_MAX_VECTORS` 容量足够？ | `smb2_write_to_socket` | 本文件未看到 niov 上限检查，依赖 PDU 构造阶段约束。 |
-| Q-003 | `smb2_bind_and_listen` 在入口处无条件写 `*out_fd = -1`，调用方是否必须保证 `out_fd` 非 NULL？ | `smb2_bind_and_listen` | 源码未做空指针检查，公开声明也未记录前置条件。 |
-| Q-004 | `smb2_connect_async` 对 `server == NULL` 的行为是否属于未定义前置条件？ | `smb2_connect_async` | 源码直接 `strdup(server)` 并访问 `host[0]`，声明未记录空指针约束。 |
+| Q-001 | `smb2_service_fd`、`smb2_bind_and_listen` 和 `smb2_read_from_buf` 的实现符号未被 GitNexus `context --file lib/socket.c` 精确定位，是否需要重建索引以补齐调用关系？ | smb2_service_fd`, `smb2_bind_and_listen`, `smb2_read_from_buf | GitNexus 对部分实现符号返回 not found，但源码和头文件存在定义/声明。 |
+| Q-002 | `smb2_write_to_socket` 构造 compound iov 时是否由上游保证 `SMB2_MAX_VECTORS` 容量足够？ | smb2_write_to_socket | 本文件未看到 niov 上限检查，依赖 PDU 构造阶段约束。 |
+| Q-003 | `smb2_bind_and_listen` 在入口处无条件写 `*out_fd = -1`，调用方是否必须保证 `out_fd` 非 NULL？ | smb2_bind_and_listen | 源码未做空指针检查，公开声明也未记录前置条件。 |
+| Q-004 | `smb2_connect_async` 对 `server == NULL` 的行为是否属于未定义前置条件？ | smb2_connect_async | 源码直接 `strdup(server)` 并访问 `host[0]`，声明未记录空指针约束。 |

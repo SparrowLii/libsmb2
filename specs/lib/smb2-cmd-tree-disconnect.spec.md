@@ -12,20 +12,20 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_cmd_tree_disconnect_async | function | `struct smb2_pdu *smb2_cmd_tree_disconnect_async(struct smb2_context *smb2, smb2_command_cb cb, void *cb_data);` | Include | 公开 raw API 声明在 `include/smb2/libsmb2-raw.h`，创建 SMB2 TREE_DISCONNECT 请求 PDU 并定义失败返回语义。 |
-| smb2_cmd_tree_disconnect_reply_async | function | `struct smb2_pdu *smb2_cmd_tree_disconnect_reply_async(struct smb2_context *smb2, smb2_command_cb cb, void *cb_data);` | Include | 公开 raw API 声明在 `include/smb2/libsmb2-raw.h`，创建 SMB2 TREE_DISCONNECT 响应 PDU 并定义失败返回语义。 |
-| smb2_process_tree_disconnect_fixed | function | `int smb2_process_tree_disconnect_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 内部处理入口声明在 `include/libsmb2-private.h`，由 PDU 固定载荷处理路径调用并更新 tree id 状态。 |
-| smb2_process_tree_disconnect_request_fixed | function | `int smb2_process_tree_disconnect_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 内部处理入口声明在 `include/libsmb2-private.h`，服务端请求固定载荷路径需要稳定的空操作成功语义。 |
-| smb2_encode_tree_disconnect_request | function | `static int smb2_encode_tree_disconnect_request(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Skip | 静态编码 helper，仅由 `smb2_cmd_tree_disconnect_async` 调用，资源和错误语义归属公开创建接口。 |
-| smb2_encode_tree_disconnect_reply | function | `static int smb2_encode_tree_disconnect_reply(struct smb2_context *smb2, struct smb2_pdu *pdu)` | Skip | 静态编码 helper，仅由 `smb2_cmd_tree_disconnect_reply_async` 调用，资源和错误语义归属公开创建接口。 |
+| smb2_cmd_tree_disconnect_async | function | struct smb2_pdu *smb2_cmd_tree_disconnect_async(struct smb2_context *smb2, smb2_command_cb cb, void *cb_data); | Include | 公开 raw API 声明在 `include/smb2/libsmb2-raw.h`，创建 SMB2 TREE_DISCONNECT 请求 PDU 并定义失败返回语义。 |
+| smb2_cmd_tree_disconnect_reply_async | function | struct smb2_pdu *smb2_cmd_tree_disconnect_reply_async(struct smb2_context *smb2, smb2_command_cb cb, void *cb_data); | Include | 公开 raw API 声明在 `include/smb2/libsmb2-raw.h`，创建 SMB2 TREE_DISCONNECT 响应 PDU 并定义失败返回语义。 |
+| smb2_process_tree_disconnect_fixed | function | int smb2_process_tree_disconnect_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 内部处理入口声明在 `include/libsmb2-private.h`，由 PDU 固定载荷处理路径调用并更新 tree id 状态。 |
+| smb2_process_tree_disconnect_request_fixed | function | int smb2_process_tree_disconnect_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 内部处理入口声明在 `include/libsmb2-private.h`，服务端请求固定载荷路径需要稳定的空操作成功语义。 |
+| smb2_encode_tree_disconnect_request | function | static int smb2_encode_tree_disconnect_request(struct smb2_context *smb2, struct smb2_pdu *pdu) | Skip | 静态编码 helper，仅由 `smb2_cmd_tree_disconnect_async` 调用，资源和错误语义归属公开创建接口。 |
+| smb2_encode_tree_disconnect_reply | function | static int smb2_encode_tree_disconnect_reply(struct smb2_context *smb2, struct smb2_pdu *pdu) | Skip | 静态编码 helper，仅由 `smb2_cmd_tree_disconnect_reply_async` 调用，资源和错误语义归属公开创建接口。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SMB2_TREE_DISCONNECT_REQUEST_SIZE | macro | `include/smb2/smb2.h:1242` | 请求固定结构大小为 4 字节，写入请求 iovec 偏移 0。 |
-| SMB2_TREE_DISCONNECT_REPLY_SIZE | macro | `include/smb2/smb2.h:1243` | 响应固定结构大小为 4 字节，写入响应 iovec 偏移 0。 |
-| SMB2_TREE_DISCONNECT | enum | `include/smb2/smb2.h:62` | PDU 分配使用的 SMB2 命令码。 |
+| SMB2_TREE_DISCONNECT_REQUEST_SIZE | macro | include/smb2/smb2.h:1242 | 请求固定结构大小为 4 字节，写入请求 iovec 偏移 0。 |
+| SMB2_TREE_DISCONNECT_REPLY_SIZE | macro | include/smb2/smb2.h:1243 | 响应固定结构大小为 4 字节，写入响应 iovec 偏移 0。 |
+| SMB2_TREE_DISCONNECT | enum | include/smb2/smb2.h:62 | PDU 分配使用的 SMB2 命令码。 |
 
 ## ADDED Requirements
 

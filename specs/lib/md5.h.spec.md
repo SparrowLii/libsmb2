@@ -12,23 +12,23 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| `WORDS_BIGENDIAN` | macro | `#define WORDS_BIGENDIAN 1` | Include | 公开头文件根据平台字节序和 Xbox 360 条件暴露该宏，影响 MD5 字节交换路径。 |
-| `UWORD32` | type | `typedef uint32_t UWORD32;` | Include | 公开头文件在非 PS2 IOP 平台定义 MD5 状态和块处理使用的 32 位字类型。 |
-| `md5byte` | macro | `#define md5byte unsigned char` | Include | 公开头文件定义 MD5 字节缓冲区类型别名，参与 `MD5Update` 和实现签名。 |
-| `MD5Context` | type | `struct MD5Context { UWORD32 buf[4]; UWORD32 bytes[2]; UWORD32 in[16]; };` | Include | 调用方必须分配并传递该状态结构以完成 init/update/final 生命周期。 |
-| `MD5Init` | function | `void MD5Init(struct MD5Context *context);` | Include | 公开声明初始化 MD5 上下文，是消息摘要生命周期入口。 |
-| `MD5Update` | function | `void MD5Update(struct MD5Context *context, md5byte const *buf, unsigned len);` | Include | 公开声明向上下文追加输入字节，是分块消息处理入口。 |
-| `MD5Final` | function | `void MD5Final(unsigned char digest[16], struct MD5Context *context);` | Include | 公开声明完成摘要并写入 16 字节结果，同时结束上下文生命周期。 |
-| `MD5Transform` | function | `void MD5Transform(UWORD32 buf[4], UWORD32 const in[16]);` | Include | 公开声明单块 MD5 状态转换函数，供实现和潜在调用方直接处理 16 个 32 位输入字。 |
+| WORDS_BIGENDIAN | macro | #define WORDS_BIGENDIAN 1 | Include | 公开头文件根据平台字节序和 Xbox 360 条件暴露该宏，影响 MD5 字节交换路径。 |
+| UWORD32 | type | typedef uint32_t UWORD32; | Include | 公开头文件在非 PS2 IOP 平台定义 MD5 状态和块处理使用的 32 位字类型。 |
+| md5byte | macro | #define md5byte unsigned char | Include | 公开头文件定义 MD5 字节缓冲区类型别名，参与 `MD5Update` 和实现签名。 |
+| MD5Context | type | struct MD5Context { UWORD32 buf[4]; UWORD32 bytes[2]; UWORD32 in[16]; }; | Include | 调用方必须分配并传递该状态结构以完成 init/update/final 生命周期。 |
+| MD5Init | function | void MD5Init(struct MD5Context *context); | Include | 公开声明初始化 MD5 上下文，是消息摘要生命周期入口。 |
+| MD5Update | function | void MD5Update(struct MD5Context *context, md5byte const *buf, unsigned len); | Include | 公开声明向上下文追加输入字节，是分块消息处理入口。 |
+| MD5Final | function | void MD5Final(unsigned char digest[16], struct MD5Context *context); | Include | 公开声明完成摘要并写入 16 字节结果，同时结束上下文生命周期。 |
+| MD5Transform | function | void MD5Transform(UWORD32 buf[4], UWORD32 const in[16]); | Include | 公开声明单块 MD5 状态转换函数，供实现和潜在调用方直接处理 16 个 32 位输入字。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| `WORDS_BIGENDIAN` | macro | `lib/md5.h:41` | 在非 Windows 大端平台或 Xbox 360 平台定义为 `1`，用于选择字节交换行为。 |
-| `UWORD32` | typedef | `lib/md5.h:48` | 非 `PS2_IOP_PLATFORM` 且未定义 `UWORD32_DEFINED` 时公开为 `uint32_t`。 |
-| `md5byte` | macro | `lib/md5.h:58` | 公开为 `unsigned char`，用于 MD5 输入和内部字节视图。 |
-| `MD5Context` | struct | `lib/md5.h:60` | 包含四个状态字、两个字节计数字和 16 个输入缓冲字。 |
+| WORDS_BIGENDIAN | macro | lib/md5.h:41 | 在非 Windows 大端平台或 Xbox 360 平台定义为 `1`，用于选择字节交换行为。 |
+| UWORD32 | typedef | lib/md5.h:48 | 非 `PS2_IOP_PLATFORM` 且未定义 `UWORD32_DEFINED` 时公开为 `uint32_t`。 |
+| md5byte | macro | lib/md5.h:58 | 公开为 `unsigned char`，用于 MD5 输入和内部字节视图。 |
+| MD5Context | struct | lib/md5.h:60 | 包含四个状态字、两个字节计数字和 16 个输入缓冲字。 |
 
 ## ADDED Requirements
 
@@ -123,6 +123,6 @@ Trace: `lib/md5.h:MD5Transform`, `lib/md5.c:MD5Transform`
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `PS2_IOP_PLATFORM` 下 `UWORD32` 的来源和可用性是否由外部平台头保证？ | `UWORD32` | `lib/md5.h` 在该条件下跳过 typedef，但当前文件未显示替代定义来源。 |
-| Q-002 | `MD5Final` 后是否允许调用方复用已清零的同一上下文而不重新调用 `MD5Init`？ | `MD5Final` | 实现清零上下文但未声明 final 后复用契约。 |
-| Q-003 | 公开 `MD5Transform` 是否属于稳定外部 API，还是仅为实现文件和内部调用保留？ | `MD5Transform` | 头文件公开声明该函数，但源码注释将其描述为 MD5 核心内部转换。 |
+| Q-001 | `PS2_IOP_PLATFORM` 下 `UWORD32` 的来源和可用性是否由外部平台头保证？ | UWORD32 | `lib/md5.h` 在该条件下跳过 typedef，但当前文件未显示替代定义来源。 |
+| Q-002 | `MD5Final` 后是否允许调用方复用已清零的同一上下文而不重新调用 `MD5Init`？ | MD5Final | 实现清零上下文但未声明 final 后复用契约。 |
+| Q-003 | 公开 `MD5Transform` 是否属于稳定外部 API，还是仅为实现文件和内部调用保留？ | MD5Transform | 头文件公开声明该函数，但源码注释将其描述为 MD5 核心内部转换。 |

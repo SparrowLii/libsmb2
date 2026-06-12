@@ -12,15 +12,15 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_timeval_to_win | function | `uint64_t smb2_timeval_to_win(struct smb2_timeval *tv);` | Include | 公共声明的 Unix timeval 到 Windows FILETIME 时间戳转换接口，被 SMB2 metadata 编码和 NTLMSSP 时间戳生成路径调用。 |
-| smb2_win_to_timeval | function | `void smb2_win_to_timeval(uint64_t smb2_time, struct smb2_timeval *tv);` | Include | 公共声明的 Windows FILETIME 到 Unix timeval 转换接口，被 SMB2 metadata 和 directory decode 路径调用。 |
+| smb2_timeval_to_win | function | uint64_t smb2_timeval_to_win(struct smb2_timeval *tv); | Include | 公共声明的 Unix timeval 到 Windows FILETIME 时间戳转换接口，被 SMB2 metadata 编码和 NTLMSSP 时间戳生成路径调用。 |
+| smb2_win_to_timeval | function | void smb2_win_to_timeval(uint64_t smb2_time, struct smb2_timeval *tv); | Include | 公共声明的 Windows FILETIME 到 Unix timeval 转换接口，被 SMB2 metadata 和 directory decode 路径调用。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| smb2_timeval | struct | `include/smb2/smb2.h:symbol` | 时间转换输入/输出数据模型，包含秒和微秒字段；具体字段定义归属到公共 SMB2 header spec。 |
-| WIN epoch offset | constant | `lib/timestamps.c:62` | Windows FILETIME epoch 与 Unix epoch 的 100ns tick 偏移量 `116444736000000000`。 |
+| smb2_timeval | struct | include/smb2/smb2.h:symbol | 时间转换输入/输出数据模型，包含秒和微秒字段；具体字段定义归属到公共 SMB2 header spec。 |
+| WIN epoch offset | constant | lib/timestamps.c:62 | Windows FILETIME epoch 与 Unix epoch 的 100ns tick 偏移量 `116444736000000000`。 |
 
 ## ADDED Requirements
 

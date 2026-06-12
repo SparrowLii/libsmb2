@@ -12,35 +12,35 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb_fd | type | `struct smb_fd { bool is_dir; void *hdl; dirent_t dirent[]; };` | Skip | 文件内部句柄包装结构，仅通过 KallistiOS VFS 回调私有传递，不形成独立跨文件契约。 |
-| smb_open | function | `static void * smb_open(vfs_handler_t *vfs, const char *fn, int mode);` | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
-| smb_close | function | `static int smb_close(void *hnd);` | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
-| smb_read | function | `static ssize_t smb_read(void *hnd, void *buffer, size_t cnt);` | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
-| smb_write | function | `static ssize_t smb_write(void *hnd, const void *buffer, size_t cnt);` | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
-| smb_readdir | function | `static const dirent_t *smb_readdir(void *hnd);` | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
-| smb_rename | function | `static int smb_rename(struct vfs_handler *vfs, const char *fn1, const char *fn2);` | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
-| smb_unlink | function | `static int smb_unlink(struct vfs_handler *vfs, const char *path);` | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
-| smb2_stat_convert | function | `static void smb2_stat_convert(struct stat *buf, const struct smb2_stat_64 *st);` | Skip | 文件内部转换 helper，仅服务 `smb_stat` 与 `smb_fstat`，无独立公开入口。 |
-| smb_stat | function | `static int smb_stat(struct vfs_handler *vfs, const char *path, struct stat *buf, int flag);` | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
-| smb_mkdir | function | `static int smb_mkdir(struct vfs_handler *vfs, const char *fn);` | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
-| smb_rmdir | function | `static int smb_rmdir(struct vfs_handler *vfs, const char *fn);` | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
-| smb_seek64 | function | `static _off64_t smb_seek64(void *hnd, _off64_t offset, int whence);` | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
-| smb_tell64 | function | `static _off64_t smb_tell64(void *hnd);` | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
-| smb_readlink | function | `static ssize_t smb_readlink(struct vfs_handler *vfs, const char *path, char *buf, size_t bufsize);` | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
-| smb_rewinddir | function | `static int smb_rewinddir(void *hnd);` | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
-| smb_fstat | function | `static int smb_fstat(void *hnd, struct stat *buf);` | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
-| kos_smb_init | function | `int kos_smb_init(const char *url);` | Include | 头文件声明并由实现导出的 Dreamcast SMB VFS 初始化入口，负责建立连接和注册 `/smb` VFS。 |
-| kos_smb_shutdown | function | `void kos_smb_shutdown(void);` | Include | 头文件声明并由实现导出的 Dreamcast SMB VFS 关闭入口，负责注销 `/smb` VFS 并释放全局 SMB 资源。 |
+| smb_fd | type | struct smb_fd { bool is_dir; void *hdl; dirent_t dirent[]; }; | Skip | 文件内部句柄包装结构，仅通过 KallistiOS VFS 回调私有传递，不形成独立跨文件契约。 |
+| smb_open | function | static void * smb_open(vfs_handler_t *vfs, const char *fn, int mode); | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
+| smb_close | function | static int smb_close(void *hnd); | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
+| smb_read | function | static ssize_t smb_read(void *hnd, void *buffer, size_t cnt); | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
+| smb_write | function | static ssize_t smb_write(void *hnd, const void *buffer, size_t cnt); | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
+| smb_readdir | function | static const dirent_t *smb_readdir(void *hnd); | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
+| smb_rename | function | static int smb_rename(struct vfs_handler *vfs, const char *fn1, const char *fn2); | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
+| smb_unlink | function | static int smb_unlink(struct vfs_handler *vfs, const char *path); | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
+| smb2_stat_convert | function | static void smb2_stat_convert(struct stat *buf, const struct smb2_stat_64 *st); | Skip | 文件内部转换 helper，仅服务 `smb_stat` 与 `smb_fstat`，无独立公开入口。 |
+| smb_stat | function | static int smb_stat(struct vfs_handler *vfs, const char *path, struct stat *buf, int flag); | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
+| smb_mkdir | function | static int smb_mkdir(struct vfs_handler *vfs, const char *fn); | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
+| smb_rmdir | function | static int smb_rmdir(struct vfs_handler *vfs, const char *fn); | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
+| smb_seek64 | function | static _off64_t smb_seek64(void *hnd, _off64_t offset, int whence); | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
+| smb_tell64 | function | static _off64_t smb_tell64(void *hnd); | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
+| smb_readlink | function | static ssize_t smb_readlink(struct vfs_handler *vfs, const char *path, char *buf, size_t bufsize); | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
+| smb_rewinddir | function | static int smb_rewinddir(void *hnd); | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
+| smb_fstat | function | static int smb_fstat(void *hnd, struct stat *buf); | Skip | 静态 VFS 回调，由本文件注册表引用，行为归属到 `kos_smb_init` 注册后的 `/smb` VFS 契约。 |
+| kos_smb_init | function | int kos_smb_init(const char *url); | Include | 头文件声明并由实现导出的 Dreamcast SMB VFS 初始化入口，负责建立连接和注册 `/smb` VFS。 |
+| kos_smb_shutdown | function | void kos_smb_shutdown(void); | Include | 头文件声明并由实现导出的 Dreamcast SMB VFS 关闭入口，负责注销 `/smb` VFS 并释放全局 SMB 资源。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| smb_fd | struct | `lib/dreamcast/vfs.c:20` | 文件内部 VFS 句柄，记录当前句柄是否为目录、libsmb2 句柄指针，并为目录读取保留一个 `dirent_t` 返回槽。 |
-| lock | static object | `lib/dreamcast/vfs.c:15` | 文件内部互斥锁，VFS 回调在调用全局 `cxt` 和 libsmb2 句柄前加锁。 |
-| cxt | static object | `lib/dreamcast/vfs.c:17` | 文件内部全局 libsmb2 context，由 `kos_smb_init` 设置并由 VFS 回调与 `kos_smb_shutdown` 使用。 |
-| smb_url | static object | `lib/dreamcast/vfs.c:18` | 文件内部全局 parsed SMB URL，由 `kos_smb_init` 设置并由 `kos_smb_shutdown` 释放。 |
-| vh | static object | `lib/dreamcast/vfs.c:252` | KallistiOS VFS handler，命名为 `/smb`，注册本文件的静态 SMB 文件系统回调。 |
+| smb_fd | struct | lib/dreamcast/vfs.c:20 | 文件内部 VFS 句柄，记录当前句柄是否为目录、libsmb2 句柄指针，并为目录读取保留一个 `dirent_t` 返回槽。 |
+| lock | static object | lib/dreamcast/vfs.c:15 | 文件内部互斥锁，VFS 回调在调用全局 `cxt` 和 libsmb2 句柄前加锁。 |
+| cxt | static object | lib/dreamcast/vfs.c:17 | 文件内部全局 libsmb2 context，由 `kos_smb_init` 设置并由 VFS 回调与 `kos_smb_shutdown` 使用。 |
+| smb_url | static object | lib/dreamcast/vfs.c:18 | 文件内部全局 parsed SMB URL，由 `kos_smb_init` 设置并由 `kos_smb_shutdown` 释放。 |
+| vh | static object | lib/dreamcast/vfs.c:252 | KallistiOS VFS handler，命名为 `/smb`，注册本文件的静态 SMB 文件系统回调。 |
 
 ## ADDED Requirements
 

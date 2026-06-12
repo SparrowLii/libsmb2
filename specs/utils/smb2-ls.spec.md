@@ -12,18 +12,18 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| `usage` | function | `int usage(void)` | Include | 命令行参数不足时由 `main` 调用，向标准错误输出固定用法并终止进程，具有调用方可观察行为。 |
-| `main` | function | `int main(int argc, char *argv[])` | Include | 作为 `smb2-ls-sync` 工具入口，解析 SMB URL、连接共享、列出目录项、读取符号链接目标并管理连接和上下文资源。 |
+| usage | function | int usage(void) | Include | 命令行参数不足时由 `main` 调用，向标准错误输出固定用法并终止进程，具有调用方可观察行为。 |
+| main | function | int main(int argc, char *argv[]) | Include | 作为 `smb2-ls-sync` 工具入口，解析 SMB URL、连接共享、列出目录项、读取符号链接目标并管理连接和上下文资源。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| `_GNU_SOURCE` | macro | `utils/smb2-ls.c:14` | 若外部未定义，文件本地定义该宏以启用 GNU/POSIX 扩展声明。 |
-| `SMB2_TYPE_LINK` | macro | `include/smb2/smb2.h` | `main` 将该目录项类型显示为 `LINK`，并对该项调用 `smb2_readlink`。 |
-| `SMB2_TYPE_FILE` | macro | `include/smb2/smb2.h` | `main` 将该目录项类型显示为 `FILE`。 |
-| `SMB2_TYPE_DIRECTORY` | macro | `include/smb2/smb2.h` | `main` 将该目录项类型显示为 `DIRECTORY`。 |
-| `SMB2_NEGOTIATE_SIGNING_ENABLED` | macro | `include/smb2/smb2.h` | `main` 在连接共享前设置 SMB2 signing enabled 安全模式。 |
+| _GNU_SOURCE | macro | utils/smb2-ls.c:14 | 若外部未定义，文件本地定义该宏以启用 GNU/POSIX 扩展声明。 |
+| SMB2_TYPE_LINK | macro | include/smb2/smb2.h | `main` 将该目录项类型显示为 `LINK`，并对该项调用 `smb2_readlink`。 |
+| SMB2_TYPE_FILE | macro | include/smb2/smb2.h | `main` 将该目录项类型显示为 `FILE`。 |
+| SMB2_TYPE_DIRECTORY | macro | include/smb2/smb2.h | `main` 将该目录项类型显示为 `DIRECTORY`。 |
+| SMB2_NEGOTIATE_SIGNING_ENABLED | macro | include/smb2/smb2.h | `main` 在连接共享前设置 SMB2 signing enabled 安全模式。 |
 
 ## ADDED Requirements
 
@@ -107,5 +107,5 @@ Trace: `utils/smb2-ls.c:main`
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `smb2_parse_url` 失败路径未调用 `smb2_destroy_context` 是否为工具既有资源释放契约，还是遗漏？ | `main` | 源码直接 `exit(1)`，未进入 `out_context` 清理路径；未发现测试证据确认该行为。 |
-| Q-002 | `asprintf` 失败后跳转到 `out_disconnect` 是否需要先释放已打开目录？ | `main` | 符号链接路径分配失败时未调用 `smb2_closedir`；未发现测试证据确认失败路径资源契约。 |
+| Q-001 | `smb2_parse_url` 失败路径未调用 `smb2_destroy_context` 是否为工具既有资源释放契约，还是遗漏？ | main | 源码直接 `exit(1)`，未进入 `out_context` 清理路径；未发现测试证据确认该行为。 |
+| Q-002 | `asprintf` 失败后跳转到 `out_disconnect` 是否需要先释放已打开目录？ | main | 符号链接路径分配失败时未调用 `smb2_closedir`；未发现测试证据确认失败路径资源契约。 |

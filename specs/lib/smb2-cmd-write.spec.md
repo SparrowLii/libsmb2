@@ -12,26 +12,26 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_encode_write_request | function | `static int smb2_encode_write_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_write_request *req)` | Skip | 静态编码 helper，仅由 `smb2_cmd_write_async` 调用，行为归属到公开 RAW write PDU 构造入口。 |
-| smb2_cmd_write_async | function | `struct smb2_pdu *smb2_cmd_write_async(struct smb2_context *smb2, struct smb2_write_request *req, int pass_buf_ownership, smb2_command_cb cb, void *cb_data);` | Include | RAW 头文件声明的异步 WRITE 请求构造入口，被高层 write API 调用，调用方可观察 PDU、NULL、buffer 所有权和 credit charge。 |
-| smb2_encode_write_reply | function | `static int smb2_encode_write_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_write_reply *rep)` | Skip | 静态编码 helper，仅由 `smb2_cmd_write_reply_async` 调用，行为归属到 reply PDU 构造入口。 |
-| smb2_cmd_write_reply_async | function | `struct smb2_pdu *smb2_cmd_write_reply_async(struct smb2_context *smb2, struct smb2_write_reply *rep, smb2_command_cb cb, void *cb_data);` | Include | RAW 头文件声明的 WRITE reply 构造入口，被服务端 write request callback 调用。 |
-| smb2_process_write_fixed | function | `int smb2_process_write_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 私有 PDU dispatcher 入口，解析 WRITE reply 固定区并向调用方暴露 `struct smb2_write_reply` payload。 |
-| IOVREQ_OFFSET_WRITE | macro | `#define IOVREQ_OFFSET_WRITE (req->write_channel_info_length ? (req->write_channel_info_offset - SMB2_HEADER_SIZE - (SMB2_WRITE_REQUEST_SIZE & 0xfffe)):0)` | Skip | 仅供本文件 request 固定区和变量区解析使用，无独立跨文件契约。 |
-| smb2_process_write_request_fixed | function | `int smb2_process_write_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 私有 PDU dispatcher 入口，解析服务端收到的 WRITE request 固定区并返回变量区所需长度。 |
-| smb2_process_write_request_variable | function | `int smb2_process_write_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 私有 PDU dispatcher 入口，将服务端 WRITE request 的 channel info 和 data 指针映射到接收缓冲区。 |
+| smb2_encode_write_request | function | static int smb2_encode_write_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_write_request *req) | Skip | 静态编码 helper，仅由 `smb2_cmd_write_async` 调用，行为归属到公开 RAW write PDU 构造入口。 |
+| smb2_cmd_write_async | function | struct smb2_pdu *smb2_cmd_write_async(struct smb2_context *smb2, struct smb2_write_request *req, int pass_buf_ownership, smb2_command_cb cb, void *cb_data); | Include | RAW 头文件声明的异步 WRITE 请求构造入口，被高层 write API 调用，调用方可观察 PDU、NULL、buffer 所有权和 credit charge。 |
+| smb2_encode_write_reply | function | static int smb2_encode_write_reply(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_write_reply *rep) | Skip | 静态编码 helper，仅由 `smb2_cmd_write_reply_async` 调用，行为归属到 reply PDU 构造入口。 |
+| smb2_cmd_write_reply_async | function | struct smb2_pdu *smb2_cmd_write_reply_async(struct smb2_context *smb2, struct smb2_write_reply *rep, smb2_command_cb cb, void *cb_data); | Include | RAW 头文件声明的 WRITE reply 构造入口，被服务端 write request callback 调用。 |
+| smb2_process_write_fixed | function | int smb2_process_write_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 私有 PDU dispatcher 入口，解析 WRITE reply 固定区并向调用方暴露 `struct smb2_write_reply` payload。 |
+| IOVREQ_OFFSET_WRITE | macro | #define IOVREQ_OFFSET_WRITE (req->write_channel_info_length ? (req->write_channel_info_offset - SMB2_HEADER_SIZE - (SMB2_WRITE_REQUEST_SIZE & 0xfffe)):0) | Skip | 仅供本文件 request 固定区和变量区解析使用，无独立跨文件契约。 |
+| smb2_process_write_request_fixed | function | int smb2_process_write_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 私有 PDU dispatcher 入口，解析服务端收到的 WRITE request 固定区并返回变量区所需长度。 |
+| smb2_process_write_request_variable | function | int smb2_process_write_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 私有 PDU dispatcher 入口，将服务端 WRITE request 的 channel info 和 data 指针映射到接收缓冲区。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SMB2_WRITE_REQUEST_SIZE | macro | `include/smb2/smb2.h:1186` | WRITE request 固定区大小为 49，编码时按偶数固定区长度写入 iovec。 |
-| SMB2_WRITEFLAG_WRITE_THROUGH | macro | `include/smb2/smb2.h:1188` | WRITE request flags 可见标志，值为 `0x00000001`。 |
-| SMB2_WRITEFLAG_WRITE_UNBUFFERED | macro | `include/smb2/smb2.h:1189` | WRITE request flags 可见标志，值为 `0x00000002`。 |
-| struct smb2_write_request | struct | `include/smb2/smb2.h:1191` | WRITE request 数据模型，包含 data offset、length、offset、buffer、file id、channel info 和 flags。 |
-| SMB2_WRITE_REPLY_SIZE | macro | `include/smb2/smb2.h:1205` | WRITE reply 固定区大小为 17。 |
-| struct smb2_write_reply | struct | `include/smb2/smb2.h:1207` | WRITE reply 数据模型，包含已写入字节数 `count` 和 `remaining`。 |
-| IOVREQ_OFFSET_WRITE | macro | `lib/smb2-cmd-write.c:246` | 计算 request 变量区中 write data 相对位置的内部宏。 |
+| SMB2_WRITE_REQUEST_SIZE | macro | include/smb2/smb2.h:1186 | WRITE request 固定区大小为 49，编码时按偶数固定区长度写入 iovec。 |
+| SMB2_WRITEFLAG_WRITE_THROUGH | macro | include/smb2/smb2.h:1188 | WRITE request flags 可见标志，值为 `0x00000001`。 |
+| SMB2_WRITEFLAG_WRITE_UNBUFFERED | macro | include/smb2/smb2.h:1189 | WRITE request flags 可见标志，值为 `0x00000002`。 |
+| struct smb2_write_request | struct | include/smb2/smb2.h:1191 | WRITE request 数据模型，包含 data offset、length、offset、buffer、file id、channel info 和 flags。 |
+| SMB2_WRITE_REPLY_SIZE | macro | include/smb2/smb2.h:1205 | WRITE reply 固定区大小为 17。 |
+| struct smb2_write_reply | struct | include/smb2/smb2.h:1207 | WRITE reply 数据模型，包含已写入字节数 `count` 和 `remaining`。 |
+| IOVREQ_OFFSET_WRITE | macro | lib/smb2-cmd-write.c:246 | 计算 request 变量区中 write data 相对位置的内部宏。 |
 
 ## ADDED Requirements
 

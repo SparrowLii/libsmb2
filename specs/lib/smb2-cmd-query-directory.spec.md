@@ -12,29 +12,29 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| smb2_decode_fileidfulldirectoryinformation | function | `int smb2_decode_fileidfulldirectoryinformation(struct smb2_context *smb2, struct smb2_fileidfulldirectoryinformation *fs, struct smb2_iovec *vec);` | Include | 公开声明于 `include/smb2/smb2.h`，解析调用方可见的目录项结构并承担错误语义。 |
-| smb2_encode_query_directory_request | function | `static int smb2_encode_query_directory_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_query_directory_request *req)` | Skip | 文件内静态编码 helper，由公开异步入口封装，无独立外部接口。 |
-| smb2_cmd_query_directory_async | function | `struct smb2_pdu *smb2_cmd_query_directory_async(struct smb2_context *smb2, struct smb2_query_directory_request *req, smb2_command_cb cb, void *cb_data);` | Include | 公开声明于 `include/smb2/libsmb2-raw.h`，创建客户端 Query Directory PDU 并定义失败返回语义。 |
-| smb2_encode_query_directory_reply | function | `static int smb2_encode_query_directory_reply(struct smb2_context *smb2, uint8_t info_class, uint8_t flags, uint32_t room, struct smb2_pdu *pdu, struct smb2_query_directory_reply *rep)` | Skip | 文件内静态服务端回复编码 helper，由公开回复异步入口封装。 |
-| smb2_cmd_query_directory_reply_async | function | `struct smb2_pdu *smb2_cmd_query_directory_reply_async(struct smb2_context *smb2, struct smb2_query_directory_request *req, struct smb2_query_directory_reply *rep, smb2_command_cb cb, void *cb_data);` | Include | 公开声明于 `include/smb2/libsmb2-raw.h`，创建服务端 Query Directory reply PDU。 |
-| IOV_OFFSET_DIRECTORY | macro | `#define IOV_OFFSET_DIRECTORY (rep->output_buffer_offset - SMB2_HEADER_SIZE - (SMB2_QUERY_DIRECTORY_REPLY_SIZE & 0xfffe))` | Skip | 文件内偏移计算宏，只服务解析实现细节。 |
-| smb2_process_query_directory_fixed | function | `int smb2_process_query_directory_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 私有头文件声明并由通用 PDU reply 固定部分解析流程调用，影响接收端错误和长度语义。 |
-| smb2_process_query_directory_variable | function | `int smb2_process_query_directory_variable(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 私有头文件声明并由通用 PDU reply 可变部分解析流程调用，绑定输出缓冲区视图。 |
-| IOVREQ_OFFSET_DIRECTORY | macro | `#define IOVREQ_OFFSET_DIRECTORY (req->file_name_offset - SMB2_HEADER_SIZE - (SMB2_QUERY_DIRECTORY_REQUEST_SIZE & 0xfffe))` | Skip | 文件内偏移计算宏，只服务请求解析实现细节。 |
-| smb2_process_query_directory_request_fixed | function | `int smb2_process_query_directory_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 私有头文件声明并由通用 PDU request 固定部分解析流程调用，影响服务端请求校验语义。 |
-| smb2_process_query_directory_request_variable | function | `int smb2_process_query_directory_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu);` | Include | 私有头文件声明并由通用 PDU request 可变部分解析流程调用，负责 UTF-16 名称转换和上下文分配。 |
+| smb2_decode_fileidfulldirectoryinformation | function | int smb2_decode_fileidfulldirectoryinformation(struct smb2_context *smb2, struct smb2_fileidfulldirectoryinformation *fs, struct smb2_iovec *vec); | Include | 公开声明于 `include/smb2/smb2.h`，解析调用方可见的目录项结构并承担错误语义。 |
+| smb2_encode_query_directory_request | function | static int smb2_encode_query_directory_request(struct smb2_context *smb2, struct smb2_pdu *pdu, struct smb2_query_directory_request *req) | Skip | 文件内静态编码 helper，由公开异步入口封装，无独立外部接口。 |
+| smb2_cmd_query_directory_async | function | struct smb2_pdu *smb2_cmd_query_directory_async(struct smb2_context *smb2, struct smb2_query_directory_request *req, smb2_command_cb cb, void *cb_data); | Include | 公开声明于 `include/smb2/libsmb2-raw.h`，创建客户端 Query Directory PDU 并定义失败返回语义。 |
+| smb2_encode_query_directory_reply | function | static int smb2_encode_query_directory_reply(struct smb2_context *smb2, uint8_t info_class, uint8_t flags, uint32_t room, struct smb2_pdu *pdu, struct smb2_query_directory_reply *rep) | Skip | 文件内静态服务端回复编码 helper，由公开回复异步入口封装。 |
+| smb2_cmd_query_directory_reply_async | function | struct smb2_pdu *smb2_cmd_query_directory_reply_async(struct smb2_context *smb2, struct smb2_query_directory_request *req, struct smb2_query_directory_reply *rep, smb2_command_cb cb, void *cb_data); | Include | 公开声明于 `include/smb2/libsmb2-raw.h`，创建服务端 Query Directory reply PDU。 |
+| IOV_OFFSET_DIRECTORY | macro | #define IOV_OFFSET_DIRECTORY (rep->output_buffer_offset - SMB2_HEADER_SIZE - (SMB2_QUERY_DIRECTORY_REPLY_SIZE & 0xfffe)) | Skip | 文件内偏移计算宏，只服务解析实现细节。 |
+| smb2_process_query_directory_fixed | function | int smb2_process_query_directory_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 私有头文件声明并由通用 PDU reply 固定部分解析流程调用，影响接收端错误和长度语义。 |
+| smb2_process_query_directory_variable | function | int smb2_process_query_directory_variable(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 私有头文件声明并由通用 PDU reply 可变部分解析流程调用，绑定输出缓冲区视图。 |
+| IOVREQ_OFFSET_DIRECTORY | macro | #define IOVREQ_OFFSET_DIRECTORY (req->file_name_offset - SMB2_HEADER_SIZE - (SMB2_QUERY_DIRECTORY_REQUEST_SIZE & 0xfffe)) | Skip | 文件内偏移计算宏，只服务请求解析实现细节。 |
+| smb2_process_query_directory_request_fixed | function | int smb2_process_query_directory_request_fixed(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 私有头文件声明并由通用 PDU request 固定部分解析流程调用，影响服务端请求校验语义。 |
+| smb2_process_query_directory_request_variable | function | int smb2_process_query_directory_request_variable(struct smb2_context *smb2, struct smb2_pdu *pdu); | Include | 私有头文件声明并由通用 PDU request 可变部分解析流程调用，负责 UTF-16 名称转换和上下文分配。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SMB2_FILEID_FULL_DIRECTORY_INFORMATION_SIZE | macro | `include/smb2/smb2.h:435` | FileIdFullDirectoryInformation 固定字段大小，解码和回复编码使用 80 字节基线。 |
-| struct smb2_fileidfulldirectoryinformation | struct | `include/smb2/smb2.h:440` | 目录项输出模型，包含时间戳、大小、属性、EA、file_id 和 UTF-8 名称。 |
-| SMB2_FILEID_BOTH_DIRECTORY_INFORMATION_SIZE | macro | `include/smb2/smb2.h:456` | FileIdBothDirectoryInformation 固定字段大小，回复编码使用 104 字节基线。 |
-| struct smb2_fileidbothdirectoryinformation | struct | `include/smb2/smb2.h:460` | 服务端回复编码输入模型，包含 full directory 字段以及 short name 字段。 |
-| struct smb2_query_directory_request | struct | `include/smb2/smb2.h:484` | Query Directory 请求模型，包含信息类别、flags、file index、file id、输出长度和 UTF-8 名称。 |
-| SMB2_QUERY_DIRECTORY_REPLY_SIZE | macro | `include/smb2/smb2.h:495` | Query Directory reply 固定结构大小，固定部分解析和编码均使用该值。 |
-| struct smb2_query_directory_reply | struct | `include/smb2/smb2.h:497` | Query Directory reply 模型，携带输出缓冲区偏移、长度和指针。 |
+| SMB2_FILEID_FULL_DIRECTORY_INFORMATION_SIZE | macro | include/smb2/smb2.h:435 | FileIdFullDirectoryInformation 固定字段大小，解码和回复编码使用 80 字节基线。 |
+| struct smb2_fileidfulldirectoryinformation | struct | include/smb2/smb2.h:440 | 目录项输出模型，包含时间戳、大小、属性、EA、file_id 和 UTF-8 名称。 |
+| SMB2_FILEID_BOTH_DIRECTORY_INFORMATION_SIZE | macro | include/smb2/smb2.h:456 | FileIdBothDirectoryInformation 固定字段大小，回复编码使用 104 字节基线。 |
+| struct smb2_fileidbothdirectoryinformation | struct | include/smb2/smb2.h:460 | 服务端回复编码输入模型，包含 full directory 字段以及 short name 字段。 |
+| struct smb2_query_directory_request | struct | include/smb2/smb2.h:484 | Query Directory 请求模型，包含信息类别、flags、file index、file id、输出长度和 UTF-8 名称。 |
+| SMB2_QUERY_DIRECTORY_REPLY_SIZE | macro | include/smb2/smb2.h:495 | Query Directory reply 固定结构大小，固定部分解析和编码均使用该值。 |
+| struct smb2_query_directory_reply | struct | include/smb2/smb2.h:497 | Query Directory reply 模型，携带输出缓冲区偏移、长度和指针。 |
 
 ## ADDED Requirements
 

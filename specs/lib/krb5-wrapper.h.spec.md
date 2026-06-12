@@ -12,35 +12,35 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| `private_auth_data` | type | `struct private_auth_data` | Include | 认证状态对象承载 GSS/Kerberos 句柄、输出 token、服务器名和服务端凭据，跨多个 Kerberos wrapper 接口传递。 |
-| `gss_mech_spnego` | constant | `static const gss_OID_desc gss_mech_spnego = { 6, "\\x2b\\x06\\x01\\x05\\x05\\x02" };` | Include | 非 Apple 平台公开 SPNEGO OID 常量供本头文件内的 Kerberos wrapper 选择机制。 |
-| `spnego_mech_krb5` | constant | `static const gss_OID_desc spnego_mech_krb5 = { 9, "\\x2a\\x86\\x48\\x86\\xf7\\x12\\x01\\x02\\x02" };` | Include | Kerberos SPNEGO OID 常量影响 GSS mechanism 选择。 |
-| `spnego_mech_ntlmssp` | constant | `static const gss_OID_desc spnego_mech_ntlmssp = { 10, "\\x2b\\x06\\x01\\x04\\x01\\x82\\x37\\x02\\x02\\x0a" };` | Include | NTLMSSP SPNEGO OID 常量影响 NTLMSSP 能力探测和机制限制。 |
-| `krb5_free_auth_data` | function | `void krb5_free_auth_data(struct private_auth_data *auth);` | Include | 释放认证状态及其 GSS/Kerberos 资源，是生命周期终点。 |
-| `krb5_get_output_token_buffer` | function | `unsigned char * krb5_get_output_token_buffer(struct private_auth_data *auth_data);` | Include | 调用方通过该访问器取得最近一次 GSS 输出 token 缓冲区。 |
-| `krb5_get_output_token_length` | function | `int krb5_get_output_token_length(struct private_auth_data *auth_data);` | Include | 调用方通过该访问器取得最近一次 GSS 输出 token 长度。 |
-| `krb5_negotiate_reply` | function | `struct private_auth_data * krb5_negotiate_reply(struct smb2_context *smb2, const char *server, const char *domain, const char *user_name, const char *password);` | Include | SMB 客户端协商使用该接口创建 Kerberos/GSS initiator 凭据和目标名称。 |
-| `krb5_negotiate_request` | function | `int krb5_negotiate_request(struct smb2_context *smb2, void **neg_init_token);` | Include | 头文件声明 SMB negotiate request 初始化入口，但当前实现文件未发现定义。 |
-| `krb5_session_get_session_key` | function | `int krb5_session_get_session_key(struct smb2_context *smb2, struct private_auth_data *auth_data);` | Include | 会话建立后该接口导出 GSS session key 到 SMB 上下文。 |
-| `krb5_session_request` | function | `int krb5_session_request(struct smb2_context *smb2, struct private_auth_data *auth_data, unsigned char *buf, int len);` | Include | 客户端侧 GSS token 交换入口，产生后续 SMB session setup token。 |
-| `krb5_init_server_client_cred` | function | `struct private_auth_data * krb5_init_server_client_cred(struct smb2_server *server, struct smb2_context *smb2, const char *password);` | Include | 服务端为客户端上下文初始化 acceptor 或代理凭据。 |
-| `krb5_session_reply` | function | `int krb5_session_reply(struct smb2_context *smb2, struct private_auth_data *auth_data, unsigned char *buf, int len, int *more_processing_needed);` | Include | 服务端侧 GSS token 接收入口，更新用户、域和可选委派凭据。 |
-| `krb5_set_gss_error` | function | `void krb5_set_gss_error(struct smb2_context *smb2, char *func, uint32_t maj, uint32_t min);` | Include | GSS major/minor 状态转换为 SMB 错误文本。 |
-| `krb5_can_do_ntlmssp` | function | `int krb5_can_do_ntlmssp(void);` | Include | 调用方使用该能力探测判断 Kerberos/GSSAPI 是否可处理 NTLMSSP。 |
-| `krb5_init_server_credentials` | function | `int krb5_init_server_credentials(struct smb2_server *server, const char *keytab_path);` | Include | 服务端 keytab 凭据初始化入口，建立私有 credential cache。 |
-| `krb5_renew_server_credentials` | function | `int krb5_renew_server_credentials(struct smb2_server *server);` | Include | 服务端使用 keytab 刷新 credential cache 中的凭据。 |
-| `krb5_free_server_credentials` | function | `void krb5_free_server_credentials(struct smb2_server *server);` | Include | 服务端释放并清空保存的 Kerberos auth_data。 |
+| private_auth_data | type | struct private_auth_data | Include | 认证状态对象承载 GSS/Kerberos 句柄、输出 token、服务器名和服务端凭据，跨多个 Kerberos wrapper 接口传递。 |
+| gss_mech_spnego | constant | static const gss_OID_desc gss_mech_spnego = { 6, "\\x2b\\x06\\x01\\x05\\x05\\x02" }; | Include | 非 Apple 平台公开 SPNEGO OID 常量供本头文件内的 Kerberos wrapper 选择机制。 |
+| spnego_mech_krb5 | constant | static const gss_OID_desc spnego_mech_krb5 = { 9, "\\x2a\\x86\\x48\\x86\\xf7\\x12\\x01\\x02\\x02" }; | Include | Kerberos SPNEGO OID 常量影响 GSS mechanism 选择。 |
+| spnego_mech_ntlmssp | constant | static const gss_OID_desc spnego_mech_ntlmssp = { 10, "\\x2b\\x06\\x01\\x04\\x01\\x82\\x37\\x02\\x02\\x0a" }; | Include | NTLMSSP SPNEGO OID 常量影响 NTLMSSP 能力探测和机制限制。 |
+| krb5_free_auth_data | function | void krb5_free_auth_data(struct private_auth_data *auth); | Include | 释放认证状态及其 GSS/Kerberos 资源，是生命周期终点。 |
+| krb5_get_output_token_buffer | function | unsigned char * krb5_get_output_token_buffer(struct private_auth_data *auth_data); | Include | 调用方通过该访问器取得最近一次 GSS 输出 token 缓冲区。 |
+| krb5_get_output_token_length | function | int krb5_get_output_token_length(struct private_auth_data *auth_data); | Include | 调用方通过该访问器取得最近一次 GSS 输出 token 长度。 |
+| krb5_negotiate_reply | function | struct private_auth_data * krb5_negotiate_reply(struct smb2_context *smb2, const char *server, const char *domain, const char *user_name, const char *password); | Include | SMB 客户端协商使用该接口创建 Kerberos/GSS initiator 凭据和目标名称。 |
+| krb5_negotiate_request | function | int krb5_negotiate_request(struct smb2_context *smb2, void **neg_init_token); | Include | 头文件声明 SMB negotiate request 初始化入口，但当前实现文件未发现定义。 |
+| krb5_session_get_session_key | function | int krb5_session_get_session_key(struct smb2_context *smb2, struct private_auth_data *auth_data); | Include | 会话建立后该接口导出 GSS session key 到 SMB 上下文。 |
+| krb5_session_request | function | int krb5_session_request(struct smb2_context *smb2, struct private_auth_data *auth_data, unsigned char *buf, int len); | Include | 客户端侧 GSS token 交换入口，产生后续 SMB session setup token。 |
+| krb5_init_server_client_cred | function | struct private_auth_data * krb5_init_server_client_cred(struct smb2_server *server, struct smb2_context *smb2, const char *password); | Include | 服务端为客户端上下文初始化 acceptor 或代理凭据。 |
+| krb5_session_reply | function | int krb5_session_reply(struct smb2_context *smb2, struct private_auth_data *auth_data, unsigned char *buf, int len, int *more_processing_needed); | Include | 服务端侧 GSS token 接收入口，更新用户、域和可选委派凭据。 |
+| krb5_set_gss_error | function | void krb5_set_gss_error(struct smb2_context *smb2, char *func, uint32_t maj, uint32_t min); | Include | GSS major/minor 状态转换为 SMB 错误文本。 |
+| krb5_can_do_ntlmssp | function | int krb5_can_do_ntlmssp(void); | Include | 调用方使用该能力探测判断 Kerberos/GSSAPI 是否可处理 NTLMSSP。 |
+| krb5_init_server_credentials | function | int krb5_init_server_credentials(struct smb2_server *server, const char *keytab_path); | Include | 服务端 keytab 凭据初始化入口，建立私有 credential cache。 |
+| krb5_renew_server_credentials | function | int krb5_renew_server_credentials(struct smb2_server *server); | Include | 服务端使用 keytab 刷新 credential cache 中的凭据。 |
+| krb5_free_server_credentials | function | void krb5_free_server_credentials(struct smb2_server *server); | Include | 服务端释放并清空保存的 Kerberos auth_data。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| `HAVE_LIBKRB5` | macro | `lib/krb5-wrapper.h:25` | 该宏启用整个 Kerberos/GSSAPI wrapper 声明面。 |
-| `_GNU_SOURCE` | macro | `lib/krb5-wrapper.h:27` | 未定义时由头文件定义，以启用 GNU 扩展声明。 |
-| `gss_mech_spnego` | constant | `lib/krb5-wrapper.h:43` | 非 Apple 平台 SPNEGO OID，长度为 6 字节。 |
-| `spnego_mech_krb5` | constant | `lib/krb5-wrapper.h:48` | Kerberos SPNEGO OID，长度为 9 字节。 |
-| `spnego_mech_ntlmssp` | constant | `lib/krb5-wrapper.h:52` | NTLMSSP SPNEGO OID，长度为 10 字节。 |
-| `private_auth_data` | struct | `lib/krb5-wrapper.h:56` | 保存 GSS context、credential、names、mechanism、request flags、output token、proxy/SPNEGO flags、server name、Kerberos context/cache/principal/keytab/server credentials。 |
+| HAVE_LIBKRB5 | macro | lib/krb5-wrapper.h:25 | 该宏启用整个 Kerberos/GSSAPI wrapper 声明面。 |
+| _GNU_SOURCE | macro | lib/krb5-wrapper.h:27 | 未定义时由头文件定义，以启用 GNU 扩展声明。 |
+| gss_mech_spnego | constant | lib/krb5-wrapper.h:43 | 非 Apple 平台 SPNEGO OID，长度为 6 字节。 |
+| spnego_mech_krb5 | constant | lib/krb5-wrapper.h:48 | Kerberos SPNEGO OID，长度为 9 字节。 |
+| spnego_mech_ntlmssp | constant | lib/krb5-wrapper.h:52 | NTLMSSP SPNEGO OID，长度为 10 字节。 |
+| private_auth_data | struct | lib/krb5-wrapper.h:56 | 保存 GSS context、credential、names、mechanism、request flags、output token、proxy/SPNEGO flags、server name、Kerberos context/cache/principal/keytab/server credentials。 |
 
 ## ADDED Requirements
 
@@ -291,5 +291,5 @@ Trace: `lib/krb5-wrapper.h:krb5_free_server_credentials`, `lib/krb5-wrapper.c:kr
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `krb5_negotiate_request` 在当前源码回读中只有声明未发现实现，是否为过期声明或条件编译遗漏？ | `krb5_negotiate_request` | `lib/krb5-wrapper.h` 声明该接口，但 `lib/krb5-wrapper.c` 和仓库搜索未定位到定义。 |
+| Q-001 | `krb5_negotiate_request` 在当前源码回读中只有声明未发现实现，是否为过期声明或条件编译遗漏？ | krb5_negotiate_request | `lib/krb5-wrapper.h` 声明该接口，但 `lib/krb5-wrapper.c` 和仓库搜索未定位到定义。 |
 | Q-002 | GitNexus 对 `lib/krb5-wrapper.h` 声明级 symbol 的 upstream impact 返回 0 个直接调用者，是否需要把实现文件 symbol 作为主归属补充到 `lib/krb5-wrapper.c` spec？ | file-level | 调用关系实际存在于 `lib/libsmb2.c` 到实现函数之间，头文件 symbol 索引未反映这些调用。 |

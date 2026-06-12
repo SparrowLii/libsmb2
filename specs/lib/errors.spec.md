@@ -12,14 +12,14 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| nterror_to_str | function | `const char *nterror_to_str(uint32_t status);` | Include | 公开声明的 NTSTATUS 到字符串转换接口，被多个 SMB2 回调用于错误文本生成。 |
-| nterror_to_errno | function | `int nterror_to_errno(uint32_t status);` | Include | 公开声明的 NTSTATUS 到 POSIX errno 转换接口，被 SMB2、DCERPC 和示例错误路径调用。 |
+| nterror_to_str | function | const char *nterror_to_str(uint32_t status); | Include | 公开声明的 NTSTATUS 到字符串转换接口，被多个 SMB2 回调用于错误文本生成。 |
+| nterror_to_errno | function | int nterror_to_errno(uint32_t status); | Include | 公开声明的 NTSTATUS 到 POSIX errno 转换接口，被 SMB2、DCERPC 和示例错误路径调用。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SMB2_STATUS_* | macro | `include/smb2/smb2-errors.h` | 本文件按状态码宏进行字符串和 errno 映射，宏定义由公共错误头提供。 |
+| SMB2_STATUS_* | macro | include/smb2/smb2-errors.h | 本文件按状态码宏进行字符串和 errno 映射，宏定义由公共错误头提供。 |
 
 ## ADDED Requirements
 

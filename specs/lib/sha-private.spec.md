@@ -12,17 +12,17 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| `SHA_Ch` | macro | `#define SHA_Ch(x,y,z)        (((x) & (y)) ^ ((~(x)) & (z)))` / `#define SHA_Ch(x, y, z)      (((x) & ((y) ^ (z))) ^ (z))` | Include | 该私有头文件暴露 SHA/FIPS 选择函数宏，`USE_MODIFIED_MACROS` 会切换等价公式，影响包含方的轮函数计算。 |
-| `SHA_Maj` | macro | `#define SHA_Maj(x,y,z)       (((x) & (y)) ^ ((x) & (z)) ^ ((y) & (z)))` / `#define SHA_Maj(x, y, z)     (((x) & ((y) \| (z))) \| ((y) & (z)))` | Include | 该私有头文件暴露 SHA/FIPS 多数函数宏，`USE_MODIFIED_MACROS` 会切换等价公式，影响包含方的轮函数计算。 |
-| `SHA_Parity` | macro | `#define SHA_Parity(x, y, z)  ((x) ^ (y) ^ (z))` | Include | 该私有头文件始终暴露 SHA parity 轮函数宏，供包含方按位组合三个输入字。 |
+| SHA_Ch | macro | #define SHA_Ch(x,y,z)        (((x) & (y)) ^ ((~(x)) & (z)))` / `#define SHA_Ch(x, y, z)      (((x) & ((y) ^ (z))) ^ (z)) | Include | 该私有头文件暴露 SHA/FIPS 选择函数宏，`USE_MODIFIED_MACROS` 会切换等价公式，影响包含方的轮函数计算。 |
+| SHA_Maj | macro | #define SHA_Maj(x,y,z)       (((x) & (y)) ^ ((x) & (z)) ^ ((y) & (z)))` / `#define SHA_Maj(x, y, z)     (((x) & ((y) \| (z))) \| ((y) & (z))) | Include | 该私有头文件暴露 SHA/FIPS 多数函数宏，`USE_MODIFIED_MACROS` 会切换等价公式，影响包含方的轮函数计算。 |
+| SHA_Parity | macro | #define SHA_Parity(x, y, z)  ((x) ^ (y) ^ (z)) | Include | 该私有头文件始终暴露 SHA parity 轮函数宏，供包含方按位组合三个输入字。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| `SHA_Ch` | macro | `lib/sha-private.h:14`, `lib/sha-private.h:22` | 根据 `USE_MODIFIED_MACROS` 在 FIPS 公式和等价优化公式之间选择。 |
-| `SHA_Maj` | macro | `lib/sha-private.h:15`, `lib/sha-private.h:23` | 根据 `USE_MODIFIED_MACROS` 在 FIPS 公式和等价优化公式之间选择。 |
-| `SHA_Parity` | macro | `lib/sha-private.h:26` | 不受 `USE_MODIFIED_MACROS` 影响，展开为三个输入的 XOR。 |
+| SHA_Ch | macro | lib/sha-private.h:14`, `lib/sha-private.h:22 | 根据 `USE_MODIFIED_MACROS` 在 FIPS 公式和等价优化公式之间选择。 |
+| SHA_Maj | macro | lib/sha-private.h:15`, `lib/sha-private.h:23 | 根据 `USE_MODIFIED_MACROS` 在 FIPS 公式和等价优化公式之间选择。 |
+| SHA_Parity | macro | lib/sha-private.h:26 | 不受 `USE_MODIFIED_MACROS` 影响，展开为三个输入的 XOR。 |
 
 ## ADDED Requirements
 
@@ -74,4 +74,4 @@ Trace: `lib/sha-private.h:SHA_Parity`
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `lib/sha-private.h` 中的 `SHA_Ch`、`SHA_Maj` 和 `SHA_Parity` 当前是否仍被 SHA-1 或 SHA-224/256 实现实际包含使用？ | `SHA_Ch`, `SHA_Maj`, `SHA_Parity` | GitNexus 未索引到直接调用者，当前源码搜索只确认 `lib/sha384-512.c` 有同名本地宏；实际预处理依赖可能受 SHA 编译开关影响。 |
+| Q-001 | `lib/sha-private.h` 中的 `SHA_Ch`、`SHA_Maj` 和 `SHA_Parity` 当前是否仍被 SHA-1 或 SHA-224/256 实现实际包含使用？ | SHA_Ch`, `SHA_Maj`, `SHA_Parity | GitNexus 未索引到直接调用者，当前源码搜索只确认 `lib/sha384-512.c` 有同名本地宏；实际预处理依赖可能受 SHA 编译开关影响。 |

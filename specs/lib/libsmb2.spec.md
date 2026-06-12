@@ -12,71 +12,71 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| `smb2_close_context` | function | `void smb2_close_context(struct smb2_context *smb2)` | Include | 公开上下文关闭入口，释放 socket、重置会话状态和密钥。 |
-| `smb2_seekdir` | function | `void smb2_seekdir(struct smb2_context *smb2, struct smb2dir *dir, long loc)` | Include | 公开目录游标定位入口，影响后续 `smb2_readdir` 结果。 |
-| `smb2_telldir` | function | `long smb2_telldir(struct smb2_context *smb2, struct smb2dir *dir)` | Include | 公开目录游标查询入口，定义空目录句柄错误返回。 |
-| `smb2_rewinddir` | function | `void smb2_rewinddir(struct smb2_context *smb2, struct smb2dir *dir)` | Include | 公开目录游标复位入口。 |
-| `smb2_readdir` | function | `struct smb2dirent *smb2_readdir(struct smb2_context *smb2, struct smb2dir *dir)` | Include | 公开目录枚举入口，返回当前条目并推进游标。 |
-| `smb2_closedir` | function | `void smb2_closedir(struct smb2_context *smb2, struct smb2dir *dir)` | Include | 公开目录资源释放入口。 |
-| `smb2_opendir_async_pdu` | function | `struct smb2_pdu *smb2_opendir_async_pdu(struct smb2_context *smb2, const char *path, smb2_command_cb cb, void *cb_data, void (*free_cb)(void *))` | Include | 公开异步目录打开 PDU 入口，调用者持有返回 PDU。 |
-| `smb2_opendir_async` | function | `int smb2_opendir_async(struct smb2_context *smb2, const char *path, smb2_command_cb cb, void *cb_data)` | Include | 公开异步目录打开入口，返回启动状态。 |
-| `free_c_data` | function | `extern void free_c_data(struct smb2_context *smb2, struct connect_data *c_data)` | Include | 跨文件连接数据释放符号，被连接失败和认证流程调用。 |
-| `smb2_derive_key` | function | `void smb2_derive_key(uint8_t *derivation_key, uint32_t derivation_key_len, const char *label, uint32_t label_len, const char *context, uint32_t context_len, uint8_t derived_key[SMB2_KEY_SIZE])` | Include | SMB3 签名和加密密钥派生入口，影响安全材料。 |
-| `smb2_connect_share_async` | function | `int smb2_connect_share_async(struct smb2_context *smb2, const char *server, const char *share, const char *user, smb2_command_cb cb, void *cb_data)` | Include | 公开异步 share 连接入口，GitNexus impact 为 MEDIUM。 |
-| `smb2_open_async_pdu` | function | `struct smb2_pdu *smb2_open_async_pdu(struct smb2_context *smb2, const char *path, int flags, smb2_command_cb cb, void *cb_data, void (*free_cb)(void *))` | Include | 公开异步 open PDU 入口。 |
-| `smb2_open_async_with_oplock_or_lease` | function | `int smb2_open_async_with_oplock_or_lease(struct smb2_context *smb2, const char *path, int flags, uint8_t oplock_level, uint32_t lease_state, smb2_lease_key lease_key, smb2_command_cb cb, void *cb_data)` | Include | 公开带 oplock/lease 的异步 open 入口。 |
-| `smb2_open_async` | function | `int smb2_open_async(struct smb2_context *smb2, const char *path, int flags, smb2_command_cb cb, void *cb_data)` | Include | 公开异步 open 入口，被 examples/tests 调用。 |
-| `smb2_close_async` | function | `int smb2_close_async(struct smb2_context *smb2, struct smb2fh *fh, smb2_command_cb cb, void *cb_data)` | Include | 公开异步 close 入口，负责关闭远端文件句柄。 |
-| `smb2_fsync_async` | function | `int smb2_fsync_async(struct smb2_context *smb2, struct smb2fh *fh, smb2_command_cb cb, void *cb_data)` | Include | 公开异步 flush 入口。 |
-| `smb2_pread_async` | function | `int smb2_pread_async(struct smb2_context *smb2, struct smb2fh *fh, uint8_t *buf, uint32_t count, uint64_t offset, smb2_command_cb cb, void *cb_data)` | Include | 公开异步定点读取入口，受最大读尺寸和 credits 限制。 |
-| `smb2_read_async` | function | `int smb2_read_async(struct smb2_context *smb2, struct smb2fh *fh, uint8_t *buf, uint32_t count, smb2_command_cb cb, void *cb_data)` | Include | 公开基于当前文件偏移读取入口。 |
-| `smb2_pwrite_async` | function | `int smb2_pwrite_async(struct smb2_context *smb2, struct smb2fh *fh, const uint8_t *buf, uint32_t count, uint64_t offset, smb2_command_cb cb, void *cb_data)` | Include | 公开异步定点写入入口，受最大写尺寸和 credits 限制。 |
-| `smb2_write_async` | function | `int smb2_write_async(struct smb2_context *smb2, struct smb2fh *fh, const uint8_t *buf, uint32_t count, smb2_command_cb cb, void *cb_data)` | Include | 公开基于当前文件偏移写入入口。 |
-| `smb2_lseek` | function | `int64_t smb2_lseek(struct smb2_context *smb2, struct smb2fh *fh, int64_t offset, int whence, uint64_t *current_offset)` | Include | 公开同步偏移调整入口。 |
-| `smb2_unlink_async` | function | `int smb2_unlink_async(struct smb2_context *smb2, const char *path, smb2_command_cb cb, void *cb_data)` | Include | 公开异步文件删除入口。 |
-| `smb2_rmdir_async` | function | `int smb2_rmdir_async(struct smb2_context *smb2, const char *path, smb2_command_cb cb, void *cb_data)` | Include | 公开异步目录删除入口。 |
-| `smb2_mkdir_async` | function | `int smb2_mkdir_async(struct smb2_context *smb2, const char *path, smb2_command_cb cb, void *cb_data)` | Include | 公开异步目录创建入口。 |
-| `smb2_fstat_async` | function | `int smb2_fstat_async(struct smb2_context *smb2, struct smb2fh *fh, struct smb2_stat_64 *st, smb2_command_cb cb, void *cb_data)` | Include | 公开文件句柄属性查询入口。 |
-| `smb2_stat_async` | function | `int smb2_stat_async(struct smb2_context *smb2, const char *path, struct smb2_stat_64 *st, smb2_command_cb cb, void *cb_data)` | Include | 公开路径属性查询入口。 |
-| `smb2_statvfs_async` | function | `int smb2_statvfs_async(struct smb2_context *smb2, const char *path, struct smb2_statvfs *statvfs, smb2_command_cb cb, void *cb_data)` | Include | 公开文件系统容量查询入口。 |
-| `smb2_truncate_async` | function | `int smb2_truncate_async(struct smb2_context *smb2, const char *path, uint64_t length, smb2_command_cb cb, void *cb_data)` | Include | 公开路径截断入口。 |
-| `smb2_rename_async` | function | `int smb2_rename_async(struct smb2_context *smb2, const char *oldpath, const char *newpath, smb2_command_cb cb, void *cb_data)` | Include | 公开路径重命名入口。 |
-| `smb2_ftruncate_async` | function | `int smb2_ftruncate_async(struct smb2_context *smb2, struct smb2fh *fh, uint64_t length, smb2_command_cb cb, void *cb_data)` | Include | 公开文件句柄截断入口。 |
-| `smb2_readlink_async` | function | `int smb2_readlink_async(struct smb2_context *smb2, const char *path, smb2_command_cb cb, void *cb_data)` | Include | 公开 reparse point/symlink 读取入口。 |
-| `smb2_disconnect_share_async` | function | `int smb2_disconnect_share_async(struct smb2_context *smb2, smb2_command_cb cb, void *cb_data)` | Include | 公开异步 share 断开入口。 |
-| `smb2_echo_async` | function | `int smb2_echo_async(struct smb2_context *smb2, smb2_command_cb cb, void *cb_data)` | Include | 公开 echo 探测入口。 |
-| `smb2_get_max_read_size` | function | `uint32_t smb2_get_max_read_size(struct smb2_context *smb2)` | Include | 公开读取上限查询入口。 |
-| `smb2_get_max_write_size` | function | `uint32_t smb2_get_max_write_size(struct smb2_context *smb2)` | Include | 公开写入上限查询入口。 |
-| `smb2_get_file_id` | function | `smb2_file_id *smb2_get_file_id(struct smb2fh *fh)` | Include | 公开从文件句柄取得 file id 的入口。 |
-| `smb2_fh_from_file_id` | function | `struct smb2fh *smb2_fh_from_file_id(struct smb2_context *smb2, smb2_file_id *fileid)` | Include | 公开从 file id 构造文件句柄入口。 |
-| `smb2_fd_event_callbacks` | function | `void smb2_fd_event_callbacks(struct smb2_context *smb2, smb2_change_fd_cb change_fd, smb2_change_events_cb change_events)` | Include | 公开事件系统回调注册入口。 |
-| `smb2_oplock_break_notify` | function | `void smb2_oplock_break_notify(struct smb2_context *smb2, int status, void *command_data, void *cb_data)` | Include | 公开 oplock/lease break 通知处理入口。 |
-| `smb2_decode_filenotifychangeinformation` | function | `int smb2_decode_filenotifychangeinformation(struct smb2_context *smb2, struct smb2_file_notify_change_information *fnc, struct smb2_iovec *vec, uint32_t next_entry_offset)` | Include | 公开变更通知解码入口，构造链表结果。 |
-| `free_smb2_file_notify_change_information` | function | `void free_smb2_file_notify_change_information(struct smb2_context *smb2, struct smb2_file_notify_change_information *fnc)` | Include | 公开变更通知链表释放入口。 |
-| `smb2_notify_change_filehandle_async` | function | `int smb2_notify_change_filehandle_async(struct smb2_context *smb2, struct smb2fh *smb2_dir_fh, uint16_t flags, uint32_t filter, int loop, smb2_command_cb cb, void *cb_data)` | Include | 公开基于目录句柄的变更通知入口。 |
-| `smb2_notify_change_async` | function | `int smb2_notify_change_async(struct smb2_context *smb2, const char *path, uint16_t flags, uint32_t filter, int loop, smb2_command_cb cb, void *cb_data)` | Include | 公开基于路径的变更通知入口。 |
-| `smb2_serve_port_async` | function | `int smb2_serve_port_async(const int fd, const int to_msecs, struct smb2_context **smb2)` | Include | 公开服务端异步 accept 入口。 |
-| `smb2_serve_port` | function | `int smb2_serve_port(struct smb2_server *server, const int max_connections, smb2_client_connection cb, void *cb_data)` | Include | 公开同步服务端循环入口。 |
-| `decode_dirents` | function | `static int decode_dirents(struct smb2_context *smb2, struct smb2dir *dir, struct smb2_iovec *vec)` | Skip | 内部目录 reply 解码 helper，通过 opendir/readdir 契约体现。 |
-| `_smb2_opendir_async` | function | `static struct smb2_pdu *_smb2_opendir_async(struct smb2_context *smb2, const char *path, smb2_command_cb cb, void *cb_data, void (*free_cb)(void *), int caller_frees_pdu)` | Skip | 内部转调 helper，外部契约由 `smb2_opendir_async_pdu` 和 `smb2_opendir_async` 覆盖。 |
-| `_smb2_open_async_with_oplock_or_lease` | function | `static struct smb2_pdu *_smb2_open_async_with_oplock_or_lease(struct smb2_context *smb2, const char *path, int flags, uint8_t oplock_level, uint32_t lease_state, smb2_lease_key lease_key, smb2_command_cb cb, void *cb_data, void (*free_cb)(void *), int caller_frees_pdu)` | Skip | 内部 open 构造 helper，外部契约由公开 open 接口覆盖。 |
-| `smb2_getinfo_async` | function | `static int smb2_getinfo_async(struct smb2_context *smb2, const char *path, uint8_t info_type, uint8_t file_info_class, void *st, smb2_command_cb cb, void *cb_data)` | Skip | 内部 stat/statvfs 共用 helper，外部契约由公开查询接口覆盖。 |
+| smb2_close_context | function | void smb2_close_context(struct smb2_context *smb2) | Include | 公开上下文关闭入口，释放 socket、重置会话状态和密钥。 |
+| smb2_seekdir | function | void smb2_seekdir(struct smb2_context *smb2, struct smb2dir *dir, long loc) | Include | 公开目录游标定位入口，影响后续 `smb2_readdir` 结果。 |
+| smb2_telldir | function | long smb2_telldir(struct smb2_context *smb2, struct smb2dir *dir) | Include | 公开目录游标查询入口，定义空目录句柄错误返回。 |
+| smb2_rewinddir | function | void smb2_rewinddir(struct smb2_context *smb2, struct smb2dir *dir) | Include | 公开目录游标复位入口。 |
+| smb2_readdir | function | struct smb2dirent *smb2_readdir(struct smb2_context *smb2, struct smb2dir *dir) | Include | 公开目录枚举入口，返回当前条目并推进游标。 |
+| smb2_closedir | function | void smb2_closedir(struct smb2_context *smb2, struct smb2dir *dir) | Include | 公开目录资源释放入口。 |
+| smb2_opendir_async_pdu | function | struct smb2_pdu *smb2_opendir_async_pdu(struct smb2_context *smb2, const char *path, smb2_command_cb cb, void *cb_data, void (*free_cb)(void *)) | Include | 公开异步目录打开 PDU 入口，调用者持有返回 PDU。 |
+| smb2_opendir_async | function | int smb2_opendir_async(struct smb2_context *smb2, const char *path, smb2_command_cb cb, void *cb_data) | Include | 公开异步目录打开入口，返回启动状态。 |
+| free_c_data | function | extern void free_c_data(struct smb2_context *smb2, struct connect_data *c_data) | Include | 跨文件连接数据释放符号，被连接失败和认证流程调用。 |
+| smb2_derive_key | function | void smb2_derive_key(uint8_t *derivation_key, uint32_t derivation_key_len, const char *label, uint32_t label_len, const char *context, uint32_t context_len, uint8_t derived_key[SMB2_KEY_SIZE]) | Include | SMB3 签名和加密密钥派生入口，影响安全材料。 |
+| smb2_connect_share_async | function | int smb2_connect_share_async(struct smb2_context *smb2, const char *server, const char *share, const char *user, smb2_command_cb cb, void *cb_data) | Include | 公开异步 share 连接入口，GitNexus impact 为 MEDIUM。 |
+| smb2_open_async_pdu | function | struct smb2_pdu *smb2_open_async_pdu(struct smb2_context *smb2, const char *path, int flags, smb2_command_cb cb, void *cb_data, void (*free_cb)(void *)) | Include | 公开异步 open PDU 入口。 |
+| smb2_open_async_with_oplock_or_lease | function | int smb2_open_async_with_oplock_or_lease(struct smb2_context *smb2, const char *path, int flags, uint8_t oplock_level, uint32_t lease_state, smb2_lease_key lease_key, smb2_command_cb cb, void *cb_data) | Include | 公开带 oplock/lease 的异步 open 入口。 |
+| smb2_open_async | function | int smb2_open_async(struct smb2_context *smb2, const char *path, int flags, smb2_command_cb cb, void *cb_data) | Include | 公开异步 open 入口，被 examples/tests 调用。 |
+| smb2_close_async | function | int smb2_close_async(struct smb2_context *smb2, struct smb2fh *fh, smb2_command_cb cb, void *cb_data) | Include | 公开异步 close 入口，负责关闭远端文件句柄。 |
+| smb2_fsync_async | function | int smb2_fsync_async(struct smb2_context *smb2, struct smb2fh *fh, smb2_command_cb cb, void *cb_data) | Include | 公开异步 flush 入口。 |
+| smb2_pread_async | function | int smb2_pread_async(struct smb2_context *smb2, struct smb2fh *fh, uint8_t *buf, uint32_t count, uint64_t offset, smb2_command_cb cb, void *cb_data) | Include | 公开异步定点读取入口，受最大读尺寸和 credits 限制。 |
+| smb2_read_async | function | int smb2_read_async(struct smb2_context *smb2, struct smb2fh *fh, uint8_t *buf, uint32_t count, smb2_command_cb cb, void *cb_data) | Include | 公开基于当前文件偏移读取入口。 |
+| smb2_pwrite_async | function | int smb2_pwrite_async(struct smb2_context *smb2, struct smb2fh *fh, const uint8_t *buf, uint32_t count, uint64_t offset, smb2_command_cb cb, void *cb_data) | Include | 公开异步定点写入入口，受最大写尺寸和 credits 限制。 |
+| smb2_write_async | function | int smb2_write_async(struct smb2_context *smb2, struct smb2fh *fh, const uint8_t *buf, uint32_t count, smb2_command_cb cb, void *cb_data) | Include | 公开基于当前文件偏移写入入口。 |
+| smb2_lseek | function | int64_t smb2_lseek(struct smb2_context *smb2, struct smb2fh *fh, int64_t offset, int whence, uint64_t *current_offset) | Include | 公开同步偏移调整入口。 |
+| smb2_unlink_async | function | int smb2_unlink_async(struct smb2_context *smb2, const char *path, smb2_command_cb cb, void *cb_data) | Include | 公开异步文件删除入口。 |
+| smb2_rmdir_async | function | int smb2_rmdir_async(struct smb2_context *smb2, const char *path, smb2_command_cb cb, void *cb_data) | Include | 公开异步目录删除入口。 |
+| smb2_mkdir_async | function | int smb2_mkdir_async(struct smb2_context *smb2, const char *path, smb2_command_cb cb, void *cb_data) | Include | 公开异步目录创建入口。 |
+| smb2_fstat_async | function | int smb2_fstat_async(struct smb2_context *smb2, struct smb2fh *fh, struct smb2_stat_64 *st, smb2_command_cb cb, void *cb_data) | Include | 公开文件句柄属性查询入口。 |
+| smb2_stat_async | function | int smb2_stat_async(struct smb2_context *smb2, const char *path, struct smb2_stat_64 *st, smb2_command_cb cb, void *cb_data) | Include | 公开路径属性查询入口。 |
+| smb2_statvfs_async | function | int smb2_statvfs_async(struct smb2_context *smb2, const char *path, struct smb2_statvfs *statvfs, smb2_command_cb cb, void *cb_data) | Include | 公开文件系统容量查询入口。 |
+| smb2_truncate_async | function | int smb2_truncate_async(struct smb2_context *smb2, const char *path, uint64_t length, smb2_command_cb cb, void *cb_data) | Include | 公开路径截断入口。 |
+| smb2_rename_async | function | int smb2_rename_async(struct smb2_context *smb2, const char *oldpath, const char *newpath, smb2_command_cb cb, void *cb_data) | Include | 公开路径重命名入口。 |
+| smb2_ftruncate_async | function | int smb2_ftruncate_async(struct smb2_context *smb2, struct smb2fh *fh, uint64_t length, smb2_command_cb cb, void *cb_data) | Include | 公开文件句柄截断入口。 |
+| smb2_readlink_async | function | int smb2_readlink_async(struct smb2_context *smb2, const char *path, smb2_command_cb cb, void *cb_data) | Include | 公开 reparse point/symlink 读取入口。 |
+| smb2_disconnect_share_async | function | int smb2_disconnect_share_async(struct smb2_context *smb2, smb2_command_cb cb, void *cb_data) | Include | 公开异步 share 断开入口。 |
+| smb2_echo_async | function | int smb2_echo_async(struct smb2_context *smb2, smb2_command_cb cb, void *cb_data) | Include | 公开 echo 探测入口。 |
+| smb2_get_max_read_size | function | uint32_t smb2_get_max_read_size(struct smb2_context *smb2) | Include | 公开读取上限查询入口。 |
+| smb2_get_max_write_size | function | uint32_t smb2_get_max_write_size(struct smb2_context *smb2) | Include | 公开写入上限查询入口。 |
+| smb2_get_file_id | function | smb2_file_id *smb2_get_file_id(struct smb2fh *fh) | Include | 公开从文件句柄取得 file id 的入口。 |
+| smb2_fh_from_file_id | function | struct smb2fh *smb2_fh_from_file_id(struct smb2_context *smb2, smb2_file_id *fileid) | Include | 公开从 file id 构造文件句柄入口。 |
+| smb2_fd_event_callbacks | function | void smb2_fd_event_callbacks(struct smb2_context *smb2, smb2_change_fd_cb change_fd, smb2_change_events_cb change_events) | Include | 公开事件系统回调注册入口。 |
+| smb2_oplock_break_notify | function | void smb2_oplock_break_notify(struct smb2_context *smb2, int status, void *command_data, void *cb_data) | Include | 公开 oplock/lease break 通知处理入口。 |
+| smb2_decode_filenotifychangeinformation | function | int smb2_decode_filenotifychangeinformation(struct smb2_context *smb2, struct smb2_file_notify_change_information *fnc, struct smb2_iovec *vec, uint32_t next_entry_offset) | Include | 公开变更通知解码入口，构造链表结果。 |
+| free_smb2_file_notify_change_information | function | void free_smb2_file_notify_change_information(struct smb2_context *smb2, struct smb2_file_notify_change_information *fnc) | Include | 公开变更通知链表释放入口。 |
+| smb2_notify_change_filehandle_async | function | int smb2_notify_change_filehandle_async(struct smb2_context *smb2, struct smb2fh *smb2_dir_fh, uint16_t flags, uint32_t filter, int loop, smb2_command_cb cb, void *cb_data) | Include | 公开基于目录句柄的变更通知入口。 |
+| smb2_notify_change_async | function | int smb2_notify_change_async(struct smb2_context *smb2, const char *path, uint16_t flags, uint32_t filter, int loop, smb2_command_cb cb, void *cb_data) | Include | 公开基于路径的变更通知入口。 |
+| smb2_serve_port_async | function | int smb2_serve_port_async(const int fd, const int to_msecs, struct smb2_context **smb2) | Include | 公开服务端异步 accept 入口。 |
+| smb2_serve_port | function | int smb2_serve_port(struct smb2_server *server, const int max_connections, smb2_client_connection cb, void *cb_data) | Include | 公开同步服务端循环入口。 |
+| decode_dirents | function | static int decode_dirents(struct smb2_context *smb2, struct smb2dir *dir, struct smb2_iovec *vec) | Skip | 内部目录 reply 解码 helper，通过 opendir/readdir 契约体现。 |
+| _smb2_opendir_async | function | static struct smb2_pdu *_smb2_opendir_async(struct smb2_context *smb2, const char *path, smb2_command_cb cb, void *cb_data, void (*free_cb)(void *), int caller_frees_pdu) | Skip | 内部转调 helper，外部契约由 `smb2_opendir_async_pdu` 和 `smb2_opendir_async` 覆盖。 |
+| _smb2_open_async_with_oplock_or_lease | function | static struct smb2_pdu *_smb2_open_async_with_oplock_or_lease(struct smb2_context *smb2, const char *path, int flags, uint8_t oplock_level, uint32_t lease_state, smb2_lease_key lease_key, smb2_command_cb cb, void *cb_data, void (*free_cb)(void *), int caller_frees_pdu) | Skip | 内部 open 构造 helper，外部契约由公开 open 接口覆盖。 |
+| smb2_getinfo_async | function | static int smb2_getinfo_async(struct smb2_context *smb2, const char *path, uint8_t info_type, uint8_t file_info_class, void *st, smb2_command_cb cb, void *cb_data) | Skip | 内部 stat/statvfs 共用 helper，外部契约由公开查询接口覆盖。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| `DEFAULT_OUTPUT_BUFFER_LENGTH` | macro | `lib/libsmb2.c:114` | 平台相关默认输出缓冲区，ESP 为 512，PS2 为 4096，其他平台为 0xffff。 |
-| `compound_file_id` | constant | `lib/libsmb2.c:138` | 全 0xff compound file id，用于 compound 链后续 PDU 引用前序 create 结果。 |
-| `struct connect_data` | struct | `lib/libsmb2.c:143` | 连接、认证和 tree connect 异步链的私有状态。 |
-| `struct smb2fh` | struct | `lib/libsmb2.c:161` | 文件句柄内部状态，保存 file id、当前偏移和打开时 EOF。 |
-| `struct smb2dir` | struct | `include/libsmb2-private.h` | 目录枚举内部状态，公开为不透明 `struct smb2dir`。 |
-| `struct smb2dirent` | struct | `include/smb2/libsmb2.h:107` | 目录枚举返回的名称和 stat 信息。 |
-| `struct smb2_stat_64` | struct | `include/smb2/libsmb2.h:78` | stat/fstat/path 查询填充的公开属性模型。 |
-| `struct smb2_statvfs` | struct | `include/smb2/libsmb2.h:93` | statvfs 填充的公开文件系统容量模型。 |
-| `struct smb2_read_cb_data` | struct | `include/smb2/libsmb2.h:854` | read/pread 回调 command_data。 |
-| `struct smb2_write_cb_data` | struct | `include/smb2/libsmb2.h:861` | write/pwrite 回调 command_data。 |
-| `struct smb2_file_notify_change_information` | struct | `include/smb2/smb2.h:1079` | notify change 解码后的链表节点。 |
+| DEFAULT_OUTPUT_BUFFER_LENGTH | macro | lib/libsmb2.c:114 | 平台相关默认输出缓冲区，ESP 为 512，PS2 为 4096，其他平台为 0xffff。 |
+| compound_file_id | constant | lib/libsmb2.c:138 | 全 0xff compound file id，用于 compound 链后续 PDU 引用前序 create 结果。 |
+| struct connect_data | struct | lib/libsmb2.c:143 | 连接、认证和 tree connect 异步链的私有状态。 |
+| struct smb2fh | struct | lib/libsmb2.c:161 | 文件句柄内部状态，保存 file id、当前偏移和打开时 EOF。 |
+| struct smb2dir | struct | include/libsmb2-private.h | 目录枚举内部状态，公开为不透明 `struct smb2dir`。 |
+| struct smb2dirent | struct | include/smb2/libsmb2.h:107 | 目录枚举返回的名称和 stat 信息。 |
+| struct smb2_stat_64 | struct | include/smb2/libsmb2.h:78 | stat/fstat/path 查询填充的公开属性模型。 |
+| struct smb2_statvfs | struct | include/smb2/libsmb2.h:93 | statvfs 填充的公开文件系统容量模型。 |
+| struct smb2_read_cb_data | struct | include/smb2/libsmb2.h:854 | read/pread 回调 command_data。 |
+| struct smb2_write_cb_data | struct | include/smb2/libsmb2.h:861 | write/pwrite 回调 command_data。 |
+| struct smb2_file_notify_change_information | struct | include/smb2/smb2.h:1079 | notify change 解码后的链表节点。 |
 
 ## ADDED Requirements
 
@@ -548,7 +548,7 @@ Trace: `lib/libsmb2.c:smb2_serve_port`
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `smb2_pread_async` 和 `smb2_pwrite_async` 在 `count == 0` 时会计算 `(count - 1)`，零长度请求语义是否由调用方禁止？ | `smb2_pread_async`, `smb2_pwrite_async` | 头文件未声明零长度前置条件，源码存在无符号下溢风险。 |
-| Q-002 | `smb2_notify_change_filehandle_async` 未显式校验 `smb2 == NULL` 或 `smb2_dir_fh == NULL`，该前置条件是否由 public API 文档承担？ | `smb2_notify_change_filehandle_async` | 源码直接访问上下文和文件句柄字段。 |
-| Q-003 | `smb2_readlink_async` 在非 symlink reparse tag 成功路径返回字符串 `"<unknown reparse point type>"`，调用方是否依赖该固定文本？ | `smb2_readlink_async` | 源码定义固定字符串，但头文件只说明 link content。 |
-| Q-004 | `smb2_serve_port` 的事件循环退出条件和错误码是否需要区分监听错误、客户端错误和 Kerberos renewal 错误？ | `smb2_serve_port` | 源码以单个 `err` 变量汇总多类退出原因。 |
+| Q-001 | `smb2_pread_async` 和 `smb2_pwrite_async` 在 `count == 0` 时会计算 `(count - 1)`，零长度请求语义是否由调用方禁止？ | smb2_pread_async`, `smb2_pwrite_async | 头文件未声明零长度前置条件，源码存在无符号下溢风险。 |
+| Q-002 | `smb2_notify_change_filehandle_async` 未显式校验 `smb2 == NULL` 或 `smb2_dir_fh == NULL`，该前置条件是否由 public API 文档承担？ | smb2_notify_change_filehandle_async | 源码直接访问上下文和文件句柄字段。 |
+| Q-003 | `smb2_readlink_async` 在非 symlink reparse tag 成功路径返回字符串 `"<unknown reparse point type>"`，调用方是否依赖该固定文本？ | smb2_readlink_async | 源码定义固定字符串，但头文件只说明 link content。 |
+| Q-004 | `smb2_serve_port` 的事件循环退出条件和错误码是否需要区分监听错误、客户端错误和 Kerberos renewal 错误？ | smb2_serve_port | 源码以单个 `err` 变量汇总多类退出原因。 |

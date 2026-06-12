@@ -27,10 +27,10 @@
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| md5byte | macro | `lib/md5.h:58` | 定义 MD5 字节类型为 `unsigned char`，用于输入、digest 和内部字节视图。 |
-| struct MD5Context | struct | `lib/md5.h:60` | 公开上下文包含 4 个状态字、2 个字节计数字和 16 个输入块字。 |
-| UWORD32 | typedef | `lib/md5.h:48` | 在非 `PS2_IOP_PLATFORM` 构建中定义为 `uint32_t`，承载 MD5 32 位状态和输入字。 |
-| WORDS_BIGENDIAN | macro | `lib/md5.h:41` | 非 Windows 大端字节序或 Xbox 360 平台启用大端转换路径。 |
+| md5byte | macro | lib/md5.h:58 | 定义 MD5 字节类型为 `unsigned char`，用于输入、digest 和内部字节视图。 |
+| struct MD5Context | struct | lib/md5.h:60 | 公开上下文包含 4 个状态字、2 个字节计数字和 16 个输入块字。 |
+| UWORD32 | typedef | lib/md5.h:48 | 在非 `PS2_IOP_PLATFORM` 构建中定义为 `uint32_t`，承载 MD5 32 位状态和输入字。 |
+| WORDS_BIGENDIAN | macro | lib/md5.h:41 | 非 Windows 大端字节序或 Xbox 360 平台启用大端转换路径。 |
 
 ## ADDED Requirements
 

@@ -12,13 +12,13 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| SMB2_initdev | function | `int SMB2_initdev(void);` | Include | PS2 IOP IRX 启动入口通过该声明注册 SMB2 文件系统设备，调用方可观察返回驻留状态。 |
+| SMB2_initdev | function | int SMB2_initdev(void); | Include | PS2 IOP IRX 启动入口通过该声明注册 SMB2 文件系统设备，调用方可观察返回驻留状态。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| __SMB2_FIO_H__ | macro | `lib/ps2/smb2_fio.h:10` | 头文件 include guard，防止声明重复展开。 |
+| __SMB2_FIO_H__ | macro | lib/ps2/smb2_fio.h:10 | 头文件 include guard，防止声明重复展开。 |
 
 ## ADDED Requirements
 

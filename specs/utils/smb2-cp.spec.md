@@ -12,21 +12,21 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| `usage` | function | `void usage(void)` | Include | 命令行错误路径直接调用并终止进程，用户可观察输出和退出行为需要记录。 |
-| `free_file_context` | function | `static void free_file_context(struct file_context *file_context)` | Include | 统一释放本工具本地 fd、SMB2 file handle、context、URL 和堆对象，影响错误路径资源语义。 |
-| `fstat_file` | function | `static int fstat_file(struct file_context *fc, struct stat *st)` | Include | 本地和 SMB2 source 统计信息统一为 `struct stat`，驱动复制长度和时间字段映射。 |
-| `file_pread` | function | `static ssize_t file_pread(struct file_context *fc, uint8_t *buf, size_t count, off_t off)` | Include | 复制循环通过该接口统一本地和 SMB2 偏移读语义。 |
-| `file_pwrite` | function | `static ssize_t file_pwrite(struct file_context *fc, uint8_t *buf, size_t count, off_t off)` | Include | 复制循环通过该接口统一本地和 SMB2 偏移写语义。 |
-| `open_file` | function | `static struct file_context *open_file(const char *url, int flags)` | Include | 根据路径前缀建立本地或 SMB2 文件上下文，错误路径清理和连接流程可观察。 |
-| `main` | function | `int main(int argc, char *argv[])` | Include | 工具程序入口，定义参数校验、打开源/目标、复制循环、错误码和成功输出。 |
-| `BUFSIZE` | macro | `#define BUFSIZE 1024*1024` | Include | 公开决定复制循环每次最多读写 1 MiB 的块大小。 |
+| usage | function | void usage(void) | Include | 命令行错误路径直接调用并终止进程，用户可观察输出和退出行为需要记录。 |
+| free_file_context | function | static void free_file_context(struct file_context *file_context) | Include | 统一释放本工具本地 fd、SMB2 file handle、context、URL 和堆对象，影响错误路径资源语义。 |
+| fstat_file | function | static int fstat_file(struct file_context *fc, struct stat *st) | Include | 本地和 SMB2 source 统计信息统一为 `struct stat`，驱动复制长度和时间字段映射。 |
+| file_pread | function | static ssize_t file_pread(struct file_context *fc, uint8_t *buf, size_t count, off_t off) | Include | 复制循环通过该接口统一本地和 SMB2 偏移读语义。 |
+| file_pwrite | function | static ssize_t file_pwrite(struct file_context *fc, uint8_t *buf, size_t count, off_t off) | Include | 复制循环通过该接口统一本地和 SMB2 偏移写语义。 |
+| open_file | function | static struct file_context *open_file(const char *url, int flags) | Include | 根据路径前缀建立本地或 SMB2 文件上下文，错误路径清理和连接流程可观察。 |
+| main | function | int main(int argc, char *argv[]) | Include | 工具程序入口，定义参数校验、打开源/目标、复制循环、错误码和成功输出。 |
+| BUFSIZE | macro | #define BUFSIZE 1024*1024 | Include | 公开决定复制循环每次最多读写 1 MiB 的块大小。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| `struct file_context` | struct | `utils/smb2-cp.c:44` | 保存本地或 SMB2 文件上下文；`is_smb2` 决定调用本地 POSIX API 还是 libsmb2 同步 API。 |
-| `BUFSIZE` | macro | `utils/smb2-cp.c:190` | 复制缓冲区大小为 `1024*1024` 字节，静态缓冲区 `buf` 按该值分配。 |
+| struct file_context | struct | utils/smb2-cp.c:44 | 保存本地或 SMB2 文件上下文；`is_smb2` 决定调用本地 POSIX API 还是 libsmb2 同步 API。 |
+| BUFSIZE | macro | utils/smb2-cp.c:190 | 复制缓冲区大小为 `1024*1024` 字节，静态缓冲区 `buf` 按该值分配。 |
 
 ## ADDED Requirements
 
@@ -128,6 +128,6 @@ Trace: `utils/smb2-cp.c:BUFSIZE`, `utils/smb2-cp.c:main`
 
 | ID | Question | Related Interface | Reason |
 | --- | --- | --- | --- |
-| Q-001 | `fstat_file` 中 `st_blocks` 使用 `(smb2_size + 4096 - 1) % 4096` 是否为预期块数语义？ | `fstat_file` | 源码显示取模而非除法，无法仅凭当前文件确认是否为缺陷或兼容行为。 |
-| Q-002 | 本地 `file_pread` 和 `file_pwrite` 忽略 `lseek` 失败是否为既有契约？ | `file_pread`, `file_pwrite` | 源码未检查 `lseek` 返回值，调用方仅观察 `read`/`write` 结果。 |
-| Q-003 | 复制循环在 `read` 返回 0 但 `off < st.st_size` 时是否可能无限循环？ | `main`, `file_pread` | 源码只将负返回值视为错误，零字节读写边界未在当前文件或测试中确认。 |
+| Q-001 | `fstat_file` 中 `st_blocks` 使用 `(smb2_size + 4096 - 1) % 4096` 是否为预期块数语义？ | fstat_file | 源码显示取模而非除法，无法仅凭当前文件确认是否为缺陷或兼容行为。 |
+| Q-002 | 本地 `file_pread` 和 `file_pwrite` 忽略 `lseek` 失败是否为既有契约？ | file_pread`, `file_pwrite | 源码未检查 `lseek` 返回值，调用方仅观察 `read`/`write` 结果。 |
+| Q-003 | 复制循环在 `read` 返回 0 但 `off < st.st_size` 时是否可能无限循环？ | main`, `file_pread | 源码只将负返回值视为错误，零字节读写边界未在当前文件或测试中确认。 |

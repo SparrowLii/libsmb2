@@ -12,27 +12,27 @@
 
 | Interface | Kind | Signature | Decision | Reason |
 | --- | --- | --- | --- | --- |
-| SHA1Reset | function | `int SHA1Reset (SHA1Context * context)` | Include | 公开 SHA-1 上下文初始化入口，被 USHA、HMAC 和 SMB 认证/签名链路上游调用，返回错误码并重置调用方可见状态。 |
-| SHA1Input | function | `int SHA1Input (SHA1Context * context, const uint8_t * message_array, size_t length)` | Include | 公开 SHA-1 增量输入入口，处理零长度、空指针、已终结状态、损坏状态和块压缩，影响摘要结果。 |
-| SHA1FinalBits | function | `int SHA1FinalBits (SHA1Context * context, const uint8_t message_bits, size_t length)` | Include | 公开 SHA-1 非整字节尾部输入入口，处理 1 到 7 位最终位并终结摘要，错误语义对调用方可见。 |
-| SHA1Result | function | `int SHA1Result (SHA1Context * context, uint8_t Message_Digest[SHA1HashSize])` | Include | 公开 SHA-1 摘要输出入口，按需终结计算并以 20 字节大端顺序写出摘要。 |
-| SHA1Finalize | function | `static void SHA1Finalize (SHA1Context * context, uint8_t Pad_Byte)` | Skip | static 内部 helper，仅服务 SHA1FinalBits/SHA1Result padding、清理和 Computed 标记，无独立外部接口。 |
-| SHA1PadMessage | function | `static void SHA1PadMessage (SHA1Context * context, uint8_t Pad_Byte)` | Skip | static 内部 padding helper，无外部可调用契约，行为并入公开摘要终结接口。 |
-| SHA1ProcessMessageBlock | function | `static void SHA1ProcessMessageBlock (SHA1Context * context)` | Skip | static 内部 512-bit 压缩 helper，无独立外部接口，行为并入 SHA1Input/SHA1Result 摘要契约。 |
+| SHA1Reset | function | int SHA1Reset (SHA1Context * context) | Include | 公开 SHA-1 上下文初始化入口，被 USHA、HMAC 和 SMB 认证/签名链路上游调用，返回错误码并重置调用方可见状态。 |
+| SHA1Input | function | int SHA1Input (SHA1Context * context, const uint8_t * message_array, size_t length) | Include | 公开 SHA-1 增量输入入口，处理零长度、空指针、已终结状态、损坏状态和块压缩，影响摘要结果。 |
+| SHA1FinalBits | function | int SHA1FinalBits (SHA1Context * context, const uint8_t message_bits, size_t length) | Include | 公开 SHA-1 非整字节尾部输入入口，处理 1 到 7 位最终位并终结摘要，错误语义对调用方可见。 |
+| SHA1Result | function | int SHA1Result (SHA1Context * context, uint8_t Message_Digest[SHA1HashSize]) | Include | 公开 SHA-1 摘要输出入口，按需终结计算并以 20 字节大端顺序写出摘要。 |
+| SHA1Finalize | function | static void SHA1Finalize (SHA1Context * context, uint8_t Pad_Byte) | Skip | static 内部 helper，仅服务 SHA1FinalBits/SHA1Result padding、清理和 Computed 标记，无独立外部接口。 |
+| SHA1PadMessage | function | static void SHA1PadMessage (SHA1Context * context, uint8_t Pad_Byte) | Skip | static 内部 padding helper，无外部可调用契约，行为并入公开摘要终结接口。 |
+| SHA1ProcessMessageBlock | function | static void SHA1ProcessMessageBlock (SHA1Context * context) | Skip | static 内部 512-bit 压缩 helper，无独立外部接口，行为并入 SHA1Input/SHA1Result 摘要契约。 |
 
 ## Data Model Summary
 
 | Type/Macro | Kind | Definition | Notes |
 | --- | --- | --- | --- |
-| SHA1Context | typedef struct | `lib/sha.h:133` | SHA-1 调用方持有的可变上下文，保存中间哈希、位长度、消息块、Computed 和 Corrupted 状态。 |
-| SHA1_Message_Block_Size | enum constant | `lib/sha.h:84` | USE_SHA1 启用时消息块大小为 64 字节。 |
-| SHA1HashSize | enum constant | `lib/sha.h:85` | USE_SHA1 启用时摘要输出大小为 20 字节。 |
-| SHA1HashSizeBits | enum constant | `lib/sha.h:86` | USE_SHA1 启用时摘要位数为 160 bit。 |
-| shaSuccess | enum constant | `lib/sha.h:69` | SHA 接口成功返回码。 |
-| shaNull | enum constant | `lib/sha.h:70` | SHA 接口空指针参数返回码。 |
-| shaStateError | enum constant | `lib/sha.h:72` | SHA 接口非法状态调用返回码。 |
-| SHA1_ROTL | macro | `lib/sha1.c:48` | SHA-1 32-bit 循环左移内部宏，仅在本实现中使用。 |
-| SHA1AddLength | macro | `lib/sha1.c:54` | SHA-1 位长度累加内部宏，低位溢出且高位再溢出时设置 Corrupted。 |
+| SHA1Context | typedef struct | lib/sha.h:133 | SHA-1 调用方持有的可变上下文，保存中间哈希、位长度、消息块、Computed 和 Corrupted 状态。 |
+| SHA1_Message_Block_Size | enum constant | lib/sha.h:84 | USE_SHA1 启用时消息块大小为 64 字节。 |
+| SHA1HashSize | enum constant | lib/sha.h:85 | USE_SHA1 启用时摘要输出大小为 20 字节。 |
+| SHA1HashSizeBits | enum constant | lib/sha.h:86 | USE_SHA1 启用时摘要位数为 160 bit。 |
+| shaSuccess | enum constant | lib/sha.h:69 | SHA 接口成功返回码。 |
+| shaNull | enum constant | lib/sha.h:70 | SHA 接口空指针参数返回码。 |
+| shaStateError | enum constant | lib/sha.h:72 | SHA 接口非法状态调用返回码。 |
+| SHA1_ROTL | macro | lib/sha1.c:48 | SHA-1 32-bit 循环左移内部宏，仅在本实现中使用。 |
+| SHA1AddLength | macro | lib/sha1.c:54 | SHA-1 位长度累加内部宏，低位溢出且高位再溢出时设置 Corrupted。 |
 
 ## ADDED Requirements
 
