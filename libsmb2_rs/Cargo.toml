@@ -1,5 +1,5 @@
 [package]
-name = "libsimb2_rs"
+name = "libsmb2_rs"
 version = "0.1.0"
 edition = "2021"
 license = "LGPL-2.1-or-later"

@@ -151,7 +151,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "libsimb2_rs"
+name = "libsmb2_rs"
 version = "0.1.0"
 dependencies = [
  "libsmb2_sys",
