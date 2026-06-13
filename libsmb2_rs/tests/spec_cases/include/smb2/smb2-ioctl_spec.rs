@@ -1,10 +1,5 @@
 use libsmb2_sys::smb2::smb2_ioctl as ioctl;
 
-macro_rules! assert_ioctl_code {
-    ($actual:expr, $expected:expr) => {
-        assert_eq!($actual, $expected);
-    };
-}
 
 // Trace: `include/smb2/smb2-ioctl.h:32`
 // Spec: FSCTL_CREATE_OR_GET_OBJECT_ID exposes stable ioctl code#object ID create-or-get code is available
@@ -13,7 +8,7 @@ macro_rules! assert_ioctl_code {
 // - **THEN** the macro expands to `0x000900C0`
 #[test]
 fn test_smb2_ioctl_object_id_create_or_get_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_CREATE_OR_GET_OBJECT_ID, 0x0009_00C0);
+    assert_eq!(ioctl::FSCTL_CREATE_OR_GET_OBJECT_ID, 0x0009_00C0);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:33`
@@ -23,7 +18,7 @@ fn test_smb2_ioctl_object_id_create_or_get_code_is_available() {
 // - **THEN** the macro expands to `0x000900A0`
 #[test]
 fn test_smb2_ioctl_object_id_delete_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_DELETE_OBJECT_ID, 0x0009_00A0);
+    assert_eq!(ioctl::FSCTL_DELETE_OBJECT_ID, 0x0009_00A0);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:34`
@@ -33,7 +28,7 @@ fn test_smb2_ioctl_object_id_delete_code_is_available() {
 // - **THEN** the macro expands to `0x000900AC`
 #[test]
 fn test_smb2_ioctl_reparse_point_delete_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_DELETE_REPARSE_POINT, 0x0009_00AC);
+    assert_eq!(ioctl::FSCTL_DELETE_REPARSE_POINT, 0x0009_00AC);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:35`
@@ -43,7 +38,7 @@ fn test_smb2_ioctl_reparse_point_delete_code_is_available() {
 // - **THEN** the macro expands to `0x00098344`
 #[test]
 fn test_smb2_ioctl_duplicate_extents_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_DUPLICATE_EXTENTS_TO_FILE, 0x0009_8344);
+    assert_eq!(ioctl::FSCTL_DUPLICATE_EXTENTS_TO_FILE, 0x0009_8344);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:36`
@@ -53,7 +48,7 @@ fn test_smb2_ioctl_duplicate_extents_code_is_available() {
 // - **THEN** the macro expands to `0x000983E8`
 #[test]
 fn test_smb2_ioctl_extended_duplicate_extents_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_DUPLICATE_EXTENTS_TO_FILE_EX, 0x0009_83E8);
+    assert_eq!(ioctl::FSCTL_DUPLICATE_EXTENTS_TO_FILE_EX, 0x0009_83E8);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:37`
@@ -63,7 +58,7 @@ fn test_smb2_ioctl_extended_duplicate_extents_code_is_available() {
 // - **THEN** the macro expands to `0x00090060`
 #[test]
 fn test_smb2_ioctl_filesystem_statistics_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_FILESYSTEM_GET_STATISTICS, 0x0009_0060);
+    assert_eq!(ioctl::FSCTL_FILESYSTEM_GET_STATISTICS, 0x0009_0060);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:38`, `include/smb2/smb2.h:978`
@@ -73,7 +68,7 @@ fn test_smb2_ioctl_filesystem_statistics_code_is_available() {
 // - **THEN** the macro expands to `0x00098208` and matches `SMB2_FSCTL_FILE_LEVEL_TRIM`
 #[test]
 fn test_smb2_ioctl_file_level_trim_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_FILE_LEVEL_TRIM, 0x0009_8208);
+    assert_eq!(ioctl::FSCTL_FILE_LEVEL_TRIM, 0x0009_8208);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:39`
@@ -83,7 +78,7 @@ fn test_smb2_ioctl_file_level_trim_code_is_available() {
 // - **THEN** the macro expands to `0x0009008F`
 #[test]
 fn test_smb2_ioctl_find_files_by_sid_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_FIND_FILES_BY_SID, 0x0009_008F);
+    assert_eq!(ioctl::FSCTL_FIND_FILES_BY_SID, 0x0009_008F);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:40`
@@ -93,7 +88,7 @@ fn test_smb2_ioctl_find_files_by_sid_code_is_available() {
 // - **THEN** the macro expands to `0x0009003C`
 #[test]
 fn test_smb2_ioctl_get_compression_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_GET_COMPRESSION, 0x0009_003C);
+    assert_eq!(ioctl::FSCTL_GET_COMPRESSION, 0x0009_003C);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:41`
@@ -103,7 +98,7 @@ fn test_smb2_ioctl_get_compression_code_is_available() {
 // - **THEN** the macro expands to `0x0009027C`
 #[test]
 fn test_smb2_ioctl_get_integrity_information_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_GET_INTEGRITY_INFORMATION, 0x0009_027C);
+    assert_eq!(ioctl::FSCTL_GET_INTEGRITY_INFORMATION, 0x0009_027C);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:42`
@@ -113,7 +108,7 @@ fn test_smb2_ioctl_get_integrity_information_code_is_available() {
 // - **THEN** the macro expands to `0x00090064`
 #[test]
 fn test_smb2_ioctl_ntfs_volume_data_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_GET_NTFS_VOLUME_DATA, 0x0009_0064);
+    assert_eq!(ioctl::FSCTL_GET_NTFS_VOLUME_DATA, 0x0009_0064);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:43`
@@ -123,7 +118,7 @@ fn test_smb2_ioctl_ntfs_volume_data_code_is_available() {
 // - **THEN** the macro expands to `0x000902D8`
 #[test]
 fn test_smb2_ioctl_refs_volume_data_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_GET_REFS_VOLUME_DATA, 0x0009_02D8);
+    assert_eq!(ioctl::FSCTL_GET_REFS_VOLUME_DATA, 0x0009_02D8);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:44`
@@ -133,7 +128,7 @@ fn test_smb2_ioctl_refs_volume_data_code_is_available() {
 // - **THEN** the macro expands to `0x0009009C`
 #[test]
 fn test_smb2_ioctl_get_object_id_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_GET_OBJECT_ID, 0x0009_009C);
+    assert_eq!(ioctl::FSCTL_GET_OBJECT_ID, 0x0009_009C);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:45`, `include/smb2/smb2.h:976`
@@ -143,7 +138,7 @@ fn test_smb2_ioctl_get_object_id_code_is_available() {
 // - **THEN** the macro expands to `0x000900A8` and matches `SMB2_FSCTL_GET_REPARSE_POINT`
 #[test]
 fn test_smb2_ioctl_get_reparse_point_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_GET_REPARSE_POINT, 0x0009_00A8);
+    assert_eq!(ioctl::FSCTL_GET_REPARSE_POINT, 0x0009_00A8);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:46`
@@ -153,7 +148,7 @@ fn test_smb2_ioctl_get_reparse_point_code_is_available() {
 // - **THEN** the macro expands to `0x0009042B`
 #[test]
 fn test_smb2_ioctl_retrieval_pointer_count_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_GET_RETRIEVAL_POINTER_COUNT, 0x0009_042B);
+    assert_eq!(ioctl::FSCTL_GET_RETRIEVAL_POINTER_COUNT, 0x0009_042B);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:47`
@@ -163,7 +158,7 @@ fn test_smb2_ioctl_retrieval_pointer_count_code_is_available() {
 // - **THEN** the macro expands to `0x00090073`
 #[test]
 fn test_smb2_ioctl_retrieval_pointers_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_GET_RETRIEVAL_POINTERS, 0x0009_0073);
+    assert_eq!(ioctl::FSCTL_GET_RETRIEVAL_POINTERS, 0x0009_0073);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:48`
@@ -173,7 +168,7 @@ fn test_smb2_ioctl_retrieval_pointers_code_is_available() {
 // - **THEN** the macro expands to `0x000903D3`
 #[test]
 fn test_smb2_ioctl_retrieval_pointers_and_refcount_code_is_available() {
-    assert_ioctl_code!(
+    assert_eq!(
         ioctl::FSCTL_GET_RETRIEVAL_POINTERS_AND_REFCOUNT,
         0x0009_03D3
     );
@@ -186,7 +181,7 @@ fn test_smb2_ioctl_retrieval_pointers_and_refcount_code_is_available() {
 // - **THEN** the macro expands to `0x0009002C`
 #[test]
 fn test_smb2_ioctl_pathname_validation_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_IS_PATHNAME_VALID, 0x0009_002C);
+    assert_eq!(ioctl::FSCTL_IS_PATHNAME_VALID, 0x0009_002C);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:50`
@@ -196,7 +191,7 @@ fn test_smb2_ioctl_pathname_validation_code_is_available() {
 // - **THEN** the macro expands to `0x001400EC`
 #[test]
 fn test_smb2_ioctl_link_tracking_information_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_LMR_SET_LINK_TRACKING_INFORMATION, 0x0014_00EC);
+    assert_eq!(ioctl::FSCTL_LMR_SET_LINK_TRACKING_INFORMATION, 0x0014_00EC);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:51`
@@ -206,7 +201,7 @@ fn test_smb2_ioctl_link_tracking_information_code_is_available() {
 // - **THEN** the macro expands to `0x000900FC`
 #[test]
 fn test_smb2_ioctl_mark_handle_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_MARK_HANDLE, 0x0009_00FC);
+    assert_eq!(ioctl::FSCTL_MARK_HANDLE, 0x0009_00FC);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:52`
@@ -216,7 +211,7 @@ fn test_smb2_ioctl_mark_handle_code_is_available() {
 // - **THEN** the macro expands to `0x00094264`
 #[test]
 fn test_smb2_ioctl_offload_read_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_OFFLOAD_READ, 0x0009_4264);
+    assert_eq!(ioctl::FSCTL_OFFLOAD_READ, 0x0009_4264);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:53`
@@ -226,7 +221,7 @@ fn test_smb2_ioctl_offload_read_code_is_available() {
 // - **THEN** the macro expands to `0x00098268`
 #[test]
 fn test_smb2_ioctl_offload_write_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_OFFLOAD_WRITE, 0x0009_8268);
+    assert_eq!(ioctl::FSCTL_OFFLOAD_WRITE, 0x0009_8268);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:54`, `include/smb2/smb2.h:965`
@@ -236,7 +231,7 @@ fn test_smb2_ioctl_offload_write_code_is_available() {
 // - **THEN** the macro expands to `0x0011400C` and matches `SMB2_FSCTL_PIPE_PEEK`
 #[test]
 fn test_smb2_ioctl_pipe_peek_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_PIPE_PEEK, 0x0011_400C);
+    assert_eq!(ioctl::FSCTL_PIPE_PEEK, 0x0011_400C);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:55`, `include/smb2/smb2.h:967`
@@ -246,7 +241,7 @@ fn test_smb2_ioctl_pipe_peek_code_is_available() {
 // - **THEN** the macro expands to `0x0011C017` and matches `SMB2_FSCTL_PIPE_TRANSCEIVE`
 #[test]
 fn test_smb2_ioctl_pipe_transceive_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_PIPE_TRANSCEIVE, 0x0011_C017);
+    assert_eq!(ioctl::FSCTL_PIPE_TRANSCEIVE, 0x0011_C017);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:56`, `include/smb2/smb2.h:966`
@@ -256,7 +251,7 @@ fn test_smb2_ioctl_pipe_transceive_code_is_available() {
 // - **THEN** the macro expands to `0x00110018` and matches `SMB2_FSCTL_PIPE_WAIT`
 #[test]
 fn test_smb2_ioctl_pipe_wait_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_PIPE_WAIT, 0x0011_0018);
+    assert_eq!(ioctl::FSCTL_PIPE_WAIT, 0x0011_0018);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:57`
@@ -266,7 +261,7 @@ fn test_smb2_ioctl_pipe_wait_code_is_available() {
 // - **THEN** the macro expands to `0x000940CF`
 #[test]
 fn test_smb2_ioctl_allocated_ranges_query_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_QUERY_ALLOCATED_RANGES, 0x0009_40CF);
+    assert_eq!(ioctl::FSCTL_QUERY_ALLOCATED_RANGES, 0x0009_40CF);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:58`
@@ -276,7 +271,7 @@ fn test_smb2_ioctl_allocated_ranges_query_code_is_available() {
 // - **THEN** the macro expands to `0x00090058`
 #[test]
 fn test_smb2_ioctl_fat_bpb_query_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_QUERY_FAT_BPB, 0x0009_0058);
+    assert_eq!(ioctl::FSCTL_QUERY_FAT_BPB, 0x0009_0058);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:59`
@@ -286,7 +281,7 @@ fn test_smb2_ioctl_fat_bpb_query_code_is_available() {
 // - **THEN** the macro expands to `0x00090284`
 #[test]
 fn test_smb2_ioctl_file_regions_query_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_QUERY_FILE_REGIONS, 0x0009_0284);
+    assert_eq!(ioctl::FSCTL_QUERY_FILE_REGIONS, 0x0009_0284);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:60`
@@ -296,7 +291,7 @@ fn test_smb2_ioctl_file_regions_query_code_is_available() {
 // - **THEN** the macro expands to `0x0009013C`
 #[test]
 fn test_smb2_ioctl_on_disk_volume_information_query_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_QUERY_ON_DISK_VOLUME_INFO, 0x0009_013C);
+    assert_eq!(ioctl::FSCTL_QUERY_ON_DISK_VOLUME_INFO, 0x0009_013C);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:61`
@@ -306,7 +301,7 @@ fn test_smb2_ioctl_on_disk_volume_information_query_code_is_available() {
 // - **THEN** the macro expands to `0x00090138`
 #[test]
 fn test_smb2_ioctl_sparing_information_query_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_QUERY_SPARING_INFO, 0x0009_0138);
+    assert_eq!(ioctl::FSCTL_QUERY_SPARING_INFO, 0x0009_0138);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:62`
@@ -316,7 +311,7 @@ fn test_smb2_ioctl_sparing_information_query_code_is_available() {
 // - **THEN** the macro expands to `0x000900EB`
 #[test]
 fn test_smb2_ioctl_read_file_usn_data_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_READ_FILE_USN_DATA, 0x0009_00EB);
+    assert_eq!(ioctl::FSCTL_READ_FILE_USN_DATA, 0x0009_00EB);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:63`
@@ -326,7 +321,7 @@ fn test_smb2_ioctl_read_file_usn_data_code_is_available() {
 // - **THEN** the macro expands to `0x00090117`
 #[test]
 fn test_smb2_ioctl_recall_file_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_RECALL_FILE, 0x0009_0117);
+    assert_eq!(ioctl::FSCTL_RECALL_FILE, 0x0009_0117);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:64`
@@ -336,7 +331,7 @@ fn test_smb2_ioctl_recall_file_code_is_available() {
 // - **THEN** the macro expands to `0x00090440`
 #[test]
 fn test_smb2_ioctl_refs_stream_snapshot_management_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_REFS_STREAM_SNAPSHOT_MANAGEMENT, 0x0009_0440);
+    assert_eq!(ioctl::FSCTL_REFS_STREAM_SNAPSHOT_MANAGEMENT, 0x0009_0440);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:65`
@@ -346,7 +341,7 @@ fn test_smb2_ioctl_refs_stream_snapshot_management_code_is_available() {
 // - **THEN** the macro expands to `0x0009C040`
 #[test]
 fn test_smb2_ioctl_set_compression_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_SET_COMPRESSION, 0x0009_C040);
+    assert_eq!(ioctl::FSCTL_SET_COMPRESSION, 0x0009_C040);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:66`
@@ -356,7 +351,7 @@ fn test_smb2_ioctl_set_compression_code_is_available() {
 // - **THEN** the macro expands to `0x00098134`
 #[test]
 fn test_smb2_ioctl_set_defect_management_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_SET_DEFECT_MANAGEMENT, 0x0009_8134);
+    assert_eq!(ioctl::FSCTL_SET_DEFECT_MANAGEMENT, 0x0009_8134);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:67`
@@ -366,7 +361,7 @@ fn test_smb2_ioctl_set_defect_management_code_is_available() {
 // - **THEN** the macro expands to `0x000900D7`
 #[test]
 fn test_smb2_ioctl_set_encryption_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_SET_ENCRYPTION, 0x0009_00D7);
+    assert_eq!(ioctl::FSCTL_SET_ENCRYPTION, 0x0009_00D7);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:68`
@@ -376,7 +371,7 @@ fn test_smb2_ioctl_set_encryption_code_is_available() {
 // - **THEN** the macro expands to `0x0009C280`
 #[test]
 fn test_smb2_ioctl_set_integrity_information_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_SET_INTEGRITY_INFORMATION, 0x0009_C280);
+    assert_eq!(ioctl::FSCTL_SET_INTEGRITY_INFORMATION, 0x0009_C280);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:69`
@@ -386,7 +381,7 @@ fn test_smb2_ioctl_set_integrity_information_code_is_available() {
 // - **THEN** the macro expands to `0x00090380`
 #[test]
 fn test_smb2_ioctl_extended_set_integrity_information_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_SET_INTEGRITY_INFORMATION_EX, 0x0009_0380);
+    assert_eq!(ioctl::FSCTL_SET_INTEGRITY_INFORMATION_EX, 0x0009_0380);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:70`
@@ -396,7 +391,7 @@ fn test_smb2_ioctl_extended_set_integrity_information_code_is_available() {
 // - **THEN** the macro expands to `0x00090098`
 #[test]
 fn test_smb2_ioctl_set_object_id_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_SET_OBJECT_ID, 0x0009_0098);
+    assert_eq!(ioctl::FSCTL_SET_OBJECT_ID, 0x0009_0098);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:71`
@@ -406,7 +401,7 @@ fn test_smb2_ioctl_set_object_id_code_is_available() {
 // - **THEN** the macro expands to `0x000900BC`
 #[test]
 fn test_smb2_ioctl_extended_set_object_id_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_SET_OBJECT_ID_EXTENDED, 0x0009_00BC);
+    assert_eq!(ioctl::FSCTL_SET_OBJECT_ID_EXTENDED, 0x0009_00BC);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:72`, `include/smb2/smb2.h:975`
@@ -416,7 +411,7 @@ fn test_smb2_ioctl_extended_set_object_id_code_is_available() {
 // - **THEN** the macro expands to `0x000900A4` and matches `SMB2_FSCTL_SET_REPARSE_POINT`
 #[test]
 fn test_smb2_ioctl_set_reparse_point_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_SET_REPARSE_POINT, 0x0009_00A4);
+    assert_eq!(ioctl::FSCTL_SET_REPARSE_POINT, 0x0009_00A4);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:73`
@@ -426,7 +421,7 @@ fn test_smb2_ioctl_set_reparse_point_code_is_available() {
 // - **THEN** the macro expands to `0x000900C4`
 #[test]
 fn test_smb2_ioctl_set_sparse_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_SET_SPARSE, 0x0009_00C4);
+    assert_eq!(ioctl::FSCTL_SET_SPARSE, 0x0009_00C4);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:74`
@@ -436,7 +431,7 @@ fn test_smb2_ioctl_set_sparse_code_is_available() {
 // - **THEN** the macro expands to `0x000980C8`
 #[test]
 fn test_smb2_ioctl_set_zero_data_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_SET_ZERO_DATA, 0x0009_80C8);
+    assert_eq!(ioctl::FSCTL_SET_ZERO_DATA, 0x0009_80C8);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:75`
@@ -446,7 +441,7 @@ fn test_smb2_ioctl_set_zero_data_code_is_available() {
 // - **THEN** the macro expands to `0x00090194`
 #[test]
 fn test_smb2_ioctl_set_zero_on_deallocation_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_SET_ZERO_ON_DEALLOCATION, 0x0009_0194);
+    assert_eq!(ioctl::FSCTL_SET_ZERO_ON_DEALLOCATION, 0x0009_0194);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:76`
@@ -456,7 +451,7 @@ fn test_smb2_ioctl_set_zero_on_deallocation_code_is_available() {
 // - **THEN** the macro expands to `0x00090100`
 #[test]
 fn test_smb2_ioctl_sis_copyfile_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_SIS_COPYFILE, 0x0009_0100);
+    assert_eq!(ioctl::FSCTL_SIS_COPYFILE, 0x0009_0100);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:77`
@@ -466,7 +461,7 @@ fn test_smb2_ioctl_sis_copyfile_code_is_available() {
 // - **THEN** the macro expands to `0x000900EF`
 #[test]
 fn test_smb2_ioctl_write_usn_close_record_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_WRITE_USN_CLOSE_RECORD, 0x0009_00EF);
+    assert_eq!(ioctl::FSCTL_WRITE_USN_CLOSE_RECORD, 0x0009_00EF);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:79`, `include/smb2/smb2.h:969`
@@ -476,7 +471,7 @@ fn test_smb2_ioctl_write_usn_close_record_code_is_available() {
 // - **THEN** the macro expands to `0x00144064` and matches `SMB2_FSCTL_SRV_ENUMERATE_SNAPSHOTS`
 #[test]
 fn test_smb2_ioctl_server_snapshot_enumeration_code_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_SRV_ENUMERATE_SNAPSHOTS, 0x0014_4064);
+    assert_eq!(ioctl::FSCTL_SRV_ENUMERATE_SNAPSHOTS, 0x0014_4064);
 }
 
 // Trace: `include/smb2/smb2-ioctl.h:79`, `include/smb2/smb2-ioctl.h:80`
@@ -486,7 +481,7 @@ fn test_smb2_ioctl_server_snapshot_enumeration_code_is_available() {
 // - **THEN** the macro expands to `0x00144064` and is numerically identical to `FSCTL_SRV_ENUMERATE_SNAPSHOTS`
 #[test]
 fn test_smb2_ioctl_shadow_copy_data_alias_is_available() {
-    assert_ioctl_code!(ioctl::FSCTL_GET_SHADOW_COPY_DATA, 0x0014_4064);
+    assert_eq!(ioctl::FSCTL_GET_SHADOW_COPY_DATA, 0x0014_4064);
     assert_eq!(
         ioctl::FSCTL_GET_SHADOW_COPY_DATA,
         ioctl::FSCTL_SRV_ENUMERATE_SNAPSHOTS

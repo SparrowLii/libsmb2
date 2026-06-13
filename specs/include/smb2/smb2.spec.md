@@ -49,6 +49,212 @@
 
 ## ADDED Requirements
 
+### Requirement: include/smb2/smb2.h data model summary
+系统 MUST expose the public SMB2 protocol data-model constants and safe Rust models with the same observable sizes, identifiers, and fields described by `include/smb2/smb2.h`.
+
+#### Scenario: SMB2 GUID uses sixteen bytes
+- **GIVEN** 调用方读取 `SMB2_GUID_SIZE`。
+- **WHEN** Rust safe model exposes `Smb2Guid`.
+- **THEN** the GUID model contains exactly 16 bytes.
+
+Trace: `include/smb2/smb2.h:114`, `specs/include/smb2/smb2.spec.md:25`
+
+#### Scenario: file id uses sixteen bytes
+- **GIVEN** 调用方读取 `SMB2_FD_SIZE`。
+- **WHEN** Rust safe model exposes `Smb2FileId`.
+- **THEN** the file id model contains exactly 16 bytes.
+
+Trace: `include/smb2/smb2.h:344`, `specs/include/smb2/smb2.spec.md:26`
+
+#### Scenario: lease key uses sixteen bytes
+- **GIVEN** 调用方读取 `SMB2_LEASE_KEY_SIZE`。
+- **WHEN** Rust safe model exposes `Smb2LeaseKey`.
+- **THEN** the lease key model contains exactly 16 bytes.
+
+Trace: `include/smb2/smb2.h:347`, `specs/include/smb2/smb2.spec.md:27`
+
+#### Scenario: command enum exposes SMB2 command ids
+- **GIVEN** 调用方读取 `enum smb2_command` command ids.
+- **WHEN** Rust safe model exposes `Smb2Command`.
+- **THEN** NEGOTIATE, READ, WRITE, and SMB1_NEGOTIATE preserve their header values.
+
+Trace: `include/smb2/smb2.h:57-78`, `specs/include/smb2/smb2.spec.md:28`
+
+#### Scenario: command enum rejects unknown command id
+- **GIVEN** 调用方持有一个未分配 command id.
+- **WHEN** Rust safe model maps the numeric value.
+- **THEN** the value is not mapped to a known `Smb2Command`.
+
+Trace: `include/smb2/smb2.h:57-78`, `specs/include/smb2/smb2.spec.md:28`
+
+#### Scenario: header flags expose bit values
+- **GIVEN** 调用方读取 `SMB2_FLAGS_*` constants.
+- **WHEN** Rust safe model exposes the header flag constants.
+- **THEN** signed, DFS, and replay bits preserve their header values.
+
+Trace: `include/smb2/smb2.h:49-55`, `specs/include/smb2/smb2.spec.md:29`
+
+#### Scenario: negotiate request size is available
+- **GIVEN** 调用方读取 `SMB2_NEGOTIATE_REQUEST_SIZE`.
+- **WHEN** Rust safe model exposes the negotiate request size constant.
+- **THEN** it equals the fixed header value 36.
+
+Trace: `include/smb2/smb2.h:112`, `specs/include/smb2/smb2.spec.md:30`
+
+#### Scenario: negotiate reply size is available
+- **GIVEN** 调用方读取 `SMB2_NEGOTIATE_REPLY_SIZE`.
+- **WHEN** Rust safe model exposes the negotiate reply size constant.
+- **THEN** it equals the fixed header value 65.
+
+Trace: `include/smb2/smb2.h:127`, `specs/include/smb2/smb2.spec.md:30`
+
+#### Scenario: session setup sizes are available
+- **GIVEN** 调用方读取 session setup request and reply sizes.
+- **WHEN** Rust safe model exposes both size constants.
+- **THEN** they equal the fixed header values 25 and 9.
+
+Trace: `include/smb2/smb2.h:156`, `specs/include/smb2/smb2.spec.md:30`
+
+#### Scenario: tree connect sizes are available
+- **GIVEN** 调用方读取 tree connect request and reply sizes.
+- **WHEN** Rust safe model exposes both size constants.
+- **THEN** they equal the fixed header values 9 and 16.
+
+Trace: `include/smb2/smb2.h:181`, `specs/include/smb2/smb2.spec.md:30`
+
+#### Scenario: create sizes are available
+- **GIVEN** 调用方读取 create request and reply sizes.
+- **WHEN** Rust safe model exposes both size constants.
+- **THEN** they equal the fixed header values 57 and 89.
+
+Trace: `include/smb2/smb2.h:226`, `specs/include/smb2/smb2.spec.md:30`
+
+#### Scenario: close sizes are available
+- **GIVEN** 调用方读取 close request and reply sizes.
+- **WHEN** Rust safe model exposes both size constants.
+- **THEN** they equal the fixed header values 24 and 60.
+
+Trace: `include/smb2/smb2.h:390`, `specs/include/smb2/smb2.spec.md:30`
+
+#### Scenario: directory information size is available
+- **GIVEN** 调用方读取 file-id full directory information size.
+- **WHEN** Rust safe model exposes the size constant.
+- **THEN** it equals the fixed header value 80.
+
+Trace: `include/smb2/smb2.h:499`, `specs/include/smb2/smb2.spec.md:36`
+
+#### Scenario: read sizes are available
+- **GIVEN** 调用方读取 read request and reply sizes.
+- **WHEN** Rust safe model exposes both size constants.
+- **THEN** they equal the fixed header values 49 and 17.
+
+Trace: `include/smb2/smb2.h:564`, `specs/include/smb2/smb2.spec.md:37`
+
+#### Scenario: query info sizes are available
+- **GIVEN** 调用方读取 query info request and reply sizes.
+- **WHEN** Rust safe model exposes both size constants.
+- **THEN** they equal the fixed header values 41 and 9.
+
+Trace: `include/smb2/smb2.h:693`, `specs/include/smb2/smb2.spec.md:38`
+
+#### Scenario: ioctl sizes are available
+- **GIVEN** 调用方读取 ioctl request and reply sizes.
+- **WHEN** Rust safe model exposes both size constants.
+- **THEN** they equal the fixed header values 57 and 49.
+
+Trace: `include/smb2/smb2.h:1016`, `specs/include/smb2/smb2.spec.md:42`
+
+#### Scenario: change notify sizes are available
+- **GIVEN** 调用方读取 change notify request and reply sizes.
+- **WHEN** Rust safe model exposes both size constants.
+- **THEN** they equal the fixed header values 32 and 9.
+
+Trace: `include/smb2/smb2.h:1072`, `specs/include/smb2/smb2.spec.md:44`
+
+#### Scenario: write sizes are available
+- **GIVEN** 调用方读取 write request and reply sizes.
+- **WHEN** Rust safe model exposes both size constants.
+- **THEN** they equal the fixed header values 49 and 17.
+
+Trace: `include/smb2/smb2.h:1191`, `specs/include/smb2/smb2.spec.md:46`
+
+#### Scenario: lock sizes are available
+- **GIVEN** 调用方读取 lock element and request sizes.
+- **WHEN** Rust safe model exposes both size constants.
+- **THEN** they equal the fixed header values 24 and 48.
+
+Trace: `include/smb2/smb2.h:1214`, `specs/include/smb2/smb2.spec.md:47`
+
+#### Scenario: negotiate request default preserves fixed dialect capacity
+- **GIVEN** 调用方 constructs a default negotiate request model.
+- **WHEN** Rust safe model initializes `Smb2NegotiateRequest`.
+- **THEN** the dialect array has the fixed `SMB2_NEGOTIATE_MAX_DIALECTS` capacity.
+
+Trace: `include/smb2/smb2.h:117-125`, `specs/include/smb2/smb2.spec.md:31`
+
+#### Scenario: tree connect reply default exposes share fields
+- **GIVEN** 调用方 constructs a default tree connect reply model.
+- **WHEN** Rust safe model initializes `Smb2TreeConnectReply`.
+- **THEN** share type, share flags, capabilities, and maximal access are zero-initialized fields.
+
+Trace: `include/smb2/smb2.h:219-224`, `specs/include/smb2/smb2.spec.md:33`
+
+#### Scenario: create request model exposes open parameters
+- **GIVEN** 调用方 constructs a create request model.
+- **WHEN** Rust safe model stores access, attributes, disposition, options, and name.
+- **THEN** those public data-model fields remain observable without raw FFI.
+
+Trace: `include/smb2/smb2.h:324-342`, `specs/include/smb2/smb2.spec.md:34`
+
+#### Scenario: close request model stores file id
+- **GIVEN** 调用方 constructs a close request model with a file id.
+- **WHEN** Rust safe model stores `file_id`.
+- **THEN** the 16 byte file id remains observable.
+
+Trace: `include/smb2/smb2.h:382-389`, `specs/include/smb2/smb2.spec.md:35`
+
+#### Scenario: read request model stores offset length and file id
+- **GIVEN** 调用方 constructs a read request model.
+- **WHEN** Rust safe model stores length, offset, and file id.
+- **THEN** those fields remain observable without raw FFI.
+
+Trace: `include/smb2/smb2.h:511-525`, `specs/include/smb2/smb2.spec.md:37`
+
+#### Scenario: query info request model stores info selectors
+- **GIVEN** 调用方 constructs a query info request model.
+- **WHEN** Rust safe model stores info type and file information class.
+- **THEN** those selector fields remain observable without raw FFI.
+
+Trace: `include/smb2/smb2.h:672-681`, `specs/include/smb2/smb2.spec.md:38`
+
+#### Scenario: ioctl request model stores counts and payload
+- **GIVEN** 调用方 constructs an ioctl request model.
+- **WHEN** Rust safe model stores input count, output count, and input payload.
+- **THEN** those fields remain observable without raw FFI.
+
+Trace: `include/smb2/smb2.h:1003-1015`, `specs/include/smb2/smb2.spec.md:42`
+
+#### Scenario: change notify request model stores completion filter
+- **GIVEN** 调用方 constructs a change notify request model.
+- **WHEN** Rust safe model stores output buffer length and completion filter.
+- **THEN** those fields remain observable without raw FFI.
+
+Trace: `include/smb2/smb2.h:1064-1071`, `specs/include/smb2/smb2.spec.md:44`
+
+#### Scenario: write request model stores buffer offset and length
+- **GIVEN** 调用方 constructs a write request model.
+- **WHEN** Rust safe model stores length, offset, and buffer bytes.
+- **THEN** those fields remain observable without raw FFI.
+
+Trace: `include/smb2/smb2.h:1191-1203`, `specs/include/smb2/smb2.spec.md:46`
+
+#### Scenario: lock element model stores range and flags
+- **GIVEN** 调用方 constructs a lock element model.
+- **WHEN** Rust safe model stores offset, length, and flags.
+- **THEN** those fields remain observable without raw FFI.
+
+Trace: `include/smb2/smb2.h:1214-1218`, `specs/include/smb2/smb2.spec.md:47`
+
 ### Requirement: smb2_get_file_id expose handle file identifier
 系统 MUST 将调用方提供的 `struct smb2fh *fh` 映射为该句柄内部 `smb2_file_id` 存储的地址，并将该指针返回给调用方。
 

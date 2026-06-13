@@ -1087,19 +1087,66 @@ macro_rules! impl_validate_only {
 }
 
 impl_validate_only!(
-    EmptyReply,
     CloseReply,
     LogoffRequest,
     EchoRequest,
-    WriteReply,
-    ChangeNotifyRequest,
-    OplockBreakNotification,
-    OplockBreakAcknowledgement,
-    OplockBreakReply,
-    LeaseBreakNotification,
-    LeaseBreakAcknowledgement,
-    LeaseBreakReply,
 );
+
+impl RawPayloadContract for EmptyReply {
+    fn validate_raw(&self) -> RawCommandResult<()> {
+        Ok(())
+    }
+
+    fn construction_state(
+        &self,
+        kind: RawCommandKind,
+        _direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        match kind {
+            RawCommandKind::TreeDisconnect => {
+                let pdu = crate::lib::smb2_cmd_tree_disconnect::smb2_cmd_tree_disconnect_reply_async()
+                    .map_err(|error| command_failed(kind, error))?;
+                Ok(constructed(pdu.out.len(), 0, None, None))
+            }
+            RawCommandKind::Echo => {
+                let pdu = crate::lib::smb2_cmd_echo::smb2_cmd_echo_reply_async(None)
+                    .map_err(|error| command_failed(kind, error))?;
+                Ok(constructed(
+                    pdu.out.vectors.len(),
+                    pdu.input.vectors.len(),
+                    None,
+                    None,
+                ))
+            }
+            RawCommandKind::Lock => {
+                let pdu = crate::lib::smb2_cmd_lock::smb2_cmd_lock_reply_async()
+                    .map_err(|error| command_failed(kind, error))?;
+                Ok(constructed(pdu.out.len(), 0, None, None))
+            }
+            RawCommandKind::Logoff => {
+                let pdu = crate::lib::smb2_cmd_logoff::smb2_cmd_logoff_reply_async(None)
+                    .map_err(|error| command_failed(kind, error))?;
+                Ok(constructed(
+                    pdu.out.vectors.len(),
+                    pdu.input.vectors.len(),
+                    None,
+                    None,
+                ))
+            }
+            RawCommandKind::Flush => {
+                let pdu = crate::lib::smb2_cmd_flush::smb2_cmd_flush_reply_async(None)
+                    .map_err(|error| command_failed(kind, error))?;
+                Ok(constructed(
+                    pdu.out.vectors.len(),
+                    pdu.input.vectors.len(),
+                    None,
+                    None,
+                ))
+            }
+            _ => Ok(RawCommandState::Validated),
+        }
+    }
+}
 
 impl RawPayloadContract for FlushRequest {
     fn validate_raw(&self) -> RawCommandResult<()> {
@@ -1136,6 +1183,31 @@ impl RawPayloadContract for ErrorReply {
 impl RawPayloadContract for ErrorReplyCommand {
     fn validate_raw(&self) -> RawCommandResult<()> {
         self.reply.validate_raw()
+    }
+
+    fn construction_state(
+        &self,
+        kind: RawCommandKind,
+        _direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        let reply = crate::lib::smb2_cmd_error::Smb2ErrorReply::new(
+            self.reply.error_context_count,
+            self.reply.byte_count,
+        )
+        .with_error_data(self.reply.error_data.clone());
+        let pdu = crate::lib::smb2_cmd_error::smb2_cmd_error_reply_async(
+            &reply,
+            self.causing_command,
+            self.status as u32,
+            None,
+        )
+        .map_err(|error| command_failed(kind, error))?;
+        Ok(constructed(
+            pdu.out.vectors.len(),
+            pdu.input.vectors.len(),
+            None,
+            Some(pdu.header.status),
+        ))
     }
 }
 
@@ -1302,6 +1374,7 @@ impl RawPayloadContract for CloseRequest {
 
 impl RawPayloadContract for ReadRequest {
     fn validate_raw(&self) -> RawCommandResult<()> {
+        check_declared_len("length", self.length as usize, self.buf.len())?;
         check_declared_len(
             "read_channel_info_length",
             usize::from(self.read_channel_info_length),
@@ -1342,6 +1415,21 @@ impl RawPayloadContract for ReadRequest {
 impl RawPayloadContract for ReadReply {
     fn validate_raw(&self) -> RawCommandResult<()> {
         check_declared_len("data_length", self.data_length as usize, self.data.len())
+    }
+
+    fn construction_state(
+        &self,
+        _kind: RawCommandKind,
+        _direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        let mut reply = crate::lib::smb2_cmd_read::Smb2ReadReply {
+            data_offset: self.data_offset,
+            data_length: self.data_length,
+            data_remaining: self.data_remaining,
+            data: self.data.clone(),
+        };
+        let pdu = reply.cmd_read_reply_async();
+        Ok(constructed(pdu.out.len(), pdu.input.len(), None, None))
     }
 }
 
@@ -1396,6 +1484,25 @@ impl RawPayloadContract for WriteRequestCommand {
     }
 }
 
+impl RawPayloadContract for WriteReply {
+    fn validate_raw(&self) -> RawCommandResult<()> {
+        Ok(())
+    }
+
+    fn construction_state(
+        &self,
+        _kind: RawCommandKind,
+        _direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        let reply = crate::lib::smb2_cmd_write::Smb2WriteReply {
+            count: self.count,
+            remaining: self.remaining,
+        };
+        let _ = crate::lib::smb2_cmd_write::encode_write_reply_fixed(reply);
+        Ok(constructed(1, 0, None, None))
+    }
+}
+
 impl RawPayloadContract for QueryDirectoryRequest {
     fn validate_raw(&self) -> RawCommandResult<()> {
         check_declared_len(
@@ -1403,6 +1510,29 @@ impl RawPayloadContract for QueryDirectoryRequest {
             usize::from(self.file_name_length),
             utf16_byte_len(&self.name),
         )
+    }
+
+    fn construction_state(
+        &self,
+        kind: RawCommandKind,
+        _direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        let mut request = crate::lib::smb2_cmd_query_directory::QueryDirectoryRequest::new(
+            self.file_information_class,
+            self.file_id.to_le_bytes(),
+            self.output_buffer_length,
+        );
+        request.flags = self.flags;
+        request.file_index = self.file_index;
+        request.file_name_offset = self.file_name_offset;
+        request.file_name_length = self.file_name_length;
+        request.name = (!self.name.is_empty()).then_some(self.name.clone());
+        let pdu = crate::lib::smb2_cmd_query_directory::smb2_cmd_query_directory_async(
+            &request,
+            true,
+        )
+        .map_err(|error| command_failed(kind, error))?;
+        Ok(constructed(1, 0, Some(pdu.credit_charge), None))
     }
 }
 
@@ -1421,6 +1551,43 @@ impl RawPayloadContract for QueryDirectoryReplyCommand {
         self.request.validate_raw()?;
         self.reply.validate_raw()
     }
+
+    fn construction_state(
+        &self,
+        kind: RawCommandKind,
+        _direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        let reply = crate::lib::smb2_cmd_query_directory::QueryDirectoryReply {
+            output_buffer_offset: self.reply.output_buffer_offset,
+            output_buffer_length: self.reply.output_buffer_length,
+            output_buffer: self.reply.output_buffer.clone(),
+        };
+        let pdu = crate::lib::smb2_cmd_query_directory::smb2_cmd_query_directory_reply_async(&reply)
+            .map_err(|error| command_failed(kind, error))?;
+        Ok(constructed(1, 0, Some(pdu.credit_charge), None))
+    }
+}
+
+impl RawPayloadContract for ChangeNotifyRequest {
+    fn validate_raw(&self) -> RawCommandResult<()> {
+        Ok(())
+    }
+
+    fn construction_state(
+        &self,
+        kind: RawCommandKind,
+        _direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        let request = crate::lib::smb2_cmd_notify_change::ChangeNotifyRequest::new(
+            self.file_id.to_le_bytes(),
+            self.flags,
+            self.output_buffer_length,
+            self.completion_filter,
+        );
+        let _ = crate::lib::smb2_cmd_notify_change::smb2_cmd_change_notify_async(&request)
+            .map_err(|error| command_failed(kind, error))?;
+        Ok(constructed(1, 0, None, None))
+    }
 }
 
 impl RawPayloadContract for ChangeNotifyReply {
@@ -1430,6 +1597,21 @@ impl RawPayloadContract for ChangeNotifyReply {
             self.output_buffer_length as usize,
             self.output.len(),
         )
+    }
+
+    fn construction_state(
+        &self,
+        kind: RawCommandKind,
+        _direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        let reply = crate::lib::smb2_cmd_notify_change::ChangeNotifyReply {
+            output_buffer_offset: self.output_buffer_offset,
+            output_buffer_length: self.output_buffer_length,
+            output: self.output.clone(),
+        };
+        let _ = crate::lib::smb2_cmd_notify_change::smb2_cmd_change_notify_reply_async(&reply)
+            .map_err(|error| command_failed(kind, error))?;
+        Ok(constructed(1, 0, None, None))
     }
 }
 
@@ -1441,6 +1623,31 @@ impl RawPayloadContract for QueryInfoRequest {
             self.input_buffer.len(),
         )?;
         check_declared_len("input", self.input.len(), self.input.len())
+    }
+
+    fn construction_state(
+        &self,
+        kind: RawCommandKind,
+        _direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        let mut request = crate::lib::smb2_cmd_query_info::QueryInfoRequest::new(
+            self.info_type,
+            self.file_info_class,
+            self.file_id.to_le_bytes(),
+            self.output_buffer_length,
+        );
+        request.input_buffer_offset = self.input_buffer_offset;
+        request.input_buffer_length = self.input_buffer_length;
+        request.input = if self.input.is_empty() {
+            self.input_buffer.clone()
+        } else {
+            self.input.clone()
+        };
+        request.additional_information = self.additional_information;
+        request.flags = self.flags;
+        let _ = crate::lib::smb2_cmd_query_info::smb2_cmd_query_info_async(&request)
+            .map_err(|error| command_failed(kind, error))?;
+        Ok(constructed(1, 0, None, None))
     }
 }
 
@@ -1471,6 +1678,36 @@ impl RawPayloadContract for QueryInfoReplyCommand {
     fn data_release(&self) -> RawDataRelease {
         self.reply.data_release()
     }
+
+    fn construction_state(
+        &self,
+        kind: RawCommandKind,
+        _direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        let mut request = crate::lib::smb2_cmd_query_info::QueryInfoRequest::new(
+            self.request.info_type,
+            self.request.file_info_class,
+            self.request.file_id.to_le_bytes(),
+            self.request.output_buffer_length,
+        );
+        request.input = if self.request.input.is_empty() {
+            self.request.input_buffer.clone()
+        } else {
+            self.request.input.clone()
+        };
+        request.additional_information = self.request.additional_information;
+        request.flags = self.request.flags;
+        let reply = crate::lib::smb2_cmd_query_info::QueryInfoReply::new()
+            .with_raw_output(self.reply.output_buffer.clone())
+            .map_err(|error| command_failed(kind, error))?;
+        let pdu = crate::lib::smb2_cmd_query_info::smb2_cmd_query_info_reply_async(
+            &request,
+            &reply,
+            true,
+        )
+        .map_err(|error| command_failed(kind, error))?;
+        Ok(constructed(1, 0, None, pdu.status))
+    }
 }
 
 impl RawPayloadContract for SetInfoRequest {
@@ -1481,11 +1718,64 @@ impl RawPayloadContract for SetInfoRequest {
             self.input_data.len(),
         )
     }
+
+    fn construction_state(
+        &self,
+        kind: RawCommandKind,
+        direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        let request = crate::lib::smb2_cmd_set_info::SetInfoRequest::new(
+            self.info_type,
+            self.file_info_class,
+            self.file_id.to_le_bytes(),
+        )
+        .with_payload(crate::lib::smb2_cmd_set_info::SetInfoPayload::Raw(
+            self.input_data.clone(),
+        ));
+        match direction {
+            RawCommandDirection::Request => {
+                let _ = crate::lib::smb2_cmd_set_info::smb2_cmd_set_info_async(&request, true)
+                    .map_err(|error| command_failed(kind, error))?;
+            }
+            RawCommandDirection::Reply => {
+                let _ = crate::lib::smb2_cmd_set_info::smb2_cmd_set_info_reply_async(&request)
+                    .map_err(|error| command_failed(kind, error))?;
+            }
+        }
+        Ok(constructed(1, 0, None, None))
+    }
 }
 
 impl RawPayloadContract for IoctlRequest {
     fn validate_raw(&self) -> RawCommandResult<()> {
         check_declared_len("input_count", self.input_count as usize, self.input.len())
+    }
+
+    fn construction_state(
+        &self,
+        kind: RawCommandKind,
+        _direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        let input = if self.input.is_empty() {
+            crate::lib::smb2_cmd_ioctl::IoctlRequestInput::None
+        } else {
+            crate::lib::smb2_cmd_ioctl::IoctlRequestInput::Raw(self.input.clone())
+        };
+        let mut request = crate::lib::smb2_cmd_ioctl::IoctlRequest::new(
+            self.ctl_code,
+            self.file_id.to_le_bytes(),
+            input,
+            self.flags,
+        );
+        request.input_offset = self.input_offset;
+        request.input_count = self.input_count;
+        request.max_input_response = self.max_input_response;
+        request.output_offset = self.output_offset;
+        request.output_count = self.output_count;
+        request.max_output_response = self.max_output_response;
+        let _ = crate::lib::smb2_cmd_ioctl::smb2_cmd_ioctl_async(&request)
+            .map_err(|error| command_failed(kind, error))?;
+        Ok(constructed(1, 0, None, None))
     }
 }
 
@@ -1504,6 +1794,167 @@ impl RawPayloadContract for IoctlReply {
         } else {
             RawDataRelease::FreeDataRequired
         }
+    }
+
+    fn construction_state(
+        &self,
+        kind: RawCommandKind,
+        _direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        let output = if self.output.is_empty() {
+            crate::lib::smb2_cmd_ioctl::IoctlReplyOutput::None
+        } else {
+            crate::lib::smb2_cmd_ioctl::IoctlReplyOutput::Raw(self.output.clone())
+        };
+        let mut reply = crate::lib::smb2_cmd_ioctl::IoctlReply::new(
+            self.ctl_code,
+            self.file_id.to_le_bytes(),
+            output,
+            self.flags,
+        );
+        reply.input_offset = self.input_offset;
+        reply.input_count = self.input_count;
+        reply.output_offset = self.output_offset;
+        reply.output_count = self.output_count;
+        let _ = crate::lib::smb2_cmd_ioctl::smb2_cmd_ioctl_reply_async(&reply, true)
+            .map_err(|error| command_failed(kind, error))?;
+        Ok(constructed(1, 0, None, None))
+    }
+}
+
+impl RawPayloadContract for OplockBreakAcknowledgement {
+    fn validate_raw(&self) -> RawCommandResult<()> {
+        Ok(())
+    }
+
+    fn construction_state(
+        &self,
+        kind: RawCommandKind,
+        _direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        let body = crate::lib::smb2_cmd_oplock_break::Smb2OplockBreakAcknowledgement::new(
+            self.oplock_level,
+            self.file_id.to_le_bytes(),
+        );
+        let pdu = crate::lib::smb2_cmd_oplock_break::smb2_cmd_oplock_break_async(&body, None)
+            .map_err(|error| command_failed(kind, error))?;
+        Ok(constructed(pdu.out.vectors.len(), 0, None, None))
+    }
+}
+
+impl RawPayloadContract for OplockBreakReply {
+    fn validate_raw(&self) -> RawCommandResult<()> {
+        Ok(())
+    }
+
+    fn construction_state(
+        &self,
+        kind: RawCommandKind,
+        _direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        let body = crate::lib::smb2_cmd_oplock_break::Smb2OplockBreakReply::new(
+            self.oplock_level,
+            self.file_id.to_le_bytes(),
+        );
+        let pdu = crate::lib::smb2_cmd_oplock_break::smb2_cmd_oplock_break_reply_async(&body, None)
+            .map_err(|error| command_failed(kind, error))?;
+        Ok(constructed(pdu.out.vectors.len(), 0, None, None))
+    }
+}
+
+impl RawPayloadContract for OplockBreakNotification {
+    fn validate_raw(&self) -> RawCommandResult<()> {
+        Ok(())
+    }
+
+    fn construction_state(
+        &self,
+        kind: RawCommandKind,
+        _direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        let body = crate::lib::smb2_cmd_oplock_break::Smb2OplockBreakNotification::new(
+            self.oplock_level,
+            self.file_id.to_le_bytes(),
+        );
+        let pdu = crate::lib::smb2_cmd_oplock_break::smb2_cmd_oplock_break_notification_async(
+            &body,
+            None,
+        )
+        .map_err(|error| command_failed(kind, error))?;
+        Ok(constructed(pdu.out.vectors.len(), 0, None, None))
+    }
+}
+
+impl RawPayloadContract for LeaseBreakAcknowledgement {
+    fn validate_raw(&self) -> RawCommandResult<()> {
+        Ok(())
+    }
+
+    fn construction_state(
+        &self,
+        kind: RawCommandKind,
+        _direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        let body = crate::lib::smb2_cmd_oplock_break::Smb2LeaseBreakAcknowledgement::new(
+            self.flags,
+            self.lease_key.0,
+            self.lease_state,
+            self.lease_duration,
+        );
+        let pdu = crate::lib::smb2_cmd_oplock_break::smb2_cmd_lease_break_async(&body, None)
+            .map_err(|error| command_failed(kind, error))?;
+        Ok(constructed(pdu.out.vectors.len(), 0, None, None))
+    }
+}
+
+impl RawPayloadContract for LeaseBreakReply {
+    fn validate_raw(&self) -> RawCommandResult<()> {
+        Ok(())
+    }
+
+    fn construction_state(
+        &self,
+        kind: RawCommandKind,
+        _direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        let body = crate::lib::smb2_cmd_oplock_break::Smb2LeaseBreakReply::new(
+            self.flags,
+            self.lease_key.0,
+            self.lease_state,
+            self.lease_duration,
+        );
+        let pdu = crate::lib::smb2_cmd_oplock_break::smb2_cmd_lease_break_reply_async(&body, None)
+            .map_err(|error| command_failed(kind, error))?;
+        Ok(constructed(pdu.out.vectors.len(), 0, None, None))
+    }
+}
+
+impl RawPayloadContract for LeaseBreakNotification {
+    fn validate_raw(&self) -> RawCommandResult<()> {
+        Ok(())
+    }
+
+    fn construction_state(
+        &self,
+        kind: RawCommandKind,
+        _direction: RawCommandDirection,
+    ) -> RawCommandResult<RawCommandState> {
+        let body = crate::lib::smb2_cmd_oplock_break::Smb2LeaseBreakNotification {
+            new_epoch: self.new_epoch,
+            flags: self.flags,
+            lease_key: self.lease_key.0,
+            current_lease_state: self.current_lease_state,
+            new_lease_state: self.new_lease_state,
+            break_reason: self.break_reason,
+            access_mask_hint: self.access_mask_hint,
+            share_mask_hint: self.share_mask_hint,
+        };
+        let pdu = crate::lib::smb2_cmd_oplock_break::smb2_cmd_lease_break_notification_async(
+            &body,
+            None,
+        )
+        .map_err(|error| command_failed(kind, error))?;
+        Ok(constructed(pdu.out.vectors.len(), 0, None, None))
     }
 }
 

@@ -3,10 +3,15 @@ use std::{env, path::PathBuf};
 fn main() {
     let legacy_root = PathBuf::from("..");
     let shims = [
+        PathBuf::from("shim/include/asprintf_alloc_failure_ffi.c"),
+        PathBuf::from("shim/include/asprintf_ffi.c"),
+        PathBuf::from("shim/include/asprintf_format_failure_ffi.c"),
+        PathBuf::from("shim/include/asprintf_length_failure_ffi.c"),
         PathBuf::from("shim/include/libsmb2_private_ffi.c"),
         PathBuf::from("shim/include/portable-endian_ffi.c"),
         PathBuf::from("shim/include/slist_ffi.c"),
         PathBuf::from("shim/lib/alloc_ffi.c"),
+        PathBuf::from("shim/lib/compat_ffi.c"),
         PathBuf::from("shim/lib/unicode_ffi.c"),
     ];
     let sources = [
@@ -29,9 +34,11 @@ fn main() {
         PathBuf::from("../lib/usha.c"),
     ];
     let headers = [
+        PathBuf::from("shim/include/asprintf_ffi.h"),
         PathBuf::from("shim/include/libsmb2_private_ffi.h"),
         PathBuf::from("shim/include/portable-endian_ffi.h"),
         PathBuf::from("shim/include/slist_ffi.h"),
+        PathBuf::from("shim/lib/compat_ffi.h"),
         PathBuf::from("shim/lib/unicode_ffi.h"),
     ];
 
@@ -78,6 +85,8 @@ fn main() {
         .header(headers[1].to_string_lossy())
         .header(headers[2].to_string_lossy())
         .header(headers[3].to_string_lossy())
+        .header(headers[4].to_string_lossy())
+        .header(headers[5].to_string_lossy())
         .header("../lib/aes.h")
         .header("../lib/aes128ccm.h")
         .header("../lib/aes_reference.h")
@@ -118,6 +127,8 @@ fn main() {
         .allowlist_function("libsmb2_private_ffi_.*")
         .allowlist_function("portable_endian_ffi_.*")
         .allowlist_function("slist_ffi_.*")
+        .allowlist_function("asprintf_ffi_.*")
+        .allowlist_function("compat_ffi_.*")
         .allowlist_function("AES128_ECB_encrypt")
         .allowlist_function("AES128_ECB_.*_reference")
         .allowlist_function("AES128_CBC_.*_reference")
@@ -140,6 +151,8 @@ fn main() {
         .allowlist_type("libsmb2_private_ffi_.*")
         .allowlist_type("portable_endian_ffi_.*")
         .allowlist_type("slist_ffi_.*")
+        .allowlist_type("asprintf_ffi_.*")
+        .allowlist_type("compat_ffi_.*")
         .allowlist_type("MD4_CTX")
         .allowlist_type("MD5Context")
         .allowlist_type("SHA.*")

@@ -923,11 +923,12 @@ mod tests {
         body.extend_from_slice(&32_768u16.to_le_bytes());
         body.extend_from_slice(&32_768u16.to_le_bytes());
         body.extend_from_slice(&0u32.to_le_bytes());
-        body.extend_from_slice(&0u16.to_le_bytes());
-        body.extend_from_slice(&[0, 0]);
-        body.push(1);
+        body.extend_from_slice(&1u16.to_le_bytes());
         body.push(0);
         body.extend_from_slice(&[0, 0, 0]);
+        body.push(1);
+        body.push(0);
+        body.extend_from_slice(&0u16.to_le_bytes());
         body.extend_from_slice(&lib_dcerpc::ACK_RESULT_ACCEPTANCE.to_le_bytes());
         body.extend_from_slice(&lib_dcerpc::ACK_REASON_REASON_NOT_SPECIFIED.to_le_bytes());
         body.extend_from_slice(&lib_dcerpc::NDR32_UUID.v1.to_le_bytes());

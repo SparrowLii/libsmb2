@@ -1,8 +1,9 @@
 use libsmb2_sys::smb2::libsmb2_dcerpc::{
-    DceRpcCarray, DceRpcCoder, DceRpcContext, DceRpcPayload, DceRpcPdu, DceRpcUtf16, DceRpcUuid,
-    NdrContextHandle, NdrTransferSyntax, PSyntaxId, PtrType, Smb2Iovec, DCERPC_DECODE,
-    DCERPC_DR_ASCII, DCERPC_DR_BIG_ENDIAN, DCERPC_DR_EBCDIC, DCERPC_DR_LITTLE_ENDIAN,
-    DCERPC_ENCODE, LSA_INTERFACE, NDR_TRANSFER_SYNTAX, SRVSVC_INTERFACE,
+    self, DceRpcCarray, DceRpcCoder, DceRpcContext, DceRpcPayload, DceRpcPdu, DceRpcUtf16,
+    DceRpcUuid, NdrContextHandle, NdrTransferSyntax, PSyntaxId, PtrType, Smb2Iovec,
+    DCERPC_DECODE, DCERPC_DR_ASCII, DCERPC_DR_BIG_ENDIAN, DCERPC_DR_EBCDIC,
+    DCERPC_DR_LITTLE_ENDIAN, DCERPC_ENCODE, LSA_INTERFACE, NDR_TRANSFER_SYNTAX,
+    SRVSVC_INTERFACE,
 };
 
 // Trace: `include/smb2/libsmb2-dcerpc.h:28`
@@ -65,8 +66,8 @@ fn test_libsmb2_dcerpc_coder_callback_receives_shared_encoding_state() {
     }
 
     let callback: DceRpcCoder = coder;
-    let mut dce = DceRpcContext;
-    let mut pdu = DceRpcPdu;
+    let mut dce = DceRpcContext::new();
+    let mut pdu = DceRpcPdu::default();
     let mut iov = Smb2Iovec { data: vec![1, 2] };
     let mut offset = 4;
     let mut payload = DceRpcPayload {
@@ -265,7 +266,11 @@ fn test_libsmb2_dcerpc_srvsvc_share_enumeration_passes_interface_to_connect() {
 // Note: This validates the public direction constant; PDU allocation itself requires a DCERPC FFI lifecycle binding.
 #[test]
 fn test_libsmb2_dcerpc_test_allocates_decode_pdu() {
-    assert_eq!(DCERPC_DECODE, 0);
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_DECODE, 8).unwrap();
+
+    assert_eq!(pdu.direction, 0);
+    assert_eq!(libsmb2_dcerpc::dcerpc_get_pdu_payload(&pdu).len(), 8);
 }
 
 // Trace: `include/smb2/libsmb2-dcerpc.h:146`, `tests/smb2-dcerpc-coder-test.c:67`
@@ -276,5 +281,425 @@ fn test_libsmb2_dcerpc_test_allocates_decode_pdu() {
 // Note: This validates the public direction constant; PDU allocation itself requires a DCERPC FFI lifecycle binding.
 #[test]
 fn test_libsmb2_dcerpc_test_allocates_encode_pdu() {
-    assert_eq!(DCERPC_ENCODE, 1);
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_ENCODE, 8).unwrap();
+
+    assert_eq!(pdu.direction, 1);
+    assert_eq!(libsmb2_dcerpc::dcerpc_get_pdu_payload(&pdu).len(), 8);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:89`, `lib/dcerpc.c:1511`, `lib/dcerpc.c:1657`
+// Spec: dcerpc_cb async callback signature#Async operation completes through callback
+#[test]
+fn test_libsmb2_dcerpc_async_operation_completes_through_callback() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    libsmb2_dcerpc::dcerpc_invoke_callback(
+        &mut dce,
+        0,
+        DceRpcPayload { data: vec![7] },
+        Box::new(|ctx, status, payload| {
+            assert!(libsmb2_dcerpc::dcerpc_get_smb2_context(ctx));
+            assert_eq!(status, 0);
+            assert_eq!(payload.data, vec![7]);
+        }),
+    );
+
+    assert_eq!(libsmb2_dcerpc::dcerpc_callback_count(&dce), 1);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:92`, `lib/dcerpc.c:449`
+// Spec: dcerpc_create_context context allocation#Context allocation succeeds
+#[test]
+fn test_libsmb2_dcerpc_context_allocation_succeeds() {
+    let dce = libsmb2_dcerpc::dcerpc_create_context();
+
+    assert!(libsmb2_dcerpc::dcerpc_get_smb2_context(&dce));
+    assert_eq!(DCERPC_DR_LITTLE_ENDIAN, 0x10);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:93`, `lib/dcerpc.c:1903`
+// Spec: dcerpc_free_data payload data release#Caller releases command data
+#[test]
+fn test_libsmb2_dcerpc_caller_releases_command_data() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    libsmb2_dcerpc::dcerpc_free_data(&mut dce, DceRpcPayload { data: vec![1, 2] });
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:94`, `lib/dcerpc.c:1897`
+// Spec: dcerpc_get_error error forwarding#Caller reads last DCERPC error
+#[test]
+fn test_libsmb2_dcerpc_caller_reads_last_dcerpc_error() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let result = libsmb2_dcerpc::dcerpc_open_async(&mut dce, Box::new(|_, _, _| {}));
+
+    assert_eq!(result.unwrap_err().code(), -38);
+    assert_eq!(
+        libsmb2_dcerpc::dcerpc_get_error(&dce),
+        Some("DCERPC open requires real SMB2 named-pipe transport")
+    );
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:95`, `lib/dcerpc.c:465`, `lib/dcerpc.c:482`
+// Spec: dcerpc_connect_context_async connect and bind setup#Connect context starts async open
+// Boundary: real SMB2 IPC$ transport is not smoke-safe; this validates staged path/syntax and error boundary.
+#[test]
+fn test_libsmb2_dcerpc_connect_context_starts_async_open_boundary() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let result = libsmb2_dcerpc::dcerpc_connect_context_async(
+        &mut dce,
+        "srvsvc",
+        SRVSVC_INTERFACE,
+        Box::new(|_, _, _| {}),
+    );
+
+    assert_eq!(result.unwrap_err().code(), -38);
+    assert_eq!(dce.path(), Some("srvsvc"));
+    assert_eq!(dce.syntax(), Some(SRVSVC_INTERFACE));
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:98`, `lib/dcerpc.c:490`
+// Spec: dcerpc_destroy_context context cleanup#Destroy context after coder tests
+#[test]
+fn test_libsmb2_dcerpc_destroy_context_after_coder_tests() {
+    libsmb2_dcerpc::dcerpc_destroy_context(libsmb2_dcerpc::dcerpc_create_context());
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:100`, `lib/dcerpc.c:436`
+// Spec: dcerpc_get_smb2_context associated SMB2 access#Helper retrieves SMB2 context
+#[test]
+fn test_libsmb2_dcerpc_helper_retrieves_smb2_context() {
+    let dce = libsmb2_dcerpc::dcerpc_create_context();
+
+    assert!(libsmb2_dcerpc::dcerpc_get_smb2_context(&dce));
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:101`, `lib/dcerpc.c:442`
+// Spec: dcerpc_get_pdu_payload payload access#Decoder allocates data from PDU payload
+#[test]
+fn test_libsmb2_dcerpc_decoder_allocates_data_from_pdu_payload() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_DECODE, 3).unwrap();
+
+    assert_eq!(libsmb2_dcerpc::dcerpc_get_pdu_payload(&pdu), &[0, 0, 0]);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:103`, `lib/dcerpc.c:1849`
+// Spec: dcerpc_open_async named pipe open#Open async queues SMB2 create request
+// Boundary: requires live SMB2 named-pipe create; safe binding returns ENOSYS for offline smoke.
+#[test]
+fn test_libsmb2_dcerpc_open_async_queues_smb2_create_request_boundary() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let result = libsmb2_dcerpc::dcerpc_open_async(&mut dce, Box::new(|_, _, _| {}));
+
+    assert_eq!(result.unwrap_err().code(), -38);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:104`, `lib/dcerpc.c:1567`
+// Spec: dcerpc_call_async request transceive#Async call queues IOCTL transceive
+// Boundary: requires live SMB2 IOCTL pipe transceive; safe binding returns ENOSYS for offline smoke.
+#[test]
+fn test_libsmb2_dcerpc_async_call_queues_ioctl_transceive_boundary() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let mut payload = DceRpcPayload::default();
+    let result = libsmb2_dcerpc::dcerpc_call_async(
+        &mut dce,
+        0,
+        |_dce, _pdu, _iov, _offset, _payload| 0,
+        &mut payload,
+        |_dce, _pdu, _iov, _offset, _payload| 0,
+        0,
+        Box::new(|_, _, _| {}),
+    );
+
+    assert_eq!(result.unwrap_err().code(), -38);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:110`, `lib/dcerpc.c:548`
+// Spec: dcerpc_do_coder two-pass coding#Pointer coder delegates object encoding
+#[test]
+fn test_libsmb2_dcerpc_pointer_coder_delegates_object_encoding() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let mut pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_ENCODE, 0).unwrap();
+    let mut iov = Smb2Iovec::default();
+    let mut offset = 0;
+    let mut payload = DceRpcPayload { data: vec![1] };
+    let result = libsmb2_dcerpc::dcerpc_do_coder(
+        &mut dce,
+        &mut pdu,
+        &mut iov,
+        &mut offset,
+        &mut payload,
+        |_dce, _pdu, _iov, offset, payload| {
+            *offset += i32::try_from(payload.data.len()).unwrap_or(0);
+            0
+        },
+    );
+
+    assert!(result.is_ok());
+    assert_eq!(offset, 1);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:114`, `lib/dcerpc.c:928`
+// Spec: dcerpc_ptr_coder NDR pointer dispatch#Test encodes and decodes reference pointer
+#[test]
+fn test_libsmb2_dcerpc_test_encodes_and_decodes_reference_pointer() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let mut pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_ENCODE, 0).unwrap();
+    let mut iov = Smb2Iovec::default();
+    let mut offset = 0;
+    let mut payload = DceRpcPayload::default();
+
+    libsmb2_dcerpc::dcerpc_ptr_coder(
+        &mut dce,
+        &mut pdu,
+        &mut iov,
+        &mut offset,
+        &mut payload,
+        PtrType::Ref,
+        |_dce, _pdu, _iov, _offset, _payload| 0,
+    )
+    .unwrap();
+
+    assert_eq!(&iov.data[..4], &0x7274_7052u32.to_le_bytes());
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:117`, `lib/dcerpc.c:899`
+// Spec: dcerpc_carray_coder conformant array coding#Array count mismatch fails
+#[test]
+fn test_libsmb2_dcerpc_array_count_mismatch_fails() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let mut pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_DECODE, 0).unwrap();
+    let mut iov = Smb2Iovec {
+        data: 3u32.to_le_bytes().to_vec(),
+    };
+    let mut offset = 0;
+    let mut payload = DceRpcPayload::default();
+    let result = libsmb2_dcerpc::dcerpc_carray_coder(
+        &mut dce,
+        &mut pdu,
+        &mut iov,
+        &mut offset,
+        4,
+        &mut payload,
+        1,
+        |_dce, _pdu, _iov, _offset, _payload| 0,
+    );
+
+    assert!(result.is_err());
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:121`, `lib/dcerpc.c:621`
+// Spec: dcerpc_uint8_coder 8-bit scalar coding#Scalar coder follows PDU direction
+#[test]
+fn test_libsmb2_dcerpc_scalar_coder_follows_pdu_direction_uint8() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let mut pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_ENCODE, 0).unwrap();
+    let mut iov = Smb2Iovec::default();
+    let mut offset = 0;
+    let mut value = 0xab;
+
+    libsmb2_dcerpc::dcerpc_uint8_coder(&mut dce, &mut pdu, &mut iov, &mut offset, &mut value)
+        .unwrap();
+    assert_eq!(iov.data, vec![0xab]);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:123`, `lib/dcerpc.c:603`
+// Spec: dcerpc_uint16_coder 16-bit scalar coding#Scalar coder follows PDU direction
+#[test]
+fn test_libsmb2_dcerpc_scalar_coder_follows_pdu_direction_uint16() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let mut pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_ENCODE, 0).unwrap();
+    let mut iov = Smb2Iovec::default();
+    let mut offset = 1;
+    let mut value = 0xabcd;
+
+    libsmb2_dcerpc::dcerpc_uint16_coder(&mut dce, &mut pdu, &mut iov, &mut offset, &mut value)
+        .unwrap();
+    assert_eq!(&iov.data[2..4], &0xabcdu16.to_le_bytes());
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:125`, `lib/dcerpc.c:586`
+// Spec: dcerpc_uint32_coder 32-bit scalar coding#Scalar coder follows PDU direction
+#[test]
+fn test_libsmb2_dcerpc_scalar_coder_follows_pdu_direction_uint32() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let mut pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_ENCODE, 0).unwrap();
+    let mut iov = Smb2Iovec::default();
+    let mut offset = 0;
+    let mut value = 0x1122_3344;
+
+    libsmb2_dcerpc::dcerpc_uint32_coder(&mut dce, &mut pdu, &mut iov, &mut offset, &mut value)
+        .unwrap();
+    assert_eq!(iov.data, 0x1122_3344u32.to_le_bytes());
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:127`, `lib/dcerpc.c:641`
+// Spec: dcerpc_uint3264_coder transfer-syntax scalar coding#NDR32 encodes lower 32-bit value
+#[test]
+fn test_libsmb2_dcerpc_ndr32_encodes_lower_32_bit_value() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let mut pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_ENCODE, 0).unwrap();
+    let mut iov = Smb2Iovec::default();
+    let mut offset = 0;
+    let mut value = 0x1122_3344_5566_7788;
+
+    libsmb2_dcerpc::dcerpc_uint3264_coder(&mut dce, &mut pdu, &mut iov, &mut offset, &mut value)
+        .unwrap();
+    assert_eq!(iov.data, 0x5566_7788u32.to_le_bytes());
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:129`, `lib/dcerpc.c:684`
+// Spec: dcerpc_conformance_coder conformance-only processing#Data pass skips conformance field
+#[test]
+fn test_libsmb2_dcerpc_data_pass_skips_conformance_field() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let mut pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_ENCODE, 0).unwrap();
+    let mut iov = Smb2Iovec::default();
+    let mut offset = 0;
+    let mut value = 4;
+
+    libsmb2_dcerpc::dcerpc_conformance_coder(
+        &mut dce,
+        &mut pdu,
+        &mut iov,
+        &mut offset,
+        &mut value,
+    )
+    .unwrap();
+    assert_eq!(iov.data, 4u32.to_le_bytes());
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:131`, `lib/dcerpc.c:1083`
+// Spec: dcerpc_utf16_coder nonterminated UTF-16 coding#Nonterminated coder dispatches by direction
+#[test]
+fn test_libsmb2_dcerpc_nonterminated_coder_dispatches_by_direction() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let mut pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_ENCODE, 0).unwrap();
+    let mut iov = Smb2Iovec::default();
+    let mut offset = 0;
+    let mut value = DceRpcUtf16 {
+        utf8: Some("hi".to_owned()),
+        ..DceRpcUtf16::default()
+    };
+
+    libsmb2_dcerpc::dcerpc_utf16_coder(&mut dce, &mut pdu, &mut iov, &mut offset, &mut value)
+        .unwrap();
+    assert_eq!(value.actual_count, 2);
+    assert_eq!(value.utf16, vec![b'h' as u16, b'i' as u16]);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:133`, `lib/dcerpc.c:1069`
+// Spec: dcerpc_utf16z_coder NUL-terminated UTF-16 coding#Test round-trips NUL-terminated UTF-16 text
+#[test]
+fn test_libsmb2_dcerpc_test_round_trips_nul_terminated_utf_16_text() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let mut pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_ENCODE, 0).unwrap();
+    let mut iov = Smb2Iovec::default();
+    let mut offset = 0;
+    let mut value = DceRpcUtf16 {
+        utf8: Some("hi".to_owned()),
+        ..DceRpcUtf16::default()
+    };
+    libsmb2_dcerpc::dcerpc_utf16z_coder(&mut dce, &mut pdu, &mut iov, &mut offset, &mut value)
+        .unwrap();
+
+    let mut decoded_pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_DECODE, 0).unwrap();
+    let mut decoded_iov = Smb2Iovec { data: iov.data };
+    let mut decoded_offset = 0;
+    let mut decoded = DceRpcUtf16::default();
+    libsmb2_dcerpc::dcerpc_utf16z_coder(
+        &mut dce,
+        &mut decoded_pdu,
+        &mut decoded_iov,
+        &mut decoded_offset,
+        &mut decoded,
+    )
+    .unwrap();
+    assert_eq!(decoded.utf8.as_deref(), Some("hi"));
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:135`, `lib/dcerpc.c:1180`
+// Spec: dcerpc_context_handle_coder context handle coding#Context handle fields are serialized in declaration order
+#[test]
+fn test_libsmb2_dcerpc_context_handle_fields_are_serialized() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let mut pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_ENCODE, 0).unwrap();
+    let mut iov = Smb2Iovec::default();
+    let mut offset = 0;
+    let mut handle = NdrContextHandle {
+        context_handle_attributes: 0xaabb_ccdd,
+        context_handle_uuid: LSA_INTERFACE.uuid,
+    };
+
+    libsmb2_dcerpc::dcerpc_context_handle_coder(
+        &mut dce,
+        &mut pdu,
+        &mut iov,
+        &mut offset,
+        &mut handle,
+    )
+    .unwrap();
+    assert_eq!(&iov.data[..4], &0xaabb_ccddu32.to_le_bytes());
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:139`, `lib/dcerpc.c:1148`
+// Spec: dcerpc_uuid_coder UUID field coding#UUID coder walks v4 bytes
+#[test]
+fn test_libsmb2_dcerpc_uuid_coder_walks_v4_bytes() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let mut pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_ENCODE, 0).unwrap();
+    let mut iov = Smb2Iovec::default();
+    let mut offset = 0;
+    let mut uuid = DceRpcUuid {
+        v1: 1,
+        v2: 2,
+        v3: 3,
+        v4: [4, 5, 6, 7, 8, 9, 10, 11],
+    };
+
+    libsmb2_dcerpc::dcerpc_uuid_coder(&mut dce, &mut pdu, &mut iov, &mut offset, &mut uuid)
+        .unwrap();
+    assert_eq!(&iov.data[8..16], &[4, 5, 6, 7, 8, 9, 10, 11]);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:147`, `lib/dcerpc.c:513`
+// Spec: dcerpc_allocate_pdu PDU allocation#Test allocates PDU for coder round-trip
+#[test]
+fn test_libsmb2_dcerpc_test_allocates_pdu_for_coder_round_trip() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_ENCODE, 5).unwrap();
+
+    assert_eq!(pdu.payload, vec![0; 5]);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:149`, `lib/dcerpc.c:500`
+// Spec: dcerpc_free_pdu PDU cleanup#Test frees encoded and decoded PDU
+#[test]
+fn test_libsmb2_dcerpc_test_frees_encoded_and_decoded_pdu() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_ENCODE, 1).unwrap();
+
+    libsmb2_dcerpc::dcerpc_free_pdu(&mut dce, pdu);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:151`, `lib/dcerpc.c:1950`
+// Spec: dcerpc_set_size_is conformant size state#Container coder stores decoded entry count
+#[test]
+fn test_libsmb2_dcerpc_container_coder_stores_decoded_entry_count() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let mut pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_DECODE, 0).unwrap();
+
+    libsmb2_dcerpc::dcerpc_set_size_is(&mut pdu, 3);
+    assert_eq!(libsmb2_dcerpc::dcerpc_get_size_is(&pdu), 3);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:152`, `lib/dcerpc.c:1955`
+// Spec: dcerpc_get_size_is conformant size state#Carray coder reads stored entry count
+#[test]
+fn test_libsmb2_dcerpc_carray_coder_reads_stored_entry_count() {
+    let mut dce = libsmb2_dcerpc::dcerpc_create_context();
+    let mut pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_DECODE, 0).unwrap();
+
+    libsmb2_dcerpc::dcerpc_set_size_is(&mut pdu, 4);
+    assert_eq!(libsmb2_dcerpc::dcerpc_get_size_is(&pdu), 4);
 }

@@ -1771,6 +1771,22 @@ impl Smb2Client {
         Ok(())
     }
 
+    /// Advances one deterministic local async operation without an OS socket.
+    ///
+    /// This is used by C ABI adapters that provide their own poll-compatible
+    /// wake descriptor before real network transport is available.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ErrorCode(-22)` if the context has been closed or destroyed.
+    pub fn service_local_ready(&mut self) -> Result<()> {
+        self.ensure_context_active()?;
+        self.submit_next_operation();
+        self.complete_inflight_operation(None);
+        self.refresh_events();
+        Ok(())
+    }
+
     /// Processes an event mask using an injected byte transport instead of an OS socket.
     ///
     /// This writes deterministic local request frames for queued operations and

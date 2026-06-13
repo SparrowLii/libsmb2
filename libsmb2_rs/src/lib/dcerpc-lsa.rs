@@ -524,7 +524,7 @@ pub struct LsaLookupSids2Request {
     pub translated_names: LsaprTranslatedNamesEx,
     /// Lookup level.
     pub lookup_level: LsapLookupLevel,
-    /// Mapped-count input value.
+    /// Mapped-count field; the legacy request coder always emits zero.
     pub mapped_count: u32,
     /// Lookup options; the legacy request coder emits zero.
     pub lookup_options: u32,
@@ -843,6 +843,29 @@ pub fn decode_rpc_sid(bytes: &[u8]) -> DceRpcResult<RpcSid> {
     Ok(sid)
 }
 
+/// Encodes a standalone LSA `RPC_UNICODE_STRING` value.
+///
+/// # Errors
+///
+/// Returns [`DceRpcError`] when the local NDR codec cannot encode the string.
+pub fn encode_rpc_unicode_string(value: &RpcUnicodeString) -> DceRpcResult<Vec<u8>> {
+    let mut codec = NdrCodec::encoder();
+    code_unicode_string(&mut codec, &mut value.clone())?;
+    Ok(codec.into_bytes())
+}
+
+/// Decodes a standalone LSA `RPC_UNICODE_STRING` value.
+///
+/// # Errors
+///
+/// Returns [`DceRpcError`] when the encoded buffer is truncated or contains invalid UTF-16.
+pub fn decode_rpc_unicode_string(bytes: &[u8]) -> DceRpcResult<RpcUnicodeString> {
+    let mut value = RpcUnicodeString::default();
+    let mut codec = NdrCodec::decoder(bytes.to_vec());
+    code_unicode_string(&mut codec, &mut value)?;
+    Ok(value)
+}
+
 fn code_lsa_close_request(codec: &mut NdrCodec, req: &mut LsaCloseRequest) -> DceRpcResult<()> {
     codec.code_ref_pointer()?;
     let mut h = to_ndr_handle(&req.policy_handle);
@@ -895,9 +918,16 @@ fn code_lookup_sids2_request(
     let mut level = req.lookup_level as u32;
     codec.code_u32(&mut level)?;
     req.lookup_level = lookup_level_from_u32(level);
-    codec.code_u32(&mut req.mapped_count)?;
-    codec.code_u32(&mut req.lookup_options)?;
-    codec.code_u32(&mut req.client_revision)
+    let mut mapped_count = 0;
+    codec.code_u32(&mut mapped_count)?;
+    req.mapped_count = mapped_count;
+    let mut lookup_options = LSA_LOOKUP_SIDS2_LOOKUP_OPTIONS;
+    codec.code_u32(&mut lookup_options)?;
+    req.lookup_options = lookup_options;
+    let mut client_revision = LSA_LOOKUP_SIDS2_CLIENT_REVISION;
+    codec.code_u32(&mut client_revision)?;
+    req.client_revision = client_revision;
+    Ok(())
 }
 
 fn code_lookup_sids2_reply(

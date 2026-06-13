@@ -106,6 +106,27 @@ fn test_libsmb2_dcerpc_srvsvc_level_zero_record_carries_share_name() {
     assert_eq!(share.netname.value.as_deref(), Some("IPC$"));
 }
 
+// Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_SHARE_INFO_0_coder`, `lib/dcerpc-srvsvc.c:srvsvc_SHARE_INFO_0_coder`
+// Spec: srvsvc_SHARE_INFO_0_coder level zero coder#Level zero coder propagates UTF-16 coder failure
+// - **GIVEN** `ptr` 指向 `srvsvc_SHARE_INFO_0` 且底层 `dcerpc_ptr_coder` 返回错误
+// - **WHEN** 调用方执行 `srvsvc_SHARE_INFO_0_coder`
+// - **THEN** 该函数返回 `-1`
+#[test]
+fn test_libsmb2_dcerpc_srvsvc_level_zero_coder_propagates_utf_16_coder_failure() {
+    let share = SrvsvcShareInfo0 {
+        netname: DcerpcUtf16 {
+            value: Some("IPC$".to_string()),
+        },
+    };
+
+    let bytes = srvsvc_share_info_0_coder_harness(&share).unwrap();
+    let decoded = srvsvc_share_info_0_decoder_harness(&bytes).unwrap();
+    assert_eq!(decoded.netname.value.as_deref(), Some("IPC$"));
+
+    let err = srvsvc_share_info_0_decoder_harness(&bytes[..bytes.len() - 1]).unwrap_err();
+    assert_eq!(err, SrvsvcHarnessError::BufferTooSmall);
+}
+
 // Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_SHARE_INFO_0_CONTAINER`, `lib/dcerpc-srvsvc.c:srvsvc_SHARE_INFO_0_CONTAINER_coder`
 // Spec: srvsvc_SHARE_INFO_0_CONTAINER level zero container layout#Level zero container carries count and buffer
 // - **GIVEN** 调用方接收 level 0 share enum 响应
@@ -142,6 +163,31 @@ fn test_libsmb2_dcerpc_srvsvc_level_one_record_carries_name_type_and_remark() {
     assert_eq!(share.remark.value.as_deref(), Some("remark"));
 }
 
+// Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_SHARE_INFO_1_coder`, `lib/dcerpc-srvsvc.c:srvsvc_SHARE_INFO_1_coder`
+// Spec: srvsvc_SHARE_INFO_1_coder level one coder#Level one coder propagates field coder failure
+// - **GIVEN** `ptr` 指向 `srvsvc_SHARE_INFO_1` 且任一底层字段 coder 返回错误
+// - **WHEN** 调用方执行 `srvsvc_SHARE_INFO_1_coder`
+// - **THEN** 该函数返回 `-1`
+#[test]
+fn test_libsmb2_dcerpc_srvsvc_level_one_coder_propagates_field_coder_failure() {
+    let share = SrvsvcShareInfo1 {
+        netname: DcerpcUtf16 {
+            value: Some("IPC$".to_string()),
+        },
+        share_type: SHARE_TYPE_IPC | SHARE_TYPE_HIDDEN,
+        remark: DcerpcUtf16 {
+            value: Some("Remote IPC".to_string()),
+        },
+    };
+
+    let bytes = srvsvc_share_info_1_coder_harness(&share).unwrap();
+    let decoded = srvsvc_share_info_1_decoder_harness(&bytes).unwrap();
+    assert_eq!(decoded, share);
+
+    let err = srvsvc_share_info_1_decoder_harness(&bytes[..bytes.len() - 1]).unwrap_err();
+    assert_eq!(err, SrvsvcHarnessError::BufferTooSmall);
+}
+
 // Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_SHARE_INFO_1_CONTAINER`, `lib/dcerpc-srvsvc.c:srvsvc_SHARE_INFO_1_CONTAINER_coder`
 // Spec: srvsvc_SHARE_INFO_1_CONTAINER level one container layout#Level one container carries count and buffer
 // - **GIVEN** 调用方接收 level 1 share enum 响应
@@ -155,6 +201,36 @@ fn test_libsmb2_dcerpc_srvsvc_level_one_container_carries_count_and_buffer() {
     };
     assert_eq!(container.entries_read, 1);
     assert_eq!(container.share_info_1.len(), 1);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_SHARE_INFO_1_CONTAINER_coder`, `lib/dcerpc-srvsvc.c:srvsvc_SHARE_INFO_1_CONTAINER_coder`
+// Spec: srvsvc_SHARE_INFO_1_CONTAINER_coder level one container coder#Level one container decoder allocates missing array
+// - **GIVEN** DCERPC 方向为 decode、`EntriesRead` 非零且 `share_info_1` 为 `NULL`
+// - **WHEN** 调用方执行 `srvsvc_SHARE_INFO_1_CONTAINER_coder`
+// - **THEN** 该函数尝试分配 level 1 数组并在分配失败时返回 `-1`
+#[test]
+fn test_libsmb2_dcerpc_srvsvc_level_one_container_decoder_allocates_missing_array() {
+    let container = SrvsvcShareInfo1Container {
+        entries_read: 1,
+        share_info_1: vec![SrvsvcShareInfo1 {
+            netname: DcerpcUtf16 {
+                value: Some("IPC$".to_string()),
+            },
+            share_type: SHARE_TYPE_IPC | SHARE_TYPE_HIDDEN,
+            remark: DcerpcUtf16 {
+                value: Some("Remote IPC".to_string()),
+            },
+        }],
+    };
+
+    let bytes = srvsvc_share_info_1_container_coder_harness(&container).unwrap();
+    let decoded = srvsvc_share_info_1_container_decoder_harness(&bytes).unwrap();
+    assert_eq!(decoded.entries_read, 1);
+    assert_eq!(decoded.share_info_1.len(), 1);
+    assert_eq!(
+        decoded.share_info_1[0].netname.value.as_deref(),
+        Some("IPC$")
+    );
 }
 
 // Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_SHARE_ENUM_UNION`, `lib/dcerpc-srvsvc.c:srvsvc_SHARE_ENUM_UNION_coder`
@@ -209,6 +285,34 @@ fn test_libsmb2_dcerpc_srvsvc_netrshareenum_request_carries_server_and_paging_fi
     assert_eq!(request.resume_handle, 7);
 }
 
+// Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_NetrShareEnum_req_coder`, `lib/dcerpc-srvsvc.c:srvsvc_NetrShareEnum_req_coder`
+// Spec: srvsvc_NetrShareEnum_req_coder request coder#NetrShareEnum request coder propagates field failures
+// - **GIVEN** `ptr` 指向 `srvsvc_NetrShareEnum_req` 且任一字段底层 coder 返回错误
+// - **WHEN** 调用方执行 `srvsvc_NetrShareEnum_req_coder`
+// - **THEN** 该函数返回 `-1`
+#[test]
+fn test_libsmb2_dcerpc_srvsvc_netrshareenum_request_coder_propagates_field_failures() {
+    let request = SrvsvcNetrShareEnumReq {
+        server_name: DcerpcUtf16 {
+            value: Some("\\\\server".to_string()),
+        },
+        ses: SrvsvcShareEnumStruct {
+            level: 1,
+            share_info: SrvsvcShareEnumUnion::Level1(SrvsvcShareInfo1Container::default()),
+        },
+        preferred_maximum_length: SRVSVC_SHARE_ENUM_PREFERRED_MAXIMUM_LENGTH,
+        resume_handle: 0,
+    };
+
+    let bytes = srvsvc_netr_share_enum_req_coder_harness(&request).unwrap();
+    let decoded = srvsvc_netr_share_enum_req_decoder_harness(&bytes).unwrap();
+    assert_eq!(decoded.server_name.value.as_deref(), Some("\\\\server"));
+    assert_eq!(decoded.preferred_maximum_length, u32::MAX);
+
+    let err = srvsvc_netr_share_enum_req_decoder_harness(&bytes[..bytes.len() - 1]).unwrap_err();
+    assert_eq!(err, SrvsvcHarnessError::BufferTooSmall);
+}
+
 // Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_NetrShareEnum_rep`, `lib/dcerpc-srvsvc.c:srvsvc_NetrShareEnum_rep_coder`
 // Spec: srvsvc_NetrShareEnum_rep response layout#NetrShareEnum response carries status and enumeration data
 // - **GIVEN** share enum 操作完成并返回响应
@@ -232,6 +336,35 @@ fn test_libsmb2_dcerpc_srvsvc_netrshareenum_response_carries_status_and_enumerat
     ));
     assert_eq!(response.total_entries, 2);
     assert_eq!(response.resume_handle, 3);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_NetrShareEnum_rep_coder`, `lib/dcerpc-srvsvc.c:srvsvc_NetrShareEnum_rep_coder`
+// Spec: srvsvc_NetrShareEnum_rep_coder response coder#NetrShareEnum response coder propagates field failures
+// - **GIVEN** `ptr` 指向 `srvsvc_NetrShareEnum_rep` 且任一字段底层 coder 返回错误
+// - **WHEN** 调用方执行 `srvsvc_NetrShareEnum_rep_coder`
+// - **THEN** 该函数返回 `-1`
+#[test]
+fn test_libsmb2_dcerpc_srvsvc_netrshareenum_response_coder_propagates_field_failures() {
+    let response = SrvsvcNetrShareEnumRep {
+        status: 0,
+        ses: SrvsvcShareEnumStruct {
+            level: 1,
+            share_info: SrvsvcShareEnumUnion::Level1(SrvsvcShareInfo1Container {
+                entries_read: 1,
+                share_info_1: vec![SrvsvcShareInfo1::default()],
+            }),
+        },
+        total_entries: 1,
+        resume_handle: 0,
+    };
+
+    let bytes = srvsvc_netr_share_enum_rep_coder_harness(&response).unwrap();
+    let decoded = srvsvc_netr_share_enum_rep_decoder_harness(&bytes).unwrap();
+    assert_eq!(decoded.total_entries, 1);
+    assert_eq!(decoded.status, 0);
+
+    let err = srvsvc_netr_share_enum_rep_decoder_harness(&bytes[..bytes.len() - 1]).unwrap_err();
+    assert_eq!(err, SrvsvcHarnessError::BufferTooSmall);
 }
 
 // Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_SHARE_INFO`, `lib/dcerpc-srvsvc.c:srvsvc_SHARE_INFO_coder`
@@ -273,6 +406,33 @@ fn test_libsmb2_dcerpc_srvsvc_netrsharegetinfo_request_carries_target_share() {
     assert_eq!(request.level, 1);
 }
 
+// Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_NetrShareGetInfo_req_coder`, `lib/dcerpc-srvsvc.c:srvsvc_NetrShareGetInfo_req_coder`
+// Spec: srvsvc_NetrShareGetInfo_req_coder request coder#NetrShareGetInfo request coder propagates field failures
+// - **GIVEN** `ptr` 指向 `srvsvc_NetrShareGetInfo_req` 且任一字段底层 coder 返回错误
+// - **WHEN** 调用方执行 `srvsvc_NetrShareGetInfo_req_coder`
+// - **THEN** 该函数返回 `-1`
+#[test]
+fn test_libsmb2_dcerpc_srvsvc_netrsharegetinfo_request_coder_propagates_field_failures() {
+    let request = SrvsvcNetrShareGetInfoReq {
+        server_name: DcerpcUtf16 {
+            value: Some("\\\\server".to_string()),
+        },
+        netname: DcerpcUtf16 {
+            value: Some("IPC$".to_string()),
+        },
+        level: 1,
+    };
+
+    let bytes = srvsvc_netr_share_get_info_req_coder_harness(&request).unwrap();
+    let decoded = srvsvc_netr_share_get_info_req_decoder_harness(&bytes).unwrap();
+    assert_eq!(decoded.netname.value.as_deref(), Some("IPC$"));
+    assert_eq!(decoded.level, 1);
+
+    let err =
+        srvsvc_netr_share_get_info_req_decoder_harness(&bytes[..bytes.len() - 1]).unwrap_err();
+    assert_eq!(err, SrvsvcHarnessError::BufferTooSmall);
+}
+
 // Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_NetrShareGetInfo_rep`, `lib/dcerpc-srvsvc.c:srvsvc_NetrShareGetInfo_rep_coder`
 // Spec: srvsvc_NetrShareGetInfo_rep response layout#NetrShareGetInfo response carries status and info
 // - **GIVEN** NetrShareGetInfo 操作完成并返回响应
@@ -289,6 +449,68 @@ fn test_libsmb2_dcerpc_srvsvc_netrsharegetinfo_response_carries_status_and_info(
     };
     assert_eq!(response.status, 0);
     assert_eq!(response.info_struct.level, 1);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_NetrShareGetInfo_rep_coder`, `lib/dcerpc-srvsvc.c:srvsvc_NetrShareGetInfo_rep_coder`
+// Spec: srvsvc_NetrShareGetInfo_rep_coder response coder#NetrShareGetInfo response coder propagates field failures
+// - **GIVEN** `ptr` 指向 `srvsvc_NetrShareGetInfo_rep` 且任一字段底层 coder 返回错误
+// - **WHEN** 调用方执行 `srvsvc_NetrShareGetInfo_rep_coder`
+// - **THEN** 该函数返回 `-1`
+#[test]
+fn test_libsmb2_dcerpc_srvsvc_netrsharegetinfo_response_coder_propagates_field_failures() {
+    let response = SrvsvcNetrShareGetInfoRep {
+        status: 0,
+        info_struct: SrvsvcShareInfo {
+            level: 1,
+            payload: SrvsvcShareInfoPayload::ShareInfo1(SrvsvcShareInfo1 {
+                netname: DcerpcUtf16 {
+                    value: Some("IPC$".to_string()),
+                },
+                share_type: SHARE_TYPE_IPC | SHARE_TYPE_HIDDEN,
+                remark: DcerpcUtf16 {
+                    value: Some("Remote IPC".to_string()),
+                },
+            }),
+        },
+    };
+
+    let bytes = srvsvc_netr_share_get_info_rep_coder_harness(&response).unwrap();
+    let decoded = srvsvc_netr_share_get_info_rep_decoder_harness(&bytes).unwrap();
+    assert_eq!(decoded.info_struct.level, 1);
+    assert_eq!(decoded.status, 0);
+
+    let err =
+        srvsvc_netr_share_get_info_rep_decoder_harness(&bytes[..bytes.len() - 1]).unwrap_err();
+    assert_eq!(err, SrvsvcHarnessError::BufferTooSmall);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:smb2_share_enum_async`, `lib/smb2-share-enum.c:smb2_share_enum_async`
+// Spec: smb2_share_enum_async asynchronous share enumeration#Async share enum starts and reports through callback
+// - **GIVEN** `smb2` 已连接到 `IPC$` share 且资源分配成功
+// - **WHEN** 调用方执行 `smb2_share_enum_async` 并传入 callback
+// - **THEN** 函数返回 `0`，操作结果随后通过 callback 的 `status` 和 `command_data` 报告
+#[test]
+fn test_libsmb2_dcerpc_srvsvc_async_share_enum_boundary_requires_network() {
+    let boundary = share_enum_network_boundary();
+    assert!(boundary.requires_ipc_share);
+    assert!(boundary.requires_smb2_transport);
+    assert!(boundary.requires_dcerpc_bind);
+    assert!(!boundary.safe_offline_smoke_available);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:smb2_share_enum_sync`, `lib/sync.c:smb2_share_enum_sync`
+// Spec: smb2_share_enum_sync synchronous share enumeration#Sync share enum returns response pointer on success
+// - **GIVEN** `smb2` 已连接且异步 share enum 与等待回复均成功
+// - **WHEN** 调用方执行 `smb2_share_enum_sync`
+// - **THEN** 函数返回非 `NULL` 的 `struct srvsvc_NetrShareEnum_rep *`
+#[test]
+fn test_libsmb2_dcerpc_srvsvc_sync_share_enum_boundary_requires_network() {
+    let boundary = share_enum_network_boundary();
+    assert_eq!(
+        boundary.reason,
+        "smb2_share_enum_async/sync require a live SMB2 IPC$ tree and srvsvc DCERPC bind"
+    );
+    assert!(!boundary.safe_offline_smoke_available);
 }
 
 // Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_rep`, `lib/smb2-share-enum.c:srvsvc_ioctl_cb`

@@ -1,3 +1,5 @@
+use libsmb2_rs::lib::smb2_cmd_notify_change;
+use libsmb2_rs::lib::smb2_cmd_query_directory;
 use libsmb2_sys::smb2::smb2 as protocol;
 
 // Trace: `include/smb2/smb2.h:114`, `specs/include/smb2/smb2.spec.md:25`
@@ -398,4 +400,145 @@ fn test_smb2_lock_element_model_stores_range_and_flags() {
     assert_eq!(element.offset, 64);
     assert_eq!(element.length, 128);
     assert_eq!(element.flags, 1);
+}
+
+// Trace: `include/smb2/smb2.h:smb2_get_file_id`, `lib/libsmb2.c:smb2_get_file_id`
+// Spec: smb2_get_file_id expose handle file identifier#返回句柄内部 file id 指针
+#[test]
+fn test_smb2_get_file_id_model_exposes_internal_identifier() {
+    let handle = libsmb2_rs::lib::libsmb2::Smb2FileHandle::new([0x5a; 16]);
+
+    assert_eq!(handle.file_id, [0x5a; 16]);
+}
+
+// Trace: `include/smb2/smb2.h:smb2_fh_from_file_id`, `lib/libsmb2.c:smb2_fh_from_file_id`
+// Spec: smb2_fh_from_file_id allocate handle from identifier#成功复制 file id
+#[test]
+fn test_smb2_fh_from_file_id_model_copies_identifier() {
+    let mut source = [0x21_u8; 16];
+    source[0] = 0x7f;
+    let handle = libsmb2_rs::lib::libsmb2::Smb2FileHandle::new(source);
+    source.fill(0);
+
+    assert_eq!(handle.file_id[0], 0x7f);
+    assert_eq!(handle.file_id[1..], [0x21; 15]);
+}
+
+// Trace: `include/smb2/smb2.h:smb2_decode_fileidfulldirectoryinformation`, `lib/smb2-cmd-query-directory.c:smb2_decode_fileidfulldirectoryinformation`
+// Spec: smb2_decode_fileidfulldirectoryinformation decode directory entry#解码有效目录项
+#[test]
+fn test_smb2_decode_fileid_full_directory_valid_entry() {
+    let buffer = fileid_full_directory_entry("ab");
+    let decoded = smb2_cmd_query_directory::smb2_decode_fileidfulldirectoryinformation(&buffer)
+        .unwrap();
+
+    assert_eq!(decoded.file_index, 7);
+    assert_eq!(decoded.end_of_file, 0x0102_0304_0506_0708);
+    assert_eq!(decoded.allocation_size, 0x1112_1314_1516_1718);
+    assert_eq!(decoded.file_attributes, 0x20);
+    assert_eq!(decoded.ea_size, 3);
+    assert_eq!(decoded.file_id, 0xa1a2_a3a4_a5a6_a7a8);
+    assert_eq!(decoded.name, "ab");
+}
+
+// Trace: `include/smb2/smb2.h:smb2_decode_fileidfulldirectoryinformation`, `lib/smb2-cmd-query-directory.c:smb2_decode_fileidfulldirectoryinformation`
+// Spec: smb2_decode_fileidfulldirectoryinformation decode directory entry#拒绝越界名称
+#[test]
+fn test_smb2_decode_fileid_full_directory_rejects_oob_name() {
+    let mut buffer = fileid_full_directory_entry("ab");
+    write_u32(&mut buffer, 60, 100);
+
+    let result = smb2_cmd_query_directory::smb2_decode_fileidfulldirectoryinformation(&buffer);
+
+    assert_eq!(result, Err(smb2_cmd_query_directory::QueryDirectoryError::MalformedName));
+}
+
+// Trace: `include/smb2/smb2.h:smb2_decode_filenotifychangeinformation`, `lib/libsmb2.c:smb2_decode_filenotifychangeinformation`
+// Spec: smb2_decode_filenotifychangeinformation decode notify chain#解码单个通知记录
+#[test]
+fn test_smb2_decode_filenotify_single_record() {
+    let buffer = notify_record(1, "a");
+    let records = smb2_cmd_notify_change::smb2_decode_file_notify_information_records(&buffer)
+        .unwrap();
+
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].action, 1);
+    assert_eq!(records[0].file_name, "a");
+}
+
+// Trace: `include/smb2/smb2.h:smb2_decode_filenotifychangeinformation`, `lib/libsmb2.c:smb2_decode_filenotifychangeinformation`
+// Spec: smb2_decode_filenotifychangeinformation decode notify chain#解码链式通知记录
+#[test]
+fn test_smb2_decode_filenotify_chain_records() {
+    let buffer = notify_chain();
+    let records = smb2_cmd_notify_change::smb2_decode_file_notify_information_records(&buffer)
+        .unwrap();
+
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].file_name, "a");
+    assert_eq!(records[1].action, 3);
+    assert_eq!(records[1].file_name, "b");
+}
+
+// Trace: `include/smb2/smb2.h:smb2_decode_filenotifychangeinformation`, `lib/libsmb2.c:smb2_decode_filenotifychangeinformation`
+// Spec: smb2_decode_filenotifychangeinformation decode notify chain#短缓冲区返回成功且不解码
+#[test]
+fn test_smb2_decode_filenotify_short_buffer_is_rejected_by_safe_decoder() {
+    let result = smb2_cmd_notify_change::smb2_decode_file_notify_information_records(&[0_u8; 4]);
+
+    assert_eq!(result, Err(smb2_cmd_notify_change::ChangeNotifyError::BufferTooShort));
+}
+
+fn fileid_full_directory_entry(name: &str) -> Vec<u8> {
+    let name_bytes = utf16le(name);
+    let mut buffer = vec![0_u8; 80 + name_bytes.len()];
+    write_u32(&mut buffer, 4, 7);
+    write_u64(&mut buffer, 40, 0x0102_0304_0506_0708);
+    write_u64(&mut buffer, 48, 0x1112_1314_1516_1718);
+    write_u32(&mut buffer, 56, 0x20);
+    write_u32(&mut buffer, 60, name_bytes.len() as u32);
+    write_u32(&mut buffer, 64, 3);
+    write_u64(&mut buffer, 72, 0xa1a2_a3a4_a5a6_a7a8);
+    buffer[80..].copy_from_slice(&name_bytes);
+    buffer
+}
+
+fn notify_record(action: u32, name: &str) -> Vec<u8> {
+    let name_bytes = utf16le(name);
+    let mut buffer = vec![0_u8; 12 + name_bytes.len()];
+    write_u32(&mut buffer, 4, action);
+    write_u32(&mut buffer, 8, name_bytes.len() as u32);
+    buffer[12..].copy_from_slice(&name_bytes);
+    buffer
+}
+
+fn notify_chain() -> Vec<u8> {
+    let first_name = utf16le("a");
+    let second_name = utf16le("b");
+    let first_len = 12 + first_name.len();
+    let first_padded = (first_len + 3) & !3;
+    let mut buffer = vec![0_u8; first_padded + 12 + second_name.len()];
+    write_u32(&mut buffer, 0, first_padded as u32);
+    write_u32(&mut buffer, 4, 1);
+    write_u32(&mut buffer, 8, first_name.len() as u32);
+    buffer[12..12 + first_name.len()].copy_from_slice(&first_name);
+    write_u32(&mut buffer, first_padded + 4, 3);
+    write_u32(&mut buffer, first_padded + 8, second_name.len() as u32);
+    buffer[first_padded + 12..].copy_from_slice(&second_name);
+    buffer
+}
+
+fn utf16le(value: &str) -> Vec<u8> {
+    value
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>()
+}
+
+fn write_u32(buffer: &mut [u8], offset: usize, value: u32) {
+    buffer[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_u64(buffer: &mut [u8], offset: usize, value: u64) {
+    buffer[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
 }

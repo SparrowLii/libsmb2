@@ -1,11 +1,5 @@
 use libsmb2_sys::legacy::asn1_ber::{BerType, Decoder, Encoder, OidValue};
 
-fn decode_err(input: &[u8], f: impl FnOnce(&mut Decoder) -> Result<u32, i32>) -> (i32, i32) {
-    let mut decoder = Decoder::new(input);
-    let err = f(&mut decoder).unwrap_err();
-    (err, decoder.last_error())
-}
-
 // Trace: `lib/asn1-ber.c:asn1ber_save_out_state`
 // Spec: asn1ber_save_out_state snapshots encoder position#save valid output state
 // - **GIVEN** `actx` 指向有效上下文，`actx->dst` 非空，`actx->dst_head < actx->dst_size`，且 `out_pos` 非空
@@ -68,7 +62,11 @@ fn test_asn1_ber_decode_short_form_length() {
 // - **THEN** 函数设置 `actx->last_error` 为 `-E2BIG` 并返回 `-1`
 #[test]
 fn test_asn1_ber_reject_oversized_long_form_length() {
-    assert_eq!(decode_err(&[0x85], Decoder::decode_length), (-7, -7));
+    let mut decoder = Decoder::new(&[0x85]);
+    let err = decoder.decode_length().unwrap_err();
+
+    assert_eq!(err, -7);
+    assert_eq!(decoder.last_error(), -7);
 }
 
 // Trace: `lib/asn1-ber.c:ber_typecode_from_ber`
@@ -114,10 +112,11 @@ fn test_asn1_ber_decode_request_opcode_and_length() {
 // - **THEN** 函数设置 `actx->last_error` 为 `-EINVAL` 并返回 `-1`
 #[test]
 fn test_asn1_ber_reject_non_structure_type() {
-    assert_eq!(
-        decode_err(&[0x05, 0x00], Decoder::decode_struct_len),
-        (-22, -22)
-    );
+    let mut decoder = Decoder::new(&[0x05, 0x00]);
+    let err = decoder.decode_struct_len().unwrap_err();
+
+    assert_eq!(err, -22);
+    assert_eq!(decoder.last_error(), -22);
 }
 
 // Trace: `lib/asn1-ber.c:asn1ber_null_from_ber`
@@ -127,10 +126,11 @@ fn test_asn1_ber_reject_non_structure_type() {
 // - **THEN** 函数设置 `actx->last_error` 为 `-EINVAL` 并返回 `-1`
 #[test]
 fn test_asn1_ber_reject_non_null_type() {
-    assert_eq!(
-        decode_err(&[0x30, 0x00], Decoder::decode_null_len),
-        (-22, -22)
-    );
+    let mut decoder = Decoder::new(&[0x30, 0x00]);
+    let err = decoder.decode_null_len().unwrap_err();
+
+    assert_eq!(err, -22);
+    assert_eq!(decoder.last_error(), -22);
 }
 
 // Trace: `lib/asn1-ber.c:asn1ber_int32_from_ber`
