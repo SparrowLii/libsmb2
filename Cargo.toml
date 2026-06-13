@@ -1,0 +1,3 @@
+[workspace]
+members = ["libsmb2_sys", "simb2_rs"]
+resolver = "2"

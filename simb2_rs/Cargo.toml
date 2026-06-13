@@ -1,0 +1,16 @@
+[package]
+name = "simb2_rs"
+version = "0.1.0"
+edition = "2021"
+license = "LGPL-2.1-or-later"
+description = "Rust migration skeleton for libsmb2"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = []
+migration_modules = []
+
+[dependencies]
+libsmb2_sys = { path = "../libsmb2_sys" }

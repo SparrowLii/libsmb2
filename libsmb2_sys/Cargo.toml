@@ -1,0 +1,12 @@
+[package]
+name = "libsmb2_sys"
+version = "0.1.0"
+edition = "2021"
+links = "libsmb2_sys_ffi"
+
+[lib]
+path = "src/lib.rs"
+
+[build-dependencies]
+bindgen = "0.69"
+cc = "1.0"

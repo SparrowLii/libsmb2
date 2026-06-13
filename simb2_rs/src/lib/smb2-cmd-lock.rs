@@ -1,0 +1,407 @@
+//! LOCK command pack/unpack skeleton migrated from `lib/smb2-cmd-lock.c`.
+
+/// Size of an SMB2 file identifier carried by LOCK requests.
+pub const SMB2_FD_SIZE: usize = 16;
+
+/// Wire structure size for an SMB2 LOCK request.
+pub const SMB2_LOCK_REQUEST_SIZE: u16 = 48;
+
+/// Wire structure size for an SMB2 LOCK reply.
+pub const SMB2_LOCK_REPLY_SIZE: u16 = 4;
+
+/// Wire size of one SMB2 LOCK element.
+pub const SMB2_LOCK_ELEMENT_SIZE: usize = 24;
+
+const LOCK_REQUEST_FIXED_LEN: usize = (SMB2_LOCK_REQUEST_SIZE as usize) & !1;
+const LOCK_REPLY_FIXED_LEN: usize = (SMB2_LOCK_REPLY_SIZE as usize) & !1;
+const LOCK_SEQUENCE_NUMBER_SHIFT: u32 = 28;
+const LOCK_SEQUENCE_INDEX_MASK: u32 = 0x0fff_ffff;
+
+/// Errors returned by the LOCK command migration skeleton.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Smb2LockError {
+    /// A fixed or variable byte buffer is shorter than the C decoder expects.
+    BufferTooSmall,
+    /// The structure-size field does not match the expected SMB2 LOCK shape.
+    InvalidStructureSize { expected: u16, actual: u16 },
+    /// A LOCK request did not contain the mandatory first lock element.
+    MissingLockElement,
+    /// A declared lock count cannot fit in the target Rust type.
+    LockCountOverflow,
+}
+
+/// Result type used by the LOCK command skeleton.
+pub type Smb2LockResult<T> = Result<T, Smb2LockError>;
+
+/// Minimal iovec-style byte segment used by the LOCK command skeleton.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Smb2LockIoVector {
+    data: Vec<u8>,
+}
+
+impl Smb2LockIoVector {
+    /// Creates a new byte-vector segment.
+    #[must_use]
+    pub fn new(data: Vec<u8>) -> Self {
+        Self { data }
+    }
+
+    /// Returns the segment bytes.
+    #[must_use]
+    pub fn as_slice(&self) -> &[u8] {
+        &self.data
+    }
+
+    /// Returns the segment length in bytes.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    /// Returns true when the segment has no bytes.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+}
+
+/// Rust-side representation of `struct smb2_lock_element`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Smb2LockElement {
+    /// Starting file offset covered by the lock.
+    pub offset: u64,
+    /// Length in bytes covered by the lock.
+    pub length: u64,
+    /// SMB2 lock flags for shared/exclusive/unlock/fail-immediately behavior.
+    pub flags: u32,
+}
+
+/// Rust-side representation of `struct smb2_lock_request`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Smb2LockRequest {
+    /// High four bits stored in the C combined lock sequence field.
+    pub lock_sequence_number: u32,
+    /// Low twenty-eight bits stored in the C combined lock sequence field.
+    pub lock_sequence_index: u32,
+    /// Opaque SMB2 file identifier.
+    pub file_id: [u8; SMB2_FD_SIZE],
+    /// LOCK elements carried by the request.
+    pub locks: Vec<Smb2LockElement>,
+}
+
+impl Smb2LockRequest {
+    /// Creates a LOCK request skeleton for `file_id` and `locks`.
+    #[must_use]
+    pub fn new(file_id: [u8; SMB2_FD_SIZE], locks: Vec<Smb2LockElement>) -> Self {
+        Self {
+            lock_sequence_number: 0,
+            lock_sequence_index: 0,
+            file_id,
+            locks,
+        }
+    }
+
+    /// Returns the lock count encoded in the fixed request body.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Smb2LockError::LockCountOverflow`] when the number of locks
+    /// cannot fit in the SMB2 `u16` lock-count field.
+    pub fn lock_count(&self) -> Smb2LockResult<u16> {
+        u16::try_from(self.locks.len()).map_err(|_| Smb2LockError::LockCountOverflow)
+    }
+
+    /// Returns the combined lock sequence field used by the C encoder.
+    #[must_use]
+    pub fn lock_sequence_word(&self) -> u32 {
+        (self.lock_sequence_number << LOCK_SEQUENCE_NUMBER_SHIFT)
+            | (self.lock_sequence_index & LOCK_SEQUENCE_INDEX_MASK)
+    }
+
+    /// Returns the variable byte count expected after the fixed LOCK request.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Smb2LockError::MissingLockElement`] when the request has no
+    /// first lock element, matching the C decoder's rejection of zero locks.
+    pub fn variable_locks_len(&self) -> Smb2LockResult<usize> {
+        let count = usize::from(self.lock_count()?);
+        if count == 0 {
+            return Err(Smb2LockError::MissingLockElement);
+        }
+        Ok(SMB2_LOCK_ELEMENT_SIZE * (count - 1))
+    }
+}
+
+/// Rust-side representation of the empty SMB2 LOCK reply body.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Smb2LockReply;
+
+/// Minimal PDU skeleton produced by LOCK async constructors.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Smb2LockPdu<T> {
+    /// SMB2 command code represented by this PDU skeleton.
+    pub command: Smb2LockCommand,
+    /// Outgoing byte segments generated by the encoder skeleton.
+    pub out: Vec<Smb2LockIoVector>,
+    /// Decoded request or reply payload associated with the PDU.
+    pub payload: Option<T>,
+}
+
+/// SMB2 LOCK command identifier.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Smb2LockCommand {
+    /// SMB2 LOCK command, matching command code `0x000a`.
+    #[default]
+    Lock,
+}
+
+/// Encodes the fixed LOCK request body and any trailing lock elements.
+///
+/// # Errors
+///
+/// Returns an error when the request contains no locks or too many locks for
+/// the SMB2 lock-count field.
+pub fn smb2_encode_lock_request(
+    request: &Smb2LockRequest,
+) -> Smb2LockResult<Vec<Smb2LockIoVector>> {
+    let lock_count = request.lock_count()?;
+    let first_lock = request
+        .locks
+        .first()
+        .ok_or(Smb2LockError::MissingLockElement)?;
+
+    let mut fixed = vec![0; LOCK_REQUEST_FIXED_LEN];
+    put_u16(&mut fixed, 0, SMB2_LOCK_REQUEST_SIZE)?;
+    put_u16(&mut fixed, 2, lock_count)?;
+    put_u32(&mut fixed, 4, request.lock_sequence_word())?;
+    put_slice(&mut fixed, 8, &request.file_id)?;
+    put_lock_element(&mut fixed, 24, first_lock)?;
+
+    let mut vectors = vec![Smb2LockIoVector::new(fixed)];
+    if request.locks.len() > 1 {
+        let trailing_len = pad_to_64bit(SMB2_LOCK_ELEMENT_SIZE * (request.locks.len() - 1));
+        let mut trailing = vec![0; trailing_len];
+        for (index, element) in request.locks[1..].iter().enumerate() {
+            put_lock_element(&mut trailing, index * SMB2_LOCK_ELEMENT_SIZE, element)?;
+        }
+        vectors.push(Smb2LockIoVector::new(trailing));
+    }
+
+    Ok(vectors)
+}
+
+/// Builds a LOCK request PDU skeleton, mirroring `smb2_cmd_lock_async`.
+///
+/// # Errors
+///
+/// Returns an error when the request cannot be represented by the skeleton
+/// encoder, for example because it contains no lock elements.
+pub fn smb2_cmd_lock_async(
+    request: Smb2LockRequest,
+) -> Smb2LockResult<Smb2LockPdu<Smb2LockRequest>> {
+    let out = smb2_encode_lock_request(&request)?;
+    Ok(Smb2LockPdu {
+        command: Smb2LockCommand::Lock,
+        out,
+        payload: Some(request),
+    })
+}
+
+/// Encodes the fixed LOCK reply body.
+///
+/// # Errors
+///
+/// Returns an error if the skeleton buffer cannot hold the fixed reply fields.
+pub fn smb2_encode_lock_reply() -> Smb2LockResult<Vec<Smb2LockIoVector>> {
+    let mut fixed = vec![0; LOCK_REPLY_FIXED_LEN];
+    put_u16(&mut fixed, 0, SMB2_LOCK_REPLY_SIZE)?;
+    Ok(vec![Smb2LockIoVector::new(fixed)])
+}
+
+/// Builds a LOCK reply PDU skeleton, mirroring `smb2_cmd_lock_reply_async`.
+///
+/// # Errors
+///
+/// Returns an error if the fixed reply skeleton cannot be encoded.
+pub fn smb2_cmd_lock_reply_async() -> Smb2LockResult<Smb2LockPdu<Smb2LockReply>> {
+    Ok(Smb2LockPdu {
+        command: Smb2LockCommand::Lock,
+        out: smb2_encode_lock_reply()?,
+        payload: Some(Smb2LockReply),
+    })
+}
+
+/// Parses the fixed LOCK reply body handled by `smb2_process_lock_fixed`.
+///
+/// # Errors
+///
+/// Returns an error when `fixed` is too small or its structure-size field is invalid.
+pub fn smb2_process_lock_fixed(fixed: &[u8]) -> Smb2LockResult<Smb2LockReply> {
+    require_len(fixed, LOCK_REPLY_FIXED_LEN)?;
+    let struct_size = get_u16(fixed, 0)?;
+    if struct_size != SMB2_LOCK_REPLY_SIZE || usize::from(struct_size & 0xfffe) != fixed.len() {
+        return Err(Smb2LockError::InvalidStructureSize {
+            expected: SMB2_LOCK_REPLY_SIZE,
+            actual: struct_size,
+        });
+    }
+    Ok(Smb2LockReply)
+}
+
+/// Parses the fixed LOCK request body handled by `smb2_process_lock_request_fixed`.
+///
+/// The returned `usize` is the number of variable bytes expected for remaining
+/// lock elements after the first fixed-body lock.
+///
+/// # Errors
+///
+/// Returns an error when `fixed` is too small, has an invalid structure size,
+/// or advertises zero lock elements.
+pub fn smb2_process_lock_request_fixed(fixed: &[u8]) -> Smb2LockResult<(Smb2LockRequest, usize)> {
+    require_len(fixed, LOCK_REQUEST_FIXED_LEN)?;
+    let struct_size = get_u16(fixed, 0)?;
+    if struct_size != SMB2_LOCK_REQUEST_SIZE || usize::from(struct_size & 0xfffe) != fixed.len() {
+        return Err(Smb2LockError::InvalidStructureSize {
+            expected: SMB2_LOCK_REQUEST_SIZE,
+            actual: struct_size,
+        });
+    }
+
+    let lock_count = get_u16(fixed, 2)?;
+    if lock_count == 0 {
+        return Err(Smb2LockError::MissingLockElement);
+    }
+
+    let sequence_word = get_u32(fixed, 4)?;
+    let mut file_id = [0; SMB2_FD_SIZE];
+    let file_id_bytes = fixed
+        .get(8..8 + SMB2_FD_SIZE)
+        .ok_or(Smb2LockError::BufferTooSmall)?;
+    file_id.copy_from_slice(file_id_bytes);
+
+    let mut request = Smb2LockRequest {
+        lock_sequence_number: sequence_word >> LOCK_SEQUENCE_NUMBER_SHIFT,
+        lock_sequence_index: sequence_word & LOCK_SEQUENCE_INDEX_MASK,
+        file_id,
+        locks: Vec::with_capacity(usize::from(lock_count)),
+    };
+    request.locks.push(parse_lock_element(fixed, 24)?);
+
+    Ok((
+        request,
+        SMB2_LOCK_ELEMENT_SIZE * (usize::from(lock_count) - 1),
+    ))
+}
+
+/// Parses the variable LOCK request body handled by `smb2_process_lock_request_variable`.
+///
+/// # Errors
+///
+/// Returns an error when `variable` is shorter than the remaining lock elements
+/// declared by the fixed request.
+pub fn smb2_process_lock_request_variable(
+    request: &mut Smb2LockRequest,
+    variable: &[u8],
+    declared_lock_count: u16,
+) -> Smb2LockResult<()> {
+    let parsed_count = request.locks.len();
+    let declared_count = usize::from(declared_lock_count);
+    if declared_count < parsed_count {
+        return Err(Smb2LockError::MissingLockElement);
+    }
+
+    let remaining_count = declared_count - parsed_count;
+    let locks = smb2_parse_locks(variable, 0, remaining_count)?;
+    request.locks.extend(locks);
+    Ok(())
+}
+
+fn smb2_parse_locks(
+    input: &[u8],
+    offset: usize,
+    count: usize,
+) -> Smb2LockResult<Vec<Smb2LockElement>> {
+    let mut elements = Vec::with_capacity(count);
+    for index in 0..count {
+        elements.push(parse_lock_element(
+            input,
+            offset + index * SMB2_LOCK_ELEMENT_SIZE,
+        )?);
+    }
+    Ok(elements)
+}
+
+fn parse_lock_element(input: &[u8], offset: usize) -> Smb2LockResult<Smb2LockElement> {
+    Ok(Smb2LockElement {
+        offset: get_u64(input, offset)?,
+        length: get_u64(input, offset + 8)?,
+        flags: get_u32(input, offset + 16)?,
+    })
+}
+
+fn put_lock_element(
+    output: &mut [u8],
+    offset: usize,
+    element: &Smb2LockElement,
+) -> Smb2LockResult<()> {
+    put_u64(output, offset, element.offset)?;
+    put_u64(output, offset + 8, element.length)?;
+    put_u32(output, offset + 16, element.flags)
+}
+
+fn pad_to_64bit(value: usize) -> usize {
+    (value + 7) & !7
+}
+
+fn require_len(input: &[u8], expected: usize) -> Smb2LockResult<()> {
+    if input.len() < expected {
+        Err(Smb2LockError::BufferTooSmall)
+    } else {
+        Ok(())
+    }
+}
+
+fn get_u16(input: &[u8], offset: usize) -> Smb2LockResult<u16> {
+    let bytes = input
+        .get(offset..offset + 2)
+        .ok_or(Smb2LockError::BufferTooSmall)?;
+    Ok(u16::from_le_bytes([bytes[0], bytes[1]]))
+}
+
+fn get_u32(input: &[u8], offset: usize) -> Smb2LockResult<u32> {
+    let bytes = input
+        .get(offset..offset + 4)
+        .ok_or(Smb2LockError::BufferTooSmall)?;
+    Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+}
+
+fn get_u64(input: &[u8], offset: usize) -> Smb2LockResult<u64> {
+    let bytes = input
+        .get(offset..offset + 8)
+        .ok_or(Smb2LockError::BufferTooSmall)?;
+    Ok(u64::from_le_bytes([
+        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+    ]))
+}
+
+fn put_slice(output: &mut [u8], offset: usize, value: &[u8]) -> Smb2LockResult<()> {
+    let destination = output
+        .get_mut(offset..offset + value.len())
+        .ok_or(Smb2LockError::BufferTooSmall)?;
+    destination.copy_from_slice(value);
+    Ok(())
+}
+
+fn put_u16(output: &mut [u8], offset: usize, value: u16) -> Smb2LockResult<()> {
+    put_slice(output, offset, &value.to_le_bytes())
+}
+
+fn put_u32(output: &mut [u8], offset: usize, value: u32) -> Smb2LockResult<()> {
+    put_slice(output, offset, &value.to_le_bytes())
+}
+
+fn put_u64(output: &mut [u8], offset: usize, value: u64) -> Smb2LockResult<()> {
+    put_slice(output, offset, &value.to_le_bytes())
+}
