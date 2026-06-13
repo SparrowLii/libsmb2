@@ -61,10 +61,7 @@ impl Smb2TreeConnectContext {
 
     /// Returns the current connected tree id.
     pub fn tree_id(&self) -> u32 {
-        match self.tree_ids.first().copied() {
-            Some(tree_id) => tree_id,
-            None => 0,
-        }
+        self.tree_ids.first().copied().unwrap_or_default()
     }
 
     /// Returns the active tree-id stack, newest/current tree first.

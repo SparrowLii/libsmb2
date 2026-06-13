@@ -1,6 +1,12 @@
 pub const LSA_CLOSE: u32 = 0x00;
 pub const LSA_OPENPOLICY2: u32 = 0x2c;
 pub const LSA_LOOKUPSIDS2: u32 = 0x39;
+pub const LSA_UUID_PARTS: (u32, u16, u16, [u8; 8]) = (
+    0x1234_5778,
+    0x1234,
+    0xabcd,
+    [0xef, 0x00, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab],
+);
 
 pub const POLICY_VIEW_LOCAL_INFORMATION: u32 = 0x0000_0001;
 pub const POLICY_VIEW_AUDIT_INFORMATION: u32 = 0x0000_0002;

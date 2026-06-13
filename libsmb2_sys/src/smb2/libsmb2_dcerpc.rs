@@ -2,6 +2,8 @@ pub const DCERPC_DR_BIG_ENDIAN: u8 = 0x00;
 pub const DCERPC_DR_LITTLE_ENDIAN: u8 = 0x10;
 pub const DCERPC_DR_ASCII: u8 = 0x00;
 pub const DCERPC_DR_EBCDIC: u8 = 0x01;
+pub const DCERPC_DECODE: i32 = 0;
+pub const DCERPC_ENCODE: i32 = 1;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct DceRpcContext;

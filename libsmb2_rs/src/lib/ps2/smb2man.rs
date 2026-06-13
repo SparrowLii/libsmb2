@@ -9,6 +9,9 @@ pub const VER_MAJOR: u8 = 2;
 /// Minor version passed to the legacy `IRX_ID` declaration.
 pub const VER_MINOR: u8 = 2;
 
+/// Negative errno returned when PS2SDK device registration is unavailable.
+pub const ENOSYS_UNSUPPORTED: i32 = -38;
+
 /// Allocation strategy selected by the legacy `malloc` wrapper.
 pub const ALLOC_FIRST: AllocationMode = AllocationMode::First;
 
@@ -56,7 +59,7 @@ pub struct NoopDeviceInitializer;
 
 impl Smb2DeviceInitializer for NoopDeviceInitializer {
     fn smb2_initdev(&mut self) -> i32 {
-        0
+        ENOSYS_UNSUPPORTED
     }
 }
 
@@ -242,4 +245,16 @@ pub fn calloc<A: Ps2MemoryAllocator>(
     size: usize,
 ) -> MemoryResult<SystemMemoryBlock> {
     allocator.calloc(nmemb, size)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_initializer_reports_unsupported() {
+        let mut manager = Smb2Man::default();
+
+        assert_eq!(manager.start(&[]), ENOSYS_UNSUPPORTED);
+    }
 }

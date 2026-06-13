@@ -1,7 +1,7 @@
 //! PDU allocation, queueing, packing, and unpacking migrated from `lib/pdu.c`.
 
 use crate::include::libsmb2_private::{
-    Context, IoVec, IoVectors, Smb2Header, SMB2_HEADER_SIZE, SMB2_MAX_VECTORS,
+    Context, IoVec, IoVectors, Payload, Smb2Header, SMB2_HEADER_SIZE, SMB2_MAX_VECTORS,
 };
 use crate::include::smb2::libsmb2::CommandCallback;
 use crate::include::smb2::smb2::{
@@ -20,6 +20,14 @@ use crate::include::smb2::smb2::{
 use crate::lib::smb2_cmd_echo::{smb2_process_echo_fixed, smb2_process_echo_request_fixed};
 use crate::lib::smb2_cmd_flush::{smb2_process_flush_fixed, smb2_process_flush_request_fixed};
 use crate::lib::smb2_cmd_logoff::{smb2_process_logoff_fixed, smb2_process_logoff_request_fixed};
+use crate::lib::smb2_signing::{
+    smb2_pdu_add_signature, smb2_pdu_check_signature, SigningError, Smb2SigningContext,
+    SMB2_FLAGS_SIGNED,
+};
+use crate::lib::smb3_seal::{
+    smb3_decrypt_pdu, smb3_encrypt_pdu, Smb3EncryptionCipher, Smb3SealContext, Smb3SealError,
+    Smb3SealPdu, SMB3_TRANSFORM_PROTOCOL_ID,
+};
 
 pub use crate::include::libsmb2_private::Pdu;
 
@@ -199,10 +207,68 @@ pub enum PduError {
     TooManyVectors,
     /// A command id is not part of the migrated SMB2 command table.
     UnknownCommand,
+    /// SMB2/SMB3 signing failed while encoding or decoding the PDU.
+    Signing(SigningError),
+    /// SMB3 sealing failed while encoding or decoding a transform PDU.
+    Sealing(Smb3SealError),
+}
+
+impl From<SigningError> for PduError {
+    fn from(value: SigningError) -> Self {
+        Self::Signing(value)
+    }
+}
+
+impl From<Smb3SealError> for PduError {
+    fn from(value: Smb3SealError) -> Self {
+        Self::Sealing(value)
+    }
 }
 
 /// Result alias used by PDU skeleton helpers.
 pub type PduResult<T> = core::result::Result<T, PduError>;
+
+/// SMB2 header fields that can be read or updated directly in encoded bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Smb2HeaderField {
+    /// Header structure size.
+    StructSize,
+    /// Credit charge.
+    CreditCharge,
+    /// Status or channel sequence field.
+    Status,
+    /// Command id.
+    Command,
+    /// Credit request or response field.
+    CreditRequestResponse,
+    /// Header flags.
+    Flags,
+    /// Compound next command offset.
+    NextCommand,
+    /// Message id.
+    MessageId,
+    /// Synchronous process id.
+    ProcessId,
+    /// Synchronous tree id.
+    TreeId,
+    /// Asynchronous id.
+    AsyncId,
+    /// Session id.
+    SessionId,
+}
+
+/// Ownership state for bytes associated with a PDU payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PduPayloadState {
+    /// No payload bytes are currently associated with the PDU.
+    Empty,
+    /// Payload bytes are retained in the PDU payload slot.
+    Owned { len: usize },
+    /// Payload bytes are represented by incoming vectors.
+    InputVectors { len: usize },
+    /// Payload bytes are represented by outgoing vectors after the header vector.
+    OutputVectors { len: usize },
+}
 
 /// Fixed request and reply sizes used by PDU dispatch sizing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -324,10 +390,8 @@ pub fn smb2_free_iovector(vectors: &mut IoVectors) {
 pub fn smb2_pad_to_64bit(vectors: &mut IoVectors) -> usize {
     let len = vectors_total_len(vectors);
     let pad = (8 - (len & 0x07)) & 0x07;
-    if pad > 0 {
-        if smb2_add_iovector(vectors, vec![0; pad]).is_err() {
-            return 0;
-        }
+    if pad > 0 && smb2_add_iovector(vectors, vec![0; pad]).is_err() {
+        return 0;
     }
     pad
 }
@@ -408,6 +472,24 @@ pub fn smb2_add_compound_pdu(pdu: &mut Pdu, next_pdu: &mut Pdu) {
     }
 }
 
+/// Appends an owned PDU to the end of a compound chain.
+pub fn smb2_append_compound_pdu(pdu: &mut Pdu, mut next_pdu: Pdu) -> PduResult<&mut Pdu> {
+    pdu.compound = true;
+    next_pdu.compound = true;
+    next_pdu.header.flags |= SMB2_FLAGS_RELATED_OPERATIONS;
+    ensure_header_vector(pdu);
+    pdu.header.next_command = vectors_total_len(&pdu.out) as u32;
+    encode_header_vector(pdu)?;
+    encode_header_vector(&mut next_pdu)?;
+
+    append_compound_tail(pdu, next_pdu)
+}
+
+/// Returns true when a PDU is linked to another compound PDU.
+pub fn smb2_pdu_has_next_compound(pdu: &Pdu) -> bool {
+    pdu.next_compound.is_some()
+}
+
 /// Reads a little-endian u8 from an I/O vector.
 pub fn smb2_get_uint8(iov: &IoVec, offset: usize) -> PduResult<u8> {
     iov.buf.get(offset).copied().ok_or(PduError::OutOfBounds)
@@ -453,6 +535,66 @@ pub fn smb2_get_uint64(iov: &IoVec, offset: usize) -> PduResult<u64> {
 /// Writes a little-endian u64 into an I/O vector.
 pub fn smb2_set_uint64(iov: &mut IoVec, offset: usize, value: u64) -> PduResult<()> {
     write_bytes(&mut iov.buf, offset, &value.to_le_bytes())
+}
+
+/// Reads a normalized numeric SMB2 header field from a decoded header.
+pub const fn smb2_get_header_field(header: &Smb2Header, field: Smb2HeaderField) -> u64 {
+    match field {
+        Smb2HeaderField::StructSize => header.struct_size as u64,
+        Smb2HeaderField::CreditCharge => header.credit_charge as u64,
+        Smb2HeaderField::Status => header.status as u64,
+        Smb2HeaderField::Command => header.command as u64,
+        Smb2HeaderField::CreditRequestResponse => header.credit_request_response as u64,
+        Smb2HeaderField::Flags => header.flags as u64,
+        Smb2HeaderField::NextCommand => header.next_command as u64,
+        Smb2HeaderField::MessageId => header.message_id,
+        Smb2HeaderField::ProcessId => header.process_id as u64,
+        Smb2HeaderField::TreeId => header.tree_id as u64,
+        Smb2HeaderField::AsyncId => header.async_id,
+        Smb2HeaderField::SessionId => header.session_id,
+    }
+}
+
+/// Updates a normalized numeric SMB2 header field in a decoded header.
+pub fn smb2_set_header_field(
+    header: &mut Smb2Header,
+    field: Smb2HeaderField,
+    value: u64,
+) -> PduResult<()> {
+    match field {
+        Smb2HeaderField::StructSize => header.struct_size = u16_field(value)?,
+        Smb2HeaderField::CreditCharge => header.credit_charge = u16_field(value)?,
+        Smb2HeaderField::Status => header.status = u32_field(value)?,
+        Smb2HeaderField::Command => header.command = u16_field(value)?,
+        Smb2HeaderField::CreditRequestResponse => {
+            header.credit_request_response = u16_field(value)?
+        }
+        Smb2HeaderField::Flags => header.flags = u32_field(value)?,
+        Smb2HeaderField::NextCommand => header.next_command = u32_field(value)?,
+        Smb2HeaderField::MessageId => header.message_id = value,
+        Smb2HeaderField::ProcessId => header.process_id = u32_field(value)?,
+        Smb2HeaderField::TreeId => header.tree_id = u32_field(value)?,
+        Smb2HeaderField::AsyncId => header.async_id = value,
+        Smb2HeaderField::SessionId => header.session_id = value,
+    }
+    Ok(())
+}
+
+/// Decodes and returns a single SMB2 header field from encoded bytes.
+pub fn smb2_decode_header_field(buf: &[u8], field: Smb2HeaderField) -> PduResult<u64> {
+    let header = smb2_decode_header_bytes(buf)?;
+    Ok(smb2_get_header_field(&header, field))
+}
+
+/// Decodes, updates, and re-encodes a single SMB2 header field in place.
+pub fn smb2_encode_header_field(
+    buf: &mut [u8],
+    field: Smb2HeaderField,
+    value: u64,
+) -> PduResult<()> {
+    let mut header = smb2_decode_header_bytes(buf)?;
+    smb2_set_header_field(&mut header, field, value)?;
+    smb2_encode_header_bytes(buf, &header)
 }
 
 /// Encodes an SMB2 header into a caller-provided byte buffer.
@@ -542,20 +684,53 @@ pub fn smb2_decode_header_bytes(buf: &[u8]) -> PduResult<Smb2Header> {
 /// Decodes a header from an I/O vector and updates context receive metadata.
 pub fn smb2_decode_header(context: &mut Context, iov: &IoVec) -> PduResult<Smb2Header> {
     let header = smb2_decode_header_bytes(&iov.buf)?;
-    if header.protocol_id == SMB2_PROTOCOL_ID && header.flags & SMB2_FLAGS_ASYNC_COMMAND == 0 {
-        if header.flags & SMB2_FLAGS_SERVER_TO_REDIR == 0 {
-            if let Some(command) = Smb2Command::from_raw(header.command) {
-                if !command.uses_zero_tree_id() {
-                    smb2_select_tree_id(context, header.tree_id)?;
-                }
-            }
-        }
+    if header.protocol_id == SMB2_PROTOCOL_ID
+        && header.flags & SMB2_FLAGS_ASYNC_COMMAND == 0
+        && header.flags & SMB2_FLAGS_SERVER_TO_REDIR == 0
+        && Smb2Command::from_raw(header.command).is_some_and(|command| !command.uses_zero_tree_id())
+    {
+        smb2_select_tree_id(context, header.tree_id)?;
     }
     if context.is_server() {
         context.message_id = header.message_id;
     }
     context.header = header;
     Ok(header)
+}
+
+/// Decodes a NetBIOS payload as SMB2 or SMB3 transform bytes using context session keys.
+pub fn smb2_decode_pdu_payload_with_context(
+    context: &mut Context,
+    payload: &[u8],
+) -> PduResult<Pdu> {
+    let decoded = if is_smb3_transform(payload) {
+        let mut seal_context = seal_context_from_context(context);
+        let plan = smb3_decrypt_pdu(&mut seal_context, payload)?;
+        context.private.enc = plan.encrypted_payload.clone();
+        plan.encrypted_payload
+    } else {
+        payload.to_vec()
+    };
+
+    let header = smb2_decode_header_bytes(&decoded)?;
+    let header_bytes = decoded
+        .get(..SMB2_HEADER_SIZE)
+        .ok_or(PduError::HeaderTooSmall)?
+        .to_vec();
+    let body = decoded.get(SMB2_HEADER_SIZE..).unwrap_or_default().to_vec();
+    let mut pdu = Pdu::from_parts(header, IoVectors::new(), None);
+    pdu.input.vectors.push(IoVec::new(header_bytes));
+    if !body.is_empty() {
+        pdu.input.vectors.push(IoVec::new(body));
+    }
+    pdu.input.total_size = vectors_total_len(&pdu.input);
+
+    if header.flags & SMB2_FLAGS_SIGNED != 0 {
+        let signing = signing_context_from_context(context);
+        smb2_pdu_check_signature(&signing, &pdu)?;
+    }
+    context.header = header;
+    Ok(pdu)
 }
 
 /// Queues a PDU in the outgoing context queue after encoding its header vector.
@@ -566,9 +741,77 @@ pub fn smb2_queue_pdu(context: &mut Context, mut pdu: Pdu) -> PduResult<()> {
     Ok(())
 }
 
+/// Queues a PDU directly in the wait queue after encoding its header vector.
+pub fn smb2_queue_wait_pdu(context: &mut Context, mut pdu: Pdu) -> PduResult<()> {
+    let mut prev_compound_mid = 0;
+    encode_queued_pdu(context, &mut pdu, &mut prev_compound_mid)?;
+    context.push_waitqueue(pdu);
+    Ok(())
+}
+
+/// Moves an encoded PDU from the outgoing queue into the wait queue by message id.
+pub fn smb2_move_pdu_to_waitqueue(context: &mut Context, message_id: u64) -> Option<&Pdu> {
+    let pdu = remove_from_queue(&mut context.outqueue, message_id)?;
+    context.push_waitqueue(pdu);
+    context.find_waiting_pdu(message_id)
+}
+
+/// Encodes a PDU into a NetBIOS-framed SMB2 packet without queueing it.
+pub fn smb2_encode_pdu_frame(pdu: &mut Pdu) -> PduResult<Vec<u8>> {
+    ensure_header_vector(pdu);
+    let Some(first) = pdu.out.vectors.first_mut() else {
+        return Err(PduError::MissingPdu);
+    };
+    smb2_encode_header_bytes(&mut first.buf, &pdu.header)?;
+    pdu.out.total_size = vectors_total_len(&pdu.out);
+
+    let packet_len = vectors_total_len(&pdu.out);
+    let mut frame = Vec::with_capacity(4 + packet_len);
+    frame.extend_from_slice(&(packet_len as u32).to_be_bytes());
+    for iov in &pdu.out.vectors {
+        frame.extend_from_slice(&iov.buf);
+    }
+    Ok(frame)
+}
+
+/// Encodes a NetBIOS-framed PDU and applies context signing/sealing when enabled.
+pub fn smb2_encode_pdu_frame_with_context(
+    context: &mut Context,
+    pdu: &mut Pdu,
+) -> PduResult<Vec<u8>> {
+    encode_header_for_frame(context, pdu)?;
+    if should_sign_pdu(context, pdu) {
+        let signing = signing_context_from_context(context);
+        smb2_pdu_add_signature(&signing, pdu)?;
+    }
+
+    if should_seal_pdu(context, pdu)? {
+        let mut seal_context = seal_context_from_context(context);
+        let mut seal_pdu = Smb3SealPdu {
+            seal: true,
+            out_vectors: pdu.out.vectors.iter().map(|iov| iov.buf.clone()).collect(),
+            crypt: Vec::new(),
+        };
+        smb3_encrypt_pdu(&mut seal_context, &mut seal_pdu)?;
+        let packet_len = seal_pdu.crypt.len();
+        let mut frame = Vec::with_capacity(4 + packet_len);
+        frame.extend_from_slice(&(packet_len as u32).to_be_bytes());
+        frame.extend_from_slice(&seal_pdu.crypt);
+        return Ok(frame);
+    }
+
+    Ok(frame_from_vectors(&pdu.out))
+}
+
 /// Returns the next compound PDU placeholder, if the skeleton has one.
 pub fn smb2_get_compound_pdu(pdu: &Pdu) -> Option<&Pdu> {
     pdu.next_compound.as_deref()
+}
+
+/// Removes and returns a PDU from either context queue by message id.
+pub fn smb2_remove_pdu(context: &mut Context, message_id: u64) -> Option<Pdu> {
+    remove_from_queue(&mut context.outqueue, message_id)
+        .or_else(|| remove_from_queue(&mut context.waitqueue, message_id))
 }
 
 /// Frees a PDU and removes matching entries from the context queues.
@@ -579,6 +822,43 @@ pub fn smb2_free_pdu(context: &mut Context, pdu: &mut Pdu) {
     pdu.out.clear();
     pdu.input.clear();
     pdu.payload = None;
+}
+
+/// Clears payload ownership and all vector-backed bytes from a PDU.
+pub fn smb2_clear_pdu_payload(pdu: &mut Pdu) {
+    pdu.payload = None;
+    pdu.input.clear();
+    pdu.out.clear();
+}
+
+/// Stores owned payload bytes in a PDU payload slot.
+pub fn smb2_set_pdu_payload(pdu: &mut Pdu, bytes: Vec<u8>) {
+    pdu.payload = Some(Payload { bytes });
+}
+
+/// Takes owned payload bytes from a PDU payload slot.
+pub fn smb2_take_pdu_payload(pdu: &mut Pdu) -> Option<Vec<u8>> {
+    pdu.payload.take().map(|payload| payload.bytes)
+}
+
+/// Returns the current payload ownership state for a PDU.
+pub fn smb2_pdu_payload_state(pdu: &Pdu) -> PduPayloadState {
+    if let Some(payload) = &pdu.payload {
+        return PduPayloadState::Owned {
+            len: payload.bytes.len(),
+        };
+    }
+    if !pdu.input.vectors.is_empty() {
+        return PduPayloadState::InputVectors {
+            len: vectors_total_len(&pdu.input),
+        };
+    }
+    if pdu.out.vectors.len() > usize::from(first_vector_is_header(&pdu.out)) {
+        return PduPayloadState::OutputVectors {
+            len: payload_vectors_len(&pdu.out),
+        };
+    }
+    PduPayloadState::Empty
 }
 
 /// Sets the status field on a PDU header.
@@ -612,6 +892,15 @@ pub const fn smb2_get_last_reply_message_id(context: &Context) -> u64 {
 /// Finds a waiting PDU by message id.
 pub fn smb2_find_pdu(context: &Context, message_id: u64) -> Option<&Pdu> {
     context.find_waiting_pdu(message_id)
+}
+
+/// Finds a queued PDU by message id in outqueue first, then waitqueue.
+pub fn smb2_find_queued_pdu(context: &Context, message_id: u64) -> Option<&Pdu> {
+    context
+        .outqueue
+        .iter()
+        .find(|pdu| pdu.header.message_id == message_id)
+        .or_else(|| context.find_waiting_pdu(message_id))
 }
 
 /// Classifies whether a context header represents an error response.
@@ -748,12 +1037,32 @@ pub fn smb2_process_payload_variable(
 
 /// Removes expired PDUs from outqueue and waitqueue using a Unix timestamp deadline.
 pub fn smb2_timeout_pdus(context: &mut Context, now: i64) {
-    context
-        .outqueue
-        .retain(|pdu| pdu.timeout.is_none_or(|deadline| deadline >= now));
-    context
-        .waitqueue
-        .retain(|pdu| pdu.timeout.is_none_or(|deadline| deadline >= now));
+    let _expired = smb2_collect_timeout_pdus(context, now);
+}
+
+/// Sets or clears the absolute Unix timestamp deadline for a PDU.
+pub const fn smb2_set_pdu_timeout(pdu: &mut Pdu, deadline: Option<i64>) {
+    pdu.timeout = deadline;
+}
+
+/// Sets a PDU deadline relative to a Unix timestamp in seconds.
+pub fn smb2_set_pdu_timeout_after(pdu: &mut Pdu, now: i64, seconds: i64) {
+    pdu.timeout = now.checked_add(seconds.max(0));
+}
+
+/// Returns whether a PDU has an expired timeout deadline.
+pub const fn smb2_pdu_is_timed_out(pdu: &Pdu, now: i64) -> bool {
+    match pdu.timeout {
+        Some(deadline) => deadline < now,
+        None => false,
+    }
+}
+
+/// Removes expired PDUs from both queues and returns them to the caller.
+pub fn smb2_collect_timeout_pdus(context: &mut Context, now: i64) -> Vec<Pdu> {
+    let mut expired = drain_timeout_pdus(&mut context.outqueue, now);
+    expired.extend(drain_timeout_pdus(&mut context.waitqueue, now));
+    expired
 }
 
 fn process_fixed_payload(context: &Context, pdu: &Pdu, is_request: bool) -> PduResult<()> {
@@ -905,11 +1214,43 @@ fn process_fixed_payload(context: &Context, pdu: &Pdu, is_request: bool) -> PduR
             crate::lib::smb2_cmd_ioctl::IoctlReply::decode_fixed(&fixed)
                 .map_err(|_| PduError::OutOfBounds)?;
         }
-        (Smb2Command::Cancel, _)
-        | (Smb2Command::Lock, _)
-        | (Smb2Command::QueryDirectory, _)
-        | (Smb2Command::ChangeNotify, _)
-        | (Smb2Command::OplockBreak, _) => preserve_raw_payload(&fixed)?,
+        (Smb2Command::Lock, true) => {
+            crate::lib::smb2_cmd_lock::smb2_process_lock_request_fixed(&fixed)
+                .map_err(|_| PduError::OutOfBounds)?;
+        }
+        (Smb2Command::Lock, false) => {
+            crate::lib::smb2_cmd_lock::smb2_process_lock_fixed(&fixed)
+                .map_err(|_| PduError::OutOfBounds)?;
+        }
+        (Smb2Command::QueryDirectory, true) => {
+            crate::lib::smb2_cmd_query_directory::smb2_process_query_directory_request_fixed(
+                &fixed, pdu_size,
+            )
+            .map_err(|_| PduError::OutOfBounds)?;
+        }
+        (Smb2Command::QueryDirectory, false) => {
+            crate::lib::smb2_cmd_query_directory::smb2_process_query_directory_fixed(
+                &fixed, pdu_size,
+            )
+            .map_err(|_| PduError::OutOfBounds)?;
+        }
+        (Smb2Command::ChangeNotify, true) => {
+            crate::lib::smb2_cmd_notify_change::smb2_process_change_notify_request_fixed(&fixed)
+                .map_err(|_| PduError::OutOfBounds)?;
+        }
+        (Smb2Command::ChangeNotify, false) => {
+            crate::lib::smb2_cmd_notify_change::smb2_process_change_notify_fixed(&fixed, pdu_size)
+                .map_err(|_| PduError::OutOfBounds)?;
+        }
+        (Smb2Command::OplockBreak, true) => {
+            crate::lib::smb2_cmd_oplock_break::smb2_process_oplock_break_request_fixed(&fixed)
+                .map_err(|_| PduError::OutOfBounds)?;
+        }
+        (Smb2Command::OplockBreak, false) => {
+            crate::lib::smb2_cmd_oplock_break::smb2_process_oplock_break_fixed(&fixed)
+                .map_err(|_| PduError::OutOfBounds)?;
+        }
+        (Smb2Command::Cancel, _) => preserve_raw_payload(&fixed)?,
     }
 
     let _ = context;
@@ -1055,19 +1396,80 @@ fn process_variable_payload(_context: &Context, pdu: &Pdu, is_request: bool) -> 
             rep.decode_output(&variable, false)
                 .map_err(|_| PduError::OutOfBounds)?;
         }
+        (Smb2Command::Lock, true) => {
+            let (mut req, _) = crate::lib::smb2_cmd_lock::smb2_process_lock_request_fixed(&fixed)
+                .map_err(|_| PduError::OutOfBounds)?;
+            crate::lib::smb2_cmd_lock::smb2_process_lock_request_variable(
+                &mut req,
+                &variable,
+                read_fixed_u16(&fixed, 2)?,
+            )
+            .map_err(|_| PduError::OutOfBounds)?;
+        }
+        (Smb2Command::QueryDirectory, true) => {
+            let (mut req, _) =
+                crate::lib::smb2_cmd_query_directory::smb2_process_query_directory_request_fixed(
+                    &fixed, pdu_size,
+                )
+                .map_err(|_| PduError::OutOfBounds)?;
+            crate::lib::smb2_cmd_query_directory::smb2_process_query_directory_request_variable(
+                &mut req, &variable,
+            )
+            .map_err(|_| PduError::OutOfBounds)?;
+        }
+        (Smb2Command::QueryDirectory, false) => {
+            let (mut rep, _) =
+                crate::lib::smb2_cmd_query_directory::smb2_process_query_directory_fixed(
+                    &fixed, pdu_size,
+                )
+                .map_err(|_| PduError::OutOfBounds)?;
+            crate::lib::smb2_cmd_query_directory::smb2_process_query_directory_variable(
+                &mut rep, &variable,
+            )
+            .map_err(|_| PduError::OutOfBounds)?;
+        }
+        (Smb2Command::ChangeNotify, false) => {
+            let (mut rep, _) =
+                crate::lib::smb2_cmd_notify_change::smb2_process_change_notify_fixed(
+                    &fixed, pdu_size,
+                )
+                .map_err(|_| PduError::OutOfBounds)?;
+            crate::lib::smb2_cmd_notify_change::smb2_process_change_notify_variable(
+                &mut rep, &variable,
+            )
+            .map_err(|_| PduError::OutOfBounds)?;
+        }
+        (Smb2Command::OplockBreak, true) => {
+            let (mut req, _) =
+                crate::lib::smb2_cmd_oplock_break::smb2_process_oplock_break_request_fixed(&fixed)
+                    .map_err(|_| PduError::OutOfBounds)?;
+            crate::lib::smb2_cmd_oplock_break::smb2_process_oplock_break_request_variable(
+                &mut req, &variable,
+            )
+            .map_err(|_| PduError::OutOfBounds)?;
+        }
+        (Smb2Command::OplockBreak, false) => {
+            let (mut rep, _) =
+                crate::lib::smb2_cmd_oplock_break::smb2_process_oplock_break_fixed(&fixed)
+                    .map_err(|_| PduError::OutOfBounds)?;
+            crate::lib::smb2_cmd_oplock_break::smb2_process_oplock_break_variable(
+                &mut rep,
+                &variable,
+                pdu.header.message_id,
+            )
+            .map_err(|_| PduError::OutOfBounds)?;
+        }
         (Smb2Command::Close, _)
         | (Smb2Command::TreeDisconnect, _)
         | (Smb2Command::Flush, _)
         | (Smb2Command::Write, false)
         | (Smb2Command::Logoff, _)
         | (Smb2Command::Echo, _)
-        | (Smb2Command::SetInfo, false) => return no_variable_payload(&variable),
+        | (Smb2Command::SetInfo, false)
+        | (Smb2Command::Lock, false)
+        | (Smb2Command::ChangeNotify, true) => return no_variable_payload(&variable),
         (Smb2Command::TreeConnect, false) => preserve_raw_payload(&variable)?,
-        (Smb2Command::Cancel, _)
-        | (Smb2Command::Lock, _)
-        | (Smb2Command::QueryDirectory, _)
-        | (Smb2Command::ChangeNotify, _)
-        | (Smb2Command::OplockBreak, _) => preserve_raw_payload(&variable)?,
+        (Smb2Command::Cancel, _) => preserve_raw_payload(&variable)?,
     }
 
     Ok(())
@@ -1193,6 +1595,116 @@ fn encode_queued_pdu(
     Ok(())
 }
 
+fn encode_header_for_frame(context: &mut Context, pdu: &mut Pdu) -> PduResult<()> {
+    ensure_header_vector(pdu);
+    let Some(first) = pdu.out.vectors.first_mut() else {
+        return Err(PduError::MissingPdu);
+    };
+    smb2_encode_header(context, &mut first.buf, &mut pdu.header)?;
+    pdu.out.total_size = vectors_total_len(&pdu.out);
+    Ok(())
+}
+
+fn frame_from_vectors(vectors: &IoVectors) -> Vec<u8> {
+    let packet_len = vectors_total_len(vectors);
+    let mut frame = Vec::with_capacity(4 + packet_len);
+    frame.extend_from_slice(&(packet_len as u32).to_be_bytes());
+    for iov in &vectors.vectors {
+        frame.extend_from_slice(&iov.buf);
+    }
+    frame
+}
+
+fn is_smb3_transform(payload: &[u8]) -> bool {
+    payload
+        .get(..SMB3_TRANSFORM_PROTOCOL_ID.len())
+        .is_some_and(|protocol_id| protocol_id == SMB3_TRANSFORM_PROTOCOL_ID)
+}
+
+fn should_sign_pdu(context: &Context, pdu: &Pdu) -> bool {
+    context.private.sign
+        && context.session_id != 0
+        && !context.private.session_key.is_empty()
+        && pdu.header.command != Smb2Command::Negotiate.as_u16()
+}
+
+fn should_seal_pdu(context: &Context, pdu: &Pdu) -> PduResult<bool> {
+    let should_seal = context.private.seal
+        && context.session_id != 0
+        && pdu.header.command != Smb2Command::Negotiate.as_u16()
+        && pdu.header.command != Smb2Command::SessionSetup.as_u16();
+    if should_seal && !Smb3EncryptionCipher::is_supported_raw(context.private.cypher) {
+        return Err(PduError::Sealing(Smb3SealError::UnavailableCipher(
+            context.private.cypher,
+        )));
+    }
+    Ok(should_seal)
+}
+
+fn signing_context_from_context(context: &Context) -> Smb2SigningContext {
+    Smb2SigningContext::new(
+        context.private.dialect,
+        context.session_id,
+        context.private.session_key.len(),
+        context.private.signing_key,
+    )
+}
+
+fn seal_context_from_context(context: &Context) -> Smb3SealContext {
+    Smb3SealContext {
+        seal: context.private.seal,
+        session_id: context.session_id,
+        serverin_key: context.private.serverin_key,
+        serverout_key: context.private.serverout_key,
+        aes128_ccm_nonce: [0; crate::lib::smb3_seal::SMB3_AES128_CCM_NONCE_SIZE],
+        used_outbound_nonces: Vec::new(),
+        seen_inbound_nonces: Vec::new(),
+    }
+}
+
+fn encode_header_vector(pdu: &mut Pdu) -> PduResult<()> {
+    ensure_header_vector(pdu);
+    let Some(first) = pdu.out.vectors.first_mut() else {
+        return Err(PduError::MissingPdu);
+    };
+    smb2_encode_header_bytes(&mut first.buf, &pdu.header)?;
+    pdu.out.total_size = vectors_total_len(&pdu.out);
+    Ok(())
+}
+
+fn append_compound_tail(pdu: &mut Pdu, next_pdu: Pdu) -> PduResult<&mut Pdu> {
+    if pdu.next_compound.is_some() {
+        let next = pdu
+            .next_compound
+            .as_deref_mut()
+            .ok_or(PduError::MissingPdu)?;
+        append_compound_tail(next, next_pdu)
+    } else {
+        pdu.next_compound = Some(Box::new(next_pdu));
+        pdu.next_compound.as_deref_mut().ok_or(PduError::MissingPdu)
+    }
+}
+
+fn remove_from_queue(queue: &mut Vec<Pdu>, message_id: u64) -> Option<Pdu> {
+    let index = queue
+        .iter()
+        .position(|pdu| pdu.header.message_id == message_id)?;
+    Some(queue.remove(index))
+}
+
+fn drain_timeout_pdus(queue: &mut Vec<Pdu>, now: i64) -> Vec<Pdu> {
+    let mut expired = Vec::new();
+    let mut index = 0;
+    while index < queue.len() {
+        if smb2_pdu_is_timed_out(&queue[index], now) {
+            expired.push(queue.remove(index));
+        } else {
+            index += 1;
+        }
+    }
+    expired
+}
+
 fn ensure_header_vector(pdu: &mut Pdu) {
     if pdu.out.vectors.is_empty() {
         pdu.out.vectors.push(IoVec {
@@ -1242,6 +1754,23 @@ fn credit_request_response(context: &Context) -> u16 {
 
 fn vectors_total_len(vectors: &IoVectors) -> usize {
     vectors.vectors.iter().map(|iov| iov.buf.len()).sum()
+}
+
+fn payload_vectors_len(vectors: &IoVectors) -> usize {
+    vectors
+        .vectors
+        .iter()
+        .skip(usize::from(first_vector_is_header(vectors)))
+        .map(|iov| iov.buf.len())
+        .sum()
+}
+
+fn u16_field(value: u64) -> PduResult<u16> {
+    u16::try_from(value).map_err(|_| PduError::OutOfBounds)
+}
+
+fn u32_field(value: u64) -> PduResult<u32> {
+    u32::try_from(value).map_err(|_| PduError::OutOfBounds)
 }
 
 fn fixed_bytes<const N: usize>(buf: &[u8], offset: usize) -> PduResult<[u8; N]> {

@@ -1,10 +1,10 @@
 //! DCERPC public API skeleton from `include/smb2/libsmb2-dcerpc.h`.
 //!
 //! The types and functions in this module mirror the public C header boundary.
-//! Transport operations are still staged, but the public coder helpers now
-//! delegate to the migrated byte-level NDR codec in `lib/dcerpc.rs`.
+//! Transport operations use the safe `Smb2Client` named-pipe adapter boundary;
+//! coder helpers delegate to the migrated byte-level NDR codec in `lib/dcerpc.rs`.
 
-use super::libsmb2::{ErrorCode, Result, Smb2Client};
+use super::libsmb2::{ErrorCode, Result, Smb2Client, Smb2TransportAdapter};
 use crate::lib::dcerpc as lib_dcerpc;
 
 /// DCERPC data-representation flag for big-endian integer encoding.
@@ -195,6 +195,17 @@ pub struct DceRpcContext {
     error: Option<String>,
     path: Option<String>,
     syntax: Option<PSyntaxId>,
+    lib_ctx: lib_dcerpc::DceRpcContext,
+    state: DceRpcTransportState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum DceRpcTransportState {
+    #[default]
+    Created,
+    Prepared,
+    Opened,
+    Bound,
 }
 
 impl DceRpcContext {
@@ -214,6 +225,12 @@ impl DceRpcContext {
     #[must_use]
     pub fn syntax(&self) -> Option<PSyntaxId> {
         self.syntax
+    }
+
+    /// Returns the SMB2 file id selected for the opened named pipe.
+    #[must_use]
+    pub fn file_id(&self) -> [u8; 16] {
+        self.lib_ctx.file_id
     }
 }
 
@@ -239,17 +256,47 @@ pub fn dcerpc_get_error(dce: &DceRpcContext) -> Option<&str> {
 ///
 /// # Errors
 ///
-/// Always returns `ErrorCode(-38)` until DCERPC transport binding is implemented.
+/// Returns `ErrorCode(-38)` because this API requires named-pipe transport IO.
+/// Use [`dcerpc_connect_context_with_transport_async`] when a transport adapter
+/// is available.
 pub fn dcerpc_connect_context_async(
     dce: &mut DceRpcContext,
     path: &str,
     syntax: PSyntaxId,
     _callback: DceRpcCallback,
 ) -> Result<()> {
-    dce.path = Some(path.to_owned());
-    dce.syntax = Some(syntax);
-    let mut ctx = lib_dcerpc::DceRpcContext::new();
-    ctx.connect_context(path, to_lib_syntax(syntax));
+    prepare_context(dce, path, syntax);
+    dce.error = Some("DCERPC named-pipe transport is not implemented for this API".to_owned());
+    Err(not_implemented())
+}
+
+/// Connects a DCERPC context to a named pipe using an injected SMB2 transport.
+///
+/// This opens the pipe through [`Smb2Client`], writes a DCERPC bind PDU, and
+/// requires the adapter to supply a bind acknowledgement.
+///
+/// # Errors
+///
+/// Returns an [`ErrorCode`] if the SMB2 client is missing, the adapter rejects
+/// open/read/write, or the DCERPC bind response is malformed.
+pub fn dcerpc_connect_context_with_transport_async<T: Smb2TransportAdapter + ?Sized>(
+    dce: &mut DceRpcContext,
+    path: &str,
+    syntax: PSyntaxId,
+    transport: &mut T,
+    callback: DceRpcCallback,
+) -> Result<()> {
+    prepare_context(dce, path, syntax);
+    dcerpc_open_with_transport(dce, transport)?;
+    let bind = dce.lib_ctx.bind_async().map_err(map_dcerpc_error)?;
+    let response = write_then_read(dce, &bind.encoded, transport)?;
+    apply_bind_response(dce, &response)?;
+    callback(
+        dce,
+        Ok(DceRpcCommandData {
+            payload: DceRpcPayload::from_bytes(response),
+        }),
+    );
     Ok(())
 }
 
@@ -272,46 +319,160 @@ pub fn dcerpc_get_pdu_payload(pdu: &DceRpcPdu) -> &[u8] {
 ///
 /// # Errors
 ///
-/// Always returns `ErrorCode(-38)` until DCERPC transport open is implemented.
+/// Returns `ErrorCode(-38)` because this API requires named-pipe transport IO.
+/// Use [`dcerpc_open_with_transport`] when a transport adapter is available.
 pub fn dcerpc_open_async(dce: &mut DceRpcContext, _callback: DceRpcCallback) -> Result<()> {
-    if dce.path.is_some() && dce.syntax.is_some() {
-        return Ok(());
-    }
+    dce.error = Some("DCERPC named-pipe open requires a transport adapter".to_owned());
     Err(not_implemented())
+}
+
+/// Opens the underlying named pipe using an injected SMB2 transport.
+///
+/// # Errors
+///
+/// Returns an [`ErrorCode`] if no SMB2 client is owned by this context, the path
+/// or syntax is missing, or the transport rejects the open.
+pub fn dcerpc_open_with_transport<T: Smb2TransportAdapter + ?Sized>(
+    dce: &mut DceRpcContext,
+    transport: &mut T,
+) -> Result<()> {
+    let path = dce.path.clone().ok_or(ErrorCode(ERROR_INVALID_ARGUMENT))?;
+    if dce.syntax.is_none() {
+        dce.error = Some("DCERPC syntax is not set".to_owned());
+        return Err(ErrorCode(ERROR_INVALID_ARGUMENT));
+    }
+    let smb2 = dce.smb2.as_mut().ok_or(ErrorCode(ERROR_INVALID_ARGUMENT))?;
+    dce.lib_ctx.file_id = smb2.named_pipe_open_with_transport(&path, transport)?;
+    dce.state = DceRpcTransportState::Opened;
+    Ok(())
 }
 
 /// Starts a staged DCERPC request/response call.
 ///
 /// # Errors
 ///
-/// Always returns `ErrorCode(-38)` until DCERPC call transport and NDR coding are implemented.
+/// Returns `ErrorCode(-38)` because this API requires named-pipe transport IO.
+/// Use [`dcerpc_call_with_transport_async`] when a transport adapter is available.
 pub fn dcerpc_call_async(
+    dce: &mut DceRpcContext,
+    _opnum: i32,
+    _req_coder: DceRpcCoder,
+    _req: &mut DceRpcPayload,
+    _rep_coder: DceRpcCoder,
+    _decode_size: usize,
+    _callback: DceRpcCallback,
+) -> Result<()> {
+    dce.error = Some("DCERPC request dispatch requires a transport adapter".to_owned());
+    Err(not_implemented())
+}
+
+/// Performs a DCERPC request/response call using an injected SMB2 transport.
+///
+/// # Errors
+///
+/// Returns an [`ErrorCode`] if request coding fails, transport IO fails, or the
+/// response PDU cannot be decoded by the supplied reply coder.
+pub fn dcerpc_call_with_transport_async<T: Smb2TransportAdapter + ?Sized>(
     dce: &mut DceRpcContext,
     opnum: i32,
     req_coder: DceRpcCoder,
     req: &mut DceRpcPayload,
-    _rep_coder: DceRpcCoder,
+    rep_coder: DceRpcCoder,
     decode_size: usize,
-    _callback: DceRpcCallback,
+    transport: &mut T,
+    callback: DceRpcCallback,
 ) -> Result<()> {
+    if dce.state != DceRpcTransportState::Bound {
+        dce.error = Some("DCERPC context is not bound to a named pipe".to_owned());
+        return Err(ErrorCode(ERROR_INVALID_ARGUMENT));
+    }
     let opnum = u16::try_from(opnum).map_err(|_| ErrorCode(ERROR_INVALID_ARGUMENT))?;
-    let mut pdu = dcerpc_allocate_pdu(dce, DCERPC_ENCODE, 0)?;
+    let mut pdu = dcerpc_allocate_pdu(dce, DCERPC_ENCODE, len_to_i32(req.bytes.len())?)?;
     let mut iov = Smb2Iovec::new(req.bytes.clone());
     let mut offset = 0usize;
     req_coder(dce, &mut pdu, &mut iov, &mut offset, req)?;
     req.bytes = pdu.payload.bytes;
 
-    let mut ctx = lib_dcerpc::DceRpcContext::new();
-    if let (Some(path), Some(syntax)) = (dce.path.as_deref(), dce.syntax) {
-        ctx.connect_context(path, to_lib_syntax(syntax));
+    let request = dce
+        .lib_ctx
+        .call_async_with_payload(opnum, &req.bytes)
+        .map_err(map_dcerpc_error)?;
+    let response = write_then_read(dce, &request.encoded, transport)?;
+    let mut payload = response_payload(&response)?;
+    let mut rep_pdu = dcerpc_allocate_pdu(dce, DCERPC_DECODE, len_to_i32(decode_size)?)?;
+    rep_pdu.payload = DceRpcPayload::from_bytes(payload.bytes.clone());
+    let mut rep_iov = Smb2Iovec::new(payload.bytes.clone());
+    let mut rep_offset = 0usize;
+    rep_coder(
+        dce,
+        &mut rep_pdu,
+        &mut rep_iov,
+        &mut rep_offset,
+        &mut payload,
+    )?;
+    callback(
+        dce,
+        Ok(DceRpcCommandData {
+            payload: DceRpcPayload::from_bytes(response),
+        }),
+    );
+    Ok(())
+}
+
+fn prepare_context(dce: &mut DceRpcContext, path: &str, syntax: PSyntaxId) {
+    dce.path = Some(path.to_owned());
+    dce.syntax = Some(syntax);
+    dce.lib_ctx.connect_context(path, to_lib_syntax(syntax));
+    dce.state = DceRpcTransportState::Prepared;
+}
+
+fn apply_bind_response(dce: &mut DceRpcContext, bytes: &[u8]) -> Result<()> {
+    let pdu = lib_dcerpc::DceRpcPdu::from_bytes(bytes).map_err(map_dcerpc_error)?;
+    let lib_dcerpc::DceRpcPduBody::BindAck(ack) = pdu.body else {
+        return Err(ErrorCode(ERROR_INVALID_ARGUMENT));
+    };
+    let accepted = ack
+        .results
+        .iter()
+        .position(|result| result.ack_result == lib_dcerpc::ACK_RESULT_ACCEPTANCE)
+        .ok_or(ErrorCode(ERROR_INVALID_ARGUMENT))?;
+    dce.lib_ctx
+        .set_tctx(u8::try_from(accepted).map_err(|_| ErrorCode(ERROR_INVALID_ARGUMENT))?);
+    dce.state = DceRpcTransportState::Bound;
+    Ok(())
+}
+
+fn response_payload(bytes: &[u8]) -> Result<DceRpcPayload> {
+    if bytes.is_empty() {
+        return Err(ErrorCode(ERROR_INVALID_ARGUMENT));
     }
-    let mut _lib_pdu = ctx.allocate_pdu(lib_dcerpc::Direction::Request, decode_size);
-    _lib_pdu.body = lib_dcerpc::DceRpcPduBody::Request(lib_dcerpc::DceRpcRequestPdu {
-        alloc_hint: len_to_u32(req.bytes.len()),
-        context_id: u16::from(ctx.tctx_id()),
-        opnum,
-    });
-    Err(not_implemented())
+    let pdu = lib_dcerpc::DceRpcPdu::from_bytes(bytes).map_err(map_dcerpc_error)?;
+    match pdu.body {
+        lib_dcerpc::DceRpcPduBody::Response(_) => Ok(DceRpcPayload::from_bytes(pdu.payload)),
+        _ => Err(ErrorCode(ERROR_INVALID_ARGUMENT)),
+    }
+}
+
+fn write_then_read<T: Smb2TransportAdapter + ?Sized>(
+    dce: &mut DceRpcContext,
+    bytes: &[u8],
+    transport: &mut T,
+) -> Result<Vec<u8>> {
+    let file_id = dce.lib_ctx.file_id;
+    let smb2 = dce.smb2.as_mut().ok_or(ErrorCode(ERROR_INVALID_ARGUMENT))?;
+    smb2.named_pipe_write_with_transport(file_id, bytes, transport)?;
+    let mut response = vec![0; lib_dcerpc::NSE_BUF_SIZE];
+    let read = smb2.named_pipe_read_with_transport(file_id, &mut response, transport)?;
+    if read == 0 {
+        dce.error = Some("DCERPC named-pipe transport returned no response".to_owned());
+        return Err(ErrorCode(ERROR_INVALID_ARGUMENT));
+    }
+    response.truncate(read);
+    Ok(response)
+}
+
+fn len_to_i32(len: usize) -> Result<i32> {
+    i32::try_from(len).map_err(|_| ErrorCode(ERROR_INVALID_ARGUMENT))
 }
 
 /// Invokes a supplied staged DCERPC coder.
@@ -687,10 +848,226 @@ fn map_dcerpc_error(error: lib_dcerpc::DceRpcError) -> ErrorCode {
     }
 }
 
-fn len_to_u32(len: usize) -> u32 {
-    u32::try_from(len).map_or(u32::MAX, core::convert::identity)
-}
-
 fn not_implemented() -> ErrorCode {
     ErrorCode(ERROR_FUNCTION_NOT_IMPLEMENTED)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::include::smb2::libsmb2::{Smb2Client, Smb2TransportAdapter, Socket};
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Debug, Default)]
+    struct ScriptedTransport {
+        fd: Socket,
+        reads: std::collections::VecDeque<Vec<u8>>,
+        written: Vec<u8>,
+    }
+
+    impl ScriptedTransport {
+        fn new(fd: Socket, reads: Vec<Vec<u8>>) -> Self {
+            Self {
+                fd,
+                reads: reads.into(),
+                written: Vec::new(),
+            }
+        }
+
+        fn written(&self) -> &[u8] {
+            &self.written
+        }
+    }
+
+    impl Smb2TransportAdapter for ScriptedTransport {
+        fn read(&mut self, fd: Socket, buf: &mut [u8]) -> Result<usize> {
+            if fd != self.fd {
+                return Err(ErrorCode(ERROR_INVALID_ARGUMENT));
+            }
+            let Some(bytes) = self.reads.pop_front() else {
+                return Ok(0);
+            };
+            let len = bytes.len().min(buf.len());
+            buf[..len].copy_from_slice(&bytes[..len]);
+            Ok(len)
+        }
+
+        fn write(&mut self, fd: Socket, buf: &[u8]) -> Result<usize> {
+            if fd != self.fd {
+                return Err(ErrorCode(ERROR_INVALID_ARGUMENT));
+            }
+            self.written.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn ready_events(&self, fd: Socket, requested: i32) -> Result<i32> {
+            if fd != self.fd {
+                return Err(ErrorCode(ERROR_INVALID_ARGUMENT));
+            }
+            Ok(requested)
+        }
+    }
+
+    fn frame(message_id: u64, status: i32, payload: &[u8]) -> Vec<u8> {
+        let len = 12usize.saturating_add(payload.len());
+        let mut bytes = Vec::with_capacity(4 + len);
+        bytes.extend_from_slice(&(len as u32).to_be_bytes());
+        bytes.extend_from_slice(&message_id.to_be_bytes());
+        bytes.extend_from_slice(&status.to_be_bytes());
+        bytes.extend_from_slice(payload);
+        bytes
+    }
+
+    fn bind_ack() -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&32_768u16.to_le_bytes());
+        body.extend_from_slice(&32_768u16.to_le_bytes());
+        body.extend_from_slice(&0u32.to_le_bytes());
+        body.extend_from_slice(&0u16.to_le_bytes());
+        body.extend_from_slice(&[0, 0]);
+        body.push(1);
+        body.push(0);
+        body.extend_from_slice(&[0, 0, 0]);
+        body.extend_from_slice(&lib_dcerpc::ACK_RESULT_ACCEPTANCE.to_le_bytes());
+        body.extend_from_slice(&lib_dcerpc::ACK_REASON_REASON_NOT_SPECIFIED.to_le_bytes());
+        body.extend_from_slice(&lib_dcerpc::NDR32_UUID.v1.to_le_bytes());
+        body.extend_from_slice(&lib_dcerpc::NDR32_UUID.v2.to_le_bytes());
+        body.extend_from_slice(&lib_dcerpc::NDR32_UUID.v3.to_le_bytes());
+        body.extend_from_slice(&lib_dcerpc::NDR32_UUID.v4);
+        body.extend_from_slice(&2u32.to_le_bytes());
+
+        let mut header = lib_dcerpc::DceRpcHeader {
+            ptype: lib_dcerpc::PduType::BindAck,
+            pfc_flags: lib_dcerpc::PfcFlags::first_and_last(),
+            frag_length: (lib_dcerpc::DceRpcHeader::ENCODED_LEN + body.len()) as u16,
+            call_id: 2,
+            ..lib_dcerpc::DceRpcHeader::default()
+        }
+        .to_bytes()
+        .expect("bind ack header encodes");
+        header.extend_from_slice(&body);
+        header
+    }
+
+    fn response_pdu(call_id: u32, payload: &[u8]) -> Vec<u8> {
+        let mut pdu =
+            lib_dcerpc::DceRpcPdu::new(call_id, lib_dcerpc::Direction::Response, payload.len());
+        pdu.body = lib_dcerpc::DceRpcPduBody::Response(lib_dcerpc::DceRpcResponsePdu {
+            alloc_hint: payload.len() as u32,
+            context_id: 0,
+            cancel_count: 0,
+            reserved: 0,
+        });
+        pdu.payload.copy_from_slice(payload);
+        pdu.to_bytes().expect("response fixture encodes")
+    }
+
+    fn identity_coder(
+        _dce: &mut DceRpcContext,
+        pdu: &mut DceRpcPdu,
+        _iov: &mut Smb2Iovec,
+        _offset: &mut usize,
+        payload: &mut DceRpcPayload,
+    ) -> Result<()> {
+        if pdu.direction == DCERPC_ENCODE {
+            pdu.payload.bytes = payload.bytes.clone();
+        } else {
+            payload.bytes = pdu.payload.bytes.clone();
+        }
+        Ok(())
+    }
+
+    fn connected_context(reads: Vec<Vec<u8>>) -> (DceRpcContext, ScriptedTransport) {
+        let mut smb2 = Smb2Client::new();
+        smb2.set_fd(0);
+        smb2.connect_share_local("server", "IPC$")
+            .expect("local IPC$ connect succeeds");
+        (
+            dcerpc_create_context(smb2),
+            ScriptedTransport::new(0, reads),
+        )
+    }
+
+    #[test]
+    fn transport_state_machine_opens_binds_calls_and_decodes_response() {
+        let reply_payload = b"srvsvc-reply";
+        let (mut dce, mut transport) = connected_context(vec![
+            frame(1, 0, &[]),
+            bind_ack(),
+            response_pdu(3, reply_payload),
+        ]);
+
+        dcerpc_connect_context_with_transport_async(
+            &mut dce,
+            "srvsvc",
+            SRVSVC_INTERFACE,
+            &mut transport,
+            Box::new(|ctx, result| {
+                assert!(result.is_ok());
+                assert_eq!(ctx.file_id()[..8], 1u64.to_be_bytes());
+            }),
+        )
+        .expect("bind response is accepted");
+
+        let mut request = DceRpcPayload::from_bytes(b"srvsvc-request".to_vec());
+        let call_payload = Arc::new(Mutex::new(Vec::new()));
+        let callback_payload = Arc::clone(&call_payload);
+        dcerpc_call_with_transport_async(
+            &mut dce,
+            15,
+            identity_coder,
+            &mut request,
+            identity_coder,
+            reply_payload.len(),
+            &mut transport,
+            Box::new(move |_ctx, result| {
+                let data = result.expect("call succeeds");
+                *callback_payload.lock().expect("callback payload lock") = data.payload.bytes;
+            }),
+        )
+        .expect("response PDU is decoded");
+
+        assert_eq!(request.bytes, b"srvsvc-request");
+        let call_payload = call_payload.lock().expect("callback payload lock");
+        assert_eq!(
+            response_payload(&call_payload).unwrap().bytes,
+            reply_payload
+        );
+        assert!(!transport.written().is_empty());
+    }
+
+    #[test]
+    fn transport_connect_rejects_missing_bind_ack() {
+        let (mut dce, mut transport) = connected_context(vec![frame(1, 0, &[])]);
+
+        let result = dcerpc_connect_context_with_transport_async(
+            &mut dce,
+            "lsarpc",
+            LSA_INTERFACE,
+            &mut transport,
+            Box::new(|_, _| panic!("callback must not run on bind failure")),
+        );
+
+        assert_eq!(result, Err(ErrorCode(ERROR_INVALID_ARGUMENT)));
+    }
+
+    #[test]
+    fn transport_call_requires_bound_context() {
+        let (mut dce, mut transport) = connected_context(Vec::new());
+        prepare_context(&mut dce, "srvsvc", SRVSVC_INTERFACE);
+        let mut request = DceRpcPayload::from_bytes(Vec::new());
+
+        let result = dcerpc_call_with_transport_async(
+            &mut dce,
+            15,
+            identity_coder,
+            &mut request,
+            identity_coder,
+            0,
+            &mut transport,
+            Box::new(|_, _| panic!("callback must not run before bind")),
+        );
+
+        assert_eq!(result, Err(ErrorCode(ERROR_INVALID_ARGUMENT)));
+    }
 }

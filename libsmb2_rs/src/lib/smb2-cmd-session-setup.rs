@@ -10,7 +10,9 @@ use crate::include::libsmb2_private::SMB2_HEADER_SIZE;
 use crate::include::smb2::smb2::Command;
 
 use super::ntlmssp::{get_message_type, NtlmBlob, NtlmError, NtlmMessageType};
-use super::spnego_wrapper::{SpnegoBlobKind, SpnegoError, SpnegoWrapper};
+use super::spnego_wrapper::{
+    SpnegoBlobKind, SpnegoError, SpnegoMechanisms, SpnegoNegResult, SpnegoWrapper,
+};
 
 /// Session setup request fixed structure size from `SMB2_SESSION_SETUP_REQUEST_SIZE`.
 pub const SMB2_SESSION_SETUP_REQUEST_SIZE: u16 = 25;
@@ -123,6 +125,10 @@ pub struct SessionSetupSecurityToken {
     pub token: Vec<u8>,
     /// Raw/SPNEGO wrapper detected in the security buffer.
     pub wrapper: SessionSetupTokenWrapper,
+    /// Mechanism bits advertised by the SPNEGO token, when present.
+    pub mechanisms: SpnegoMechanisms,
+    /// SPNEGO target negotiation result, when the token is `NegTokenTarg`.
+    pub neg_result: Option<SpnegoNegResult>,
     /// Parsed NTLMSSP message type when the token carries an NTLMSSP payload.
     pub ntlm_message_type: Option<NtlmMessageType>,
 }
@@ -364,6 +370,12 @@ impl Smb2SessionSetupReply {
         self.session_key.extend_from_slice(session_key);
     }
 
+    /// Replaces the attached session key with an NTLMSSP exported session key.
+    pub fn set_ntlm_session_key(&mut self, session_key: &[u8; super::ntlmssp::SMB2_KEY_SIZE]) {
+        self.session_key.clear();
+        self.session_key.extend_from_slice(session_key);
+    }
+
     /// Derives signing and sealing keys from attached session key metadata.
     ///
     /// # Errors
@@ -419,7 +431,11 @@ impl Smb2SessionSetupReply {
 
     /// Applies reply metadata to the shared initialization state skeleton.
     pub fn apply_to_state(&self, state: &mut InitState) {
-        state.apply_session_setup_reply(self.session_id, &self.session_key);
+        state.apply_session_setup_reply_with_flags(
+            self.session_id,
+            self.session_flags,
+            &self.session_key,
+        );
     }
 
     /// Replaces the variable security buffer with a raw or SPNEGO-wrapped NTLMSSP token.
@@ -515,6 +531,8 @@ pub fn decode_session_setup_security_token(
     Ok(SessionSetupSecurityToken {
         token: unwrapped.token.to_vec(),
         wrapper,
+        mechanisms: unwrapped.mechanisms,
+        neg_result: unwrapped.neg_result,
         ntlm_message_type,
     })
 }

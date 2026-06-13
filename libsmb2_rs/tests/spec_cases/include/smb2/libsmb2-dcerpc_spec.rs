@@ -1,11 +1,8 @@
-#[path = "../../../../../libsmb2_sys/src/smb2/libsmb2_dcerpc.rs"]
-mod libsmb2_dcerpc;
-
-use libsmb2_dcerpc::{
+use libsmb2_sys::smb2::libsmb2_dcerpc::{
     DceRpcCarray, DceRpcCoder, DceRpcContext, DceRpcPayload, DceRpcPdu, DceRpcUtf16, DceRpcUuid,
-    NdrContextHandle, NdrTransferSyntax, PSyntaxId, PtrType, Smb2Iovec, DCERPC_DR_ASCII,
-    DCERPC_DR_BIG_ENDIAN, DCERPC_DR_EBCDIC, DCERPC_DR_LITTLE_ENDIAN, LSA_INTERFACE,
-    NDR_TRANSFER_SYNTAX, SRVSVC_INTERFACE,
+    NdrContextHandle, NdrTransferSyntax, PSyntaxId, PtrType, Smb2Iovec, DCERPC_DECODE,
+    DCERPC_DR_ASCII, DCERPC_DR_BIG_ENDIAN, DCERPC_DR_EBCDIC, DCERPC_DR_LITTLE_ENDIAN,
+    DCERPC_ENCODE, LSA_INTERFACE, NDR_TRANSFER_SYNTAX, SRVSVC_INTERFACE,
 };
 
 // Trace: `include/smb2/libsmb2-dcerpc.h:28`
@@ -258,4 +255,26 @@ fn test_libsmb2_dcerpc_srvsvc_share_enumeration_passes_interface_to_connect() {
     );
     assert_eq!(SRVSVC_INTERFACE.vers, 3);
     assert_eq!(SRVSVC_INTERFACE.vers_minor, 0);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:145`, `tests/smb2-dcerpc-coder-test.c:119`
+// Spec: DCERPC_DECODE direction constant#Test allocates decode PDU
+// - **GIVEN** 调用方需要创建 decode PDU
+// - **WHEN** 调用 `dcerpc_allocate_pdu(dce, DCERPC_DECODE, size)`
+// - **THEN** PDU direction 使用值 `0`
+// Note: This validates the public direction constant; PDU allocation itself requires a DCERPC FFI lifecycle binding.
+#[test]
+fn test_libsmb2_dcerpc_test_allocates_decode_pdu() {
+    assert_eq!(DCERPC_DECODE, 0);
+}
+
+// Trace: `include/smb2/libsmb2-dcerpc.h:146`, `tests/smb2-dcerpc-coder-test.c:67`
+// Spec: DCERPC_ENCODE direction constant#Test allocates encode PDU
+// - **GIVEN** 调用方需要创建 encode PDU
+// - **WHEN** 调用 `dcerpc_allocate_pdu(dce, DCERPC_ENCODE, size)`
+// - **THEN** PDU direction 使用值 `1`
+// Note: This validates the public direction constant; PDU allocation itself requires a DCERPC FFI lifecycle binding.
+#[test]
+fn test_libsmb2_dcerpc_test_allocates_encode_pdu() {
+    assert_eq!(DCERPC_ENCODE, 1);
 }

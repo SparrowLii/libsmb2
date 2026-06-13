@@ -90,6 +90,14 @@ pub enum ShareInfoLevel {
     Level0,
     /// `SHARE_INFO_1` contains the share net name, type, and remark.
     Level1,
+    /// `SHARE_INFO_2` contains connection limits, path, and password fields.
+    Level2,
+    /// `SHARE_INFO_501` contains level 1 fields plus share flags.
+    Level501,
+    /// `SHARE_INFO_502` contains level 2 fields plus a security descriptor.
+    Level502,
+    /// `SHARE_INFO_503` contains level 502 fields plus the server name.
+    Level503,
     /// An unmodeled share information level retained as its raw discriminator.
     Unknown(u32),
 }
@@ -101,6 +109,10 @@ impl ShareInfoLevel {
         match self {
             Self::Level0 => 0,
             Self::Level1 => 1,
+            Self::Level2 => 2,
+            Self::Level501 => 501,
+            Self::Level502 => 502,
+            Self::Level503 => 503,
             Self::Unknown(level) => level,
         }
     }
@@ -112,6 +124,10 @@ impl ShareInfoLevel {
         match level {
             0 => Ok(Self::Level0),
             1 => Ok(Self::Level1),
+            2 => Ok(Self::Level2),
+            501 => Ok(Self::Level501),
+            502 => Ok(Self::Level502),
+            503 => Ok(Self::Level503),
             other => Ok(Self::Unknown(other)),
         }
     }
@@ -157,6 +173,64 @@ impl SrvsvcShareInfo1 {
     }
 }
 
+/// Rust representation of the C `srvsvc_SHARE_INFO_2` structure.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SrvsvcShareInfo2 {
+    /// Share net name.
+    pub netname: Option<String>,
+    /// Share type and share type flags.
+    pub share_type: u32,
+    /// Optional share remark.
+    pub remark: Option<String>,
+    /// Legacy share permissions field.
+    pub permissions: u32,
+    /// Maximum allowed simultaneous users.
+    pub max_uses: u32,
+    /// Current simultaneous users.
+    pub current_uses: u32,
+    /// Local path backing the share.
+    pub path: Option<String>,
+    /// Optional share password.
+    pub passwd: Option<String>,
+}
+
+/// Rust representation of the C `srvsvc_SHARE_INFO_501` structure.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SrvsvcShareInfo501 {
+    /// Share net name.
+    pub netname: Option<String>,
+    /// Share type and share type flags.
+    pub share_type: u32,
+    /// Optional share remark.
+    pub remark: Option<String>,
+    /// SHARE_INFO_501 flags.
+    pub flags: u32,
+}
+
+/// Rust representation of the C `srvsvc_SHARE_INFO_502` structure.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SrvsvcShareInfo502 {
+    /// Level 2-compatible share fields.
+    pub info2: SrvsvcShareInfo2,
+    /// Security descriptor byte count from the legacy reserved field.
+    pub reserved: u32,
+    /// Self-relative security descriptor bytes.
+    pub security_descriptor: Vec<u8>,
+}
+
+/// Rust representation of the C `srvsvc_SHARE_INFO_503` structure.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SrvsvcShareInfo503 {
+    /// Level 2-compatible share fields.
+    pub info2: SrvsvcShareInfo2,
+    /// Server name that owns the share.
+    pub servername: Option<String>,
+    /// Security descriptor byte count from the legacy reserved field.
+    pub reserved: u32,
+    /// Self-relative security descriptor bytes.
+    pub security_descriptor: Vec<u8>,
+}
+
 /// Container for `[size_is(EntriesRead)] SHARE_INFO_0` arrays.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SrvsvcShareInfo0Container {
@@ -186,6 +260,55 @@ pub struct SrvsvcShareInfo1Container {
     pub share_info_1: Vec<SrvsvcShareInfo1>,
 }
 
+macro_rules! share_info_container {
+    ($name:ident, $field:ident, $item:ty, $doc:literal) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone, PartialEq, Eq, Default)]
+        pub struct $name {
+            /// Number of entries read by the server.
+            pub entries_read: u32,
+            /// Level-selected share entries.
+            pub $field: Vec<$item>,
+        }
+
+        impl $name {
+            /// Creates a share information container.
+            #[must_use]
+            pub fn new($field: Vec<$item>) -> Self {
+                Self {
+                    entries_read: $field.len() as u32,
+                    $field,
+                }
+            }
+        }
+    };
+}
+
+share_info_container!(
+    SrvsvcShareInfo2Container,
+    share_info_2,
+    SrvsvcShareInfo2,
+    "Container for `[size_is(EntriesRead)] SHARE_INFO_2` arrays."
+);
+share_info_container!(
+    SrvsvcShareInfo501Container,
+    share_info_501,
+    SrvsvcShareInfo501,
+    "Container for `[size_is(EntriesRead)] SHARE_INFO_501` arrays."
+);
+share_info_container!(
+    SrvsvcShareInfo502Container,
+    share_info_502,
+    SrvsvcShareInfo502,
+    "Container for `[size_is(EntriesRead)] SHARE_INFO_502` arrays."
+);
+share_info_container!(
+    SrvsvcShareInfo503Container,
+    share_info_503,
+    SrvsvcShareInfo503,
+    "Container for `[size_is(EntriesRead)] SHARE_INFO_503` arrays."
+);
+
 impl SrvsvcShareInfo1Container {
     /// Creates a level 1 share information container.
     #[must_use]
@@ -204,6 +327,14 @@ pub enum SrvsvcShareEnumUnion {
     Level0(SrvsvcShareInfo0Container),
     /// Level 1 share enumeration container.
     Level1(SrvsvcShareInfo1Container),
+    /// Level 2 share enumeration container.
+    Level2(SrvsvcShareInfo2Container),
+    /// Level 501 share enumeration container.
+    Level501(SrvsvcShareInfo501Container),
+    /// Level 502 share enumeration container.
+    Level502(SrvsvcShareInfo502Container),
+    /// Level 503 share enumeration container.
+    Level503(SrvsvcShareInfo503Container),
     /// Raw payload for an unmodeled share enumeration level.
     Raw { level: u32, bytes: Vec<u8> },
 }
@@ -215,6 +346,10 @@ impl SrvsvcShareEnumUnion {
         match self {
             Self::Level0(_) => ShareInfoLevel::Level0,
             Self::Level1(_) => ShareInfoLevel::Level1,
+            Self::Level2(_) => ShareInfoLevel::Level2,
+            Self::Level501(_) => ShareInfoLevel::Level501,
+            Self::Level502(_) => ShareInfoLevel::Level502,
+            Self::Level503(_) => ShareInfoLevel::Level503,
             Self::Raw { level, .. } => ShareInfoLevel::Unknown(*level),
         }
     }
@@ -243,6 +378,18 @@ impl SrvsvcShareEnumStruct {
             }
             ShareInfoLevel::Level1 => {
                 SrvsvcShareEnumUnion::Level1(SrvsvcShareInfo1Container::default())
+            }
+            ShareInfoLevel::Level2 => {
+                SrvsvcShareEnumUnion::Level2(SrvsvcShareInfo2Container::default())
+            }
+            ShareInfoLevel::Level501 => {
+                SrvsvcShareEnumUnion::Level501(SrvsvcShareInfo501Container::default())
+            }
+            ShareInfoLevel::Level502 => {
+                SrvsvcShareEnumUnion::Level502(SrvsvcShareInfo502Container::default())
+            }
+            ShareInfoLevel::Level503 => {
+                SrvsvcShareEnumUnion::Level503(SrvsvcShareInfo503Container::default())
             }
             ShareInfoLevel::Unknown(level) => SrvsvcShareEnumUnion::Raw {
                 level,
@@ -315,6 +462,14 @@ pub enum SrvsvcShareInfo {
     Level0(SrvsvcShareInfo0),
     /// Level 1 share information.
     Level1(SrvsvcShareInfo1),
+    /// Level 2 share information.
+    Level2(SrvsvcShareInfo2),
+    /// Level 501 share information.
+    Level501(SrvsvcShareInfo501),
+    /// Level 502 share information.
+    Level502(SrvsvcShareInfo502),
+    /// Level 503 share information.
+    Level503(SrvsvcShareInfo503),
     /// Raw payload for an unmodeled share information level.
     Raw { level: u32, bytes: Vec<u8> },
 }
@@ -326,6 +481,10 @@ impl SrvsvcShareInfo {
         match self {
             Self::Level0(_) => ShareInfoLevel::Level0,
             Self::Level1(_) => ShareInfoLevel::Level1,
+            Self::Level2(_) => ShareInfoLevel::Level2,
+            Self::Level501(_) => ShareInfoLevel::Level501,
+            Self::Level502(_) => ShareInfoLevel::Level502,
+            Self::Level503(_) => ShareInfoLevel::Level503,
             Self::Raw { level, .. } => ShareInfoLevel::Unknown(*level),
         }
     }
@@ -563,6 +722,46 @@ fn code_share_enum_union(
                 code_share_info_1_container(codec, container)?;
             }
         }
+        ShareInfoLevel::Level2 => {
+            if matches!(codec.direction(), Direction::Decode | Direction::Response) {
+                *value = SrvsvcShareEnumUnion::Level2(SrvsvcShareInfo2Container::default());
+            }
+            if let SrvsvcShareEnumUnion::Level2(container) = value {
+                code_present_container(codec, |codec| {
+                    code_share_info_2_container(codec, container)
+                })?;
+            }
+        }
+        ShareInfoLevel::Level501 => {
+            if matches!(codec.direction(), Direction::Decode | Direction::Response) {
+                *value = SrvsvcShareEnumUnion::Level501(SrvsvcShareInfo501Container::default());
+            }
+            if let SrvsvcShareEnumUnion::Level501(container) = value {
+                code_present_container(codec, |codec| {
+                    code_share_info_501_container(codec, container)
+                })?;
+            }
+        }
+        ShareInfoLevel::Level502 => {
+            if matches!(codec.direction(), Direction::Decode | Direction::Response) {
+                *value = SrvsvcShareEnumUnion::Level502(SrvsvcShareInfo502Container::default());
+            }
+            if let SrvsvcShareEnumUnion::Level502(container) = value {
+                code_present_container(codec, |codec| {
+                    code_share_info_502_container(codec, container)
+                })?;
+            }
+        }
+        ShareInfoLevel::Level503 => {
+            if matches!(codec.direction(), Direction::Decode | Direction::Response) {
+                *value = SrvsvcShareEnumUnion::Level503(SrvsvcShareInfo503Container::default());
+            }
+            if let SrvsvcShareEnumUnion::Level503(container) = value {
+                code_present_container(codec, |codec| {
+                    code_share_info_503_container(codec, container)
+                })?;
+            }
+        }
         ShareInfoLevel::Unknown(level) => {
             if let SrvsvcShareEnumUnion::Raw { bytes, .. } = value {
                 if matches!(codec.direction(), Direction::Encode | Direction::Request) {
@@ -613,6 +812,42 @@ fn code_share_info(codec: &mut NdrCodec, value: &mut SrvsvcShareInfo) -> DceRpcR
             code_share_info_1(codec, info)?;
             Ok(())
         }
+        ShareInfoLevel::Level2 => {
+            if matches!(codec.direction(), Direction::Decode | Direction::Response) {
+                *value = SrvsvcShareInfo::Level2(SrvsvcShareInfo2::default());
+            }
+            let SrvsvcShareInfo::Level2(info) = value else {
+                return Err(DceRpcError::CountOutOfRange { count: 2 });
+            };
+            code_present_container(codec, |codec| code_share_info_2(codec, info))
+        }
+        ShareInfoLevel::Level501 => {
+            if matches!(codec.direction(), Direction::Decode | Direction::Response) {
+                *value = SrvsvcShareInfo::Level501(SrvsvcShareInfo501::default());
+            }
+            let SrvsvcShareInfo::Level501(info) = value else {
+                return Err(DceRpcError::CountOutOfRange { count: 501 });
+            };
+            code_present_container(codec, |codec| code_share_info_501(codec, info))
+        }
+        ShareInfoLevel::Level502 => {
+            if matches!(codec.direction(), Direction::Decode | Direction::Response) {
+                *value = SrvsvcShareInfo::Level502(SrvsvcShareInfo502::default());
+            }
+            let SrvsvcShareInfo::Level502(info) = value else {
+                return Err(DceRpcError::CountOutOfRange { count: 502 });
+            };
+            code_present_container(codec, |codec| code_share_info_502(codec, info))
+        }
+        ShareInfoLevel::Level503 => {
+            if matches!(codec.direction(), Direction::Decode | Direction::Response) {
+                *value = SrvsvcShareInfo::Level503(SrvsvcShareInfo503::default());
+            }
+            let SrvsvcShareInfo::Level503(info) = value else {
+                return Err(DceRpcError::CountOutOfRange { count: 503 });
+            };
+            code_present_container(codec, |codec| code_share_info_503(codec, info))
+        }
         ShareInfoLevel::Unknown(level) => {
             if let SrvsvcShareInfo::Raw { bytes, .. } = value {
                 if matches!(codec.direction(), Direction::Encode | Direction::Request) {
@@ -632,6 +867,13 @@ fn code_share_info_0_container(
     codec: &mut NdrCodec,
     container: &mut SrvsvcShareInfo0Container,
 ) -> DceRpcResult<()> {
+    if matches!(codec.direction(), Direction::Encode | Direction::Request) {
+        container.entries_read = u32::try_from(container.share_info_0.len()).map_err(|_| {
+            DceRpcError::CountOutOfRange {
+                count: container.share_info_0.len(),
+            }
+        })?;
+    }
     codec.code_u32(&mut container.entries_read)?;
     let count = u32_to_usize(container.entries_read);
     let present = codec.code_unique_pointer_present(container.entries_read != 0)?;
@@ -654,6 +896,13 @@ fn code_share_info_1_container(
     codec: &mut NdrCodec,
     container: &mut SrvsvcShareInfo1Container,
 ) -> DceRpcResult<()> {
+    if matches!(codec.direction(), Direction::Encode | Direction::Request) {
+        container.entries_read = u32::try_from(container.share_info_1.len()).map_err(|_| {
+            DceRpcError::CountOutOfRange {
+                count: container.share_info_1.len(),
+            }
+        })?;
+    }
     codec.code_u32(&mut container.entries_read)?;
     let count = u32_to_usize(container.entries_read);
     let present = codec.code_unique_pointer_present(container.entries_read != 0)?;
@@ -672,6 +921,96 @@ fn code_share_info_1_container(
     Ok(())
 }
 
+fn code_share_info_2_container(
+    codec: &mut NdrCodec,
+    container: &mut SrvsvcShareInfo2Container,
+) -> DceRpcResult<()> {
+    code_container(
+        codec,
+        &mut container.entries_read,
+        &mut container.share_info_2,
+        SrvsvcShareInfo2::default,
+        code_share_info_2,
+    )
+}
+
+fn code_share_info_501_container(
+    codec: &mut NdrCodec,
+    container: &mut SrvsvcShareInfo501Container,
+) -> DceRpcResult<()> {
+    code_container(
+        codec,
+        &mut container.entries_read,
+        &mut container.share_info_501,
+        SrvsvcShareInfo501::default,
+        code_share_info_501,
+    )
+}
+
+fn code_share_info_502_container(
+    codec: &mut NdrCodec,
+    container: &mut SrvsvcShareInfo502Container,
+) -> DceRpcResult<()> {
+    code_container(
+        codec,
+        &mut container.entries_read,
+        &mut container.share_info_502,
+        SrvsvcShareInfo502::default,
+        code_share_info_502,
+    )
+}
+
+fn code_share_info_503_container(
+    codec: &mut NdrCodec,
+    container: &mut SrvsvcShareInfo503Container,
+) -> DceRpcResult<()> {
+    code_container(
+        codec,
+        &mut container.entries_read,
+        &mut container.share_info_503,
+        SrvsvcShareInfo503::default,
+        code_share_info_503,
+    )
+}
+
+fn code_container<T>(
+    codec: &mut NdrCodec,
+    entries_read: &mut u32,
+    items: &mut Vec<T>,
+    default: impl FnMut() -> T,
+    mut code_item: impl FnMut(&mut NdrCodec, &mut T) -> DceRpcResult<()>,
+) -> DceRpcResult<()> {
+    if matches!(codec.direction(), Direction::Encode | Direction::Request) {
+        *entries_read = u32::try_from(items.len())
+            .map_err(|_| DceRpcError::CountOutOfRange { count: items.len() })?;
+    }
+    codec.code_u32(entries_read)?;
+    let count = u32_to_usize(*entries_read);
+    let present = codec.code_unique_pointer_present(*entries_read != 0)?;
+    if !present {
+        items.clear();
+        return Ok(());
+    }
+    items.resize_with(count, default);
+    let mut conformant = u64::from(*entries_read);
+    codec.code_count(&mut conformant)?;
+    for item in items {
+        code_item(codec, item)?;
+    }
+    Ok(())
+}
+
+fn code_present_container(
+    codec: &mut NdrCodec,
+    code_value: impl FnOnce(&mut NdrCodec) -> DceRpcResult<()>,
+) -> DceRpcResult<()> {
+    let present = codec.code_unique_pointer_present(true)?;
+    if !present {
+        return Err(DceRpcError::NullPointer);
+    }
+    code_value(codec)
+}
+
 fn code_share_info_0(codec: &mut NdrCodec, value: &mut SrvsvcShareInfo0) -> DceRpcResult<()> {
     code_optional_string(codec, &mut value.netname)
 }
@@ -680,6 +1019,56 @@ fn code_share_info_1(codec: &mut NdrCodec, value: &mut SrvsvcShareInfo1) -> DceR
     code_optional_string(codec, &mut value.netname)?;
     codec.code_u32(&mut value.share_type)?;
     code_optional_string(codec, &mut value.remark)
+}
+
+fn code_share_info_2(codec: &mut NdrCodec, value: &mut SrvsvcShareInfo2) -> DceRpcResult<()> {
+    code_optional_string(codec, &mut value.netname)?;
+    codec.code_u32(&mut value.share_type)?;
+    code_optional_string(codec, &mut value.remark)?;
+    codec.code_u32(&mut value.permissions)?;
+    codec.code_u32(&mut value.max_uses)?;
+    codec.code_u32(&mut value.current_uses)?;
+    code_optional_string(codec, &mut value.path)?;
+    code_optional_string(codec, &mut value.passwd)
+}
+
+fn code_share_info_501(codec: &mut NdrCodec, value: &mut SrvsvcShareInfo501) -> DceRpcResult<()> {
+    code_optional_string(codec, &mut value.netname)?;
+    codec.code_u32(&mut value.share_type)?;
+    code_optional_string(codec, &mut value.remark)?;
+    codec.code_u32(&mut value.flags)
+}
+
+fn code_share_info_502(codec: &mut NdrCodec, value: &mut SrvsvcShareInfo502) -> DceRpcResult<()> {
+    code_share_info_2(codec, &mut value.info2)?;
+    code_security_descriptor(codec, &mut value.reserved, &mut value.security_descriptor)
+}
+
+fn code_share_info_503(codec: &mut NdrCodec, value: &mut SrvsvcShareInfo503) -> DceRpcResult<()> {
+    code_share_info_2(codec, &mut value.info2)?;
+    code_optional_string(codec, &mut value.servername)?;
+    code_security_descriptor(codec, &mut value.reserved, &mut value.security_descriptor)
+}
+
+fn code_security_descriptor(
+    codec: &mut NdrCodec,
+    byte_count: &mut u32,
+    bytes: &mut Vec<u8>,
+) -> DceRpcResult<()> {
+    if matches!(codec.direction(), Direction::Encode | Direction::Request) {
+        *byte_count = u32::try_from(bytes.len())
+            .map_err(|_| DceRpcError::CountOutOfRange { count: bytes.len() })?;
+    }
+    codec.code_u32(byte_count)?;
+    let present = codec.code_unique_pointer_present(*byte_count != 0)?;
+    if !present {
+        bytes.clear();
+        return Ok(());
+    }
+    let mut count = u64::from(*byte_count);
+    codec.code_count(&mut count)?;
+    let len = u32_to_usize(*byte_count);
+    codec.code_bytes(bytes, len)
 }
 
 fn code_optional_string(codec: &mut NdrCodec, value: &mut Option<String>) -> DceRpcResult<()> {
@@ -773,6 +1162,26 @@ pub fn decode_share_enum_union(bytes: &[u8]) -> DceRpcResult<SrvsvcShareEnumUnio
             }
             code_share_info_1_container(&mut codec, container)?;
         }
+        SrvsvcShareEnumUnion::Level2(container) => {
+            code_present_container(&mut codec, |codec| {
+                code_share_info_2_container(codec, container)
+            })?;
+        }
+        SrvsvcShareEnumUnion::Level501(container) => {
+            code_present_container(&mut codec, |codec| {
+                code_share_info_501_container(codec, container)
+            })?;
+        }
+        SrvsvcShareEnumUnion::Level502(container) => {
+            code_present_container(&mut codec, |codec| {
+                code_share_info_502_container(codec, container)
+            })?;
+        }
+        SrvsvcShareEnumUnion::Level503(container) => {
+            code_present_container(&mut codec, |codec| {
+                code_share_info_503_container(codec, container)
+            })?;
+        }
         SrvsvcShareEnumUnion::Raw { bytes, .. } => {
             let len = codec.bytes().len().saturating_sub(codec.offset());
             codec.code_bytes(bytes, len)?;
@@ -799,6 +1208,10 @@ pub fn decode_share_info(bytes: &[u8]) -> DceRpcResult<SrvsvcShareInfo> {
     let mut value = match share_level(level32)? {
         ShareInfoLevel::Level0 => SrvsvcShareInfo::Level0(SrvsvcShareInfo0::default()),
         ShareInfoLevel::Level1 => SrvsvcShareInfo::Level1(SrvsvcShareInfo1::default()),
+        ShareInfoLevel::Level2 => SrvsvcShareInfo::Level2(SrvsvcShareInfo2::default()),
+        ShareInfoLevel::Level501 => SrvsvcShareInfo::Level501(SrvsvcShareInfo501::default()),
+        ShareInfoLevel::Level502 => SrvsvcShareInfo::Level502(SrvsvcShareInfo502::default()),
+        ShareInfoLevel::Level503 => SrvsvcShareInfo::Level503(SrvsvcShareInfo503::default()),
         ShareInfoLevel::Unknown(level) => SrvsvcShareInfo::Raw {
             level,
             bytes: Vec::new(),
@@ -818,6 +1231,18 @@ pub fn decode_share_info(bytes: &[u8]) -> DceRpcResult<SrvsvcShareInfo> {
                 return Err(DceRpcError::NullPointer);
             }
             code_share_info_1(&mut codec, info)?;
+        }
+        SrvsvcShareInfo::Level2(info) => {
+            code_present_container(&mut codec, |codec| code_share_info_2(codec, info))?;
+        }
+        SrvsvcShareInfo::Level501(info) => {
+            code_present_container(&mut codec, |codec| code_share_info_501(codec, info))?;
+        }
+        SrvsvcShareInfo::Level502(info) => {
+            code_present_container(&mut codec, |codec| code_share_info_502(codec, info))?;
+        }
+        SrvsvcShareInfo::Level503(info) => {
+            code_present_container(&mut codec, |codec| code_share_info_503(codec, info))?;
         }
         SrvsvcShareInfo::Raw { bytes, .. } => {
             let len = codec.bytes().len().saturating_sub(codec.offset());

@@ -141,6 +141,17 @@ impl SpnegoNegResult {
             Self::Reject => 3,
         }
     }
+
+    /// Parses a DER enumerated value from `NegTokenTarg.negResult`.
+    #[must_use]
+    pub const fn from_u32(value: u32) -> Option<Self> {
+        match value {
+            0 => Some(Self::AcceptCompleted),
+            1 => Some(Self::AcceptIncomplete),
+            3 => Some(Self::Reject),
+            _ => None,
+        }
+    }
 }
 
 /// High-level SPNEGO blob shape selected by `smb2_spnego_unwrap_blob`.
@@ -151,6 +162,8 @@ pub enum SpnegoBlobKind {
     RawNtlmssp,
     /// GSS-API initial-context token containing SPNEGO data.
     GssApi,
+    /// Raw SPNEGO initiator token.
+    NegTokenInit,
     /// Raw SPNEGO target token.
     NegTokenTarg,
     /// Blob type not recognized by the skeleton classifier.
@@ -209,6 +222,8 @@ pub struct UnwrappedSpnego<'a> {
     pub token: &'a [u8],
     /// Mechanism bits discovered while parsing the SPNEGO mechanism list.
     pub mechanisms: SpnegoMechanisms,
+    /// Negotiation result decoded from `NegTokenTarg.negResult`, when present.
+    pub neg_result: Option<SpnegoNegResult>,
     /// The classified input blob kind.
     pub kind: SpnegoBlobKind,
 }
@@ -308,6 +323,35 @@ impl SpnegoWrapper {
         Ok(SpnegoBlob::from_bytes(buf, SpnegoBlobKind::GssApi))
     }
 
+    /// Wraps an optional NTLMSSP token in a raw SPNEGO NegTokenInit blob.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SpnegoError::TooLarge`] if encoded lengths exceed supported BER
+    /// bounds, or [`SpnegoError::InvalidBlob`] if internal BER encoding fails.
+    pub fn wrap_neg_token_init(&self, ntlmssp_token: &[u8]) -> SpnegoResult<SpnegoBlob> {
+        let gssapi = self.wrap_gssapi(ntlmssp_token)?.into_bytes();
+        let mut ctx = Asn1BerContext::from_src(&gssapi);
+        let top = require_typelen(
+            &mut ctx,
+            BerType::from(ASN_CONSTRUCTOR | ASN_APPLICATION),
+            0,
+        )?;
+        let top_end = checked_end(ctx.src_tail(), top.len)?;
+        if top_end > gssapi.len() {
+            return Err(SpnegoError::InvalidBlob);
+        }
+        let oid = ctx.oid_from_ber()?;
+        if !oid_matches(&oid, OID_GSS_MECH_SPNEGO) {
+            return Err(SpnegoError::InvalidBlob);
+        }
+        let token_start = ctx.src_tail();
+        Ok(SpnegoBlob::from_bytes(
+            gssapi[token_start..top_end].to_vec(),
+            SpnegoBlobKind::NegTokenInit,
+        ))
+    }
+
     /// Wraps an NTLMSSP challenge token in a NegTokenTarg response.
     ///
     /// # Errors
@@ -356,6 +400,7 @@ impl SpnegoWrapper {
             return Err(SpnegoError::InvalidBlob);
         }
         let mut mechanisms = SpnegoMechanisms::empty();
+        let mut neg_result = None;
         let mut token = &[][..];
 
         while ctx.src_tail() < end {
@@ -366,7 +411,11 @@ impl SpnegoWrapper {
             }
             match item.type_code {
                 code if code == BerType::context(0) => {
-                    let _neg_result = read_wrapped_u32(&mut ctx, item_end)?;
+                    let value = read_wrapped_u32(&mut ctx, item_end)?;
+                    neg_result = SpnegoNegResult::from_u32(value);
+                    if neg_result.is_none() {
+                        return Err(SpnegoError::InvalidBlob);
+                    }
                 }
                 code if code == BerType::context(1) => {
                     let oid = ctx.oid_from_ber()?;
@@ -397,8 +446,44 @@ impl SpnegoWrapper {
         Ok(UnwrappedSpnego {
             token,
             mechanisms,
+            neg_result,
             kind: SpnegoBlobKind::NegTokenTarg,
         })
+    }
+
+    /// Parses a raw SPNEGO NegTokenInit blob and returns its mech token, when present.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SpnegoError::InvalidBlob`] when the input does not match the
+    /// supported NegTokenInit shape.
+    pub fn unwrap_init<'a>(
+        &self,
+        spnego: &'a [u8],
+        suppress_errors: bool,
+    ) -> SpnegoResult<UnwrappedSpnego<'a>> {
+        let unwrapped = (|| {
+            let mut ctx = Asn1BerContext::from_src(spnego);
+            let neg_token = require_typelen(&mut ctx, BerType::context(0), 0)?;
+            let neg_token_end = checked_end(ctx.src_tail(), neg_token.len)?;
+            if neg_token_end > spnego.len() {
+                return Err(SpnegoError::InvalidBlob);
+            }
+
+            parse_neg_token_init(
+                &mut ctx,
+                spnego,
+                neg_token_end,
+                SpnegoBlobKind::NegTokenInit,
+            )
+        })();
+
+        match unwrapped {
+            Err(SpnegoError::InvalidBlob) if suppress_errors => {
+                Ok(empty_unwrapped(SpnegoBlobKind::NegTokenInit))
+            }
+            other => other,
+        }
     }
 
     /// Parses a GSS-API SPNEGO NegTokenInit blob and returns its mech token, when present.
@@ -406,7 +491,7 @@ impl SpnegoWrapper {
     /// # Errors
     ///
     /// Returns [`SpnegoError::InvalidBlob`] when the input does not match the
-    /// supported NegTokenInit shape.
+    /// supported GSS-API NegTokenInit shape.
     pub fn unwrap_gssapi<'a>(
         &self,
         spnego: &'a [u8],
@@ -435,67 +520,13 @@ impl SpnegoWrapper {
             if neg_token_end > top_end {
                 return Err(SpnegoError::InvalidBlob);
             }
-
-            let sequence = require_typelen(&mut ctx, BerType::sequence(0), 0)?;
-            let sequence_end = checked_end(ctx.src_tail(), sequence.len)?;
-            if sequence_end > neg_token_end {
-                return Err(SpnegoError::InvalidBlob);
-            }
-
-            let mut mechanisms = SpnegoMechanisms::empty();
-            let mut token = &[][..];
-
-            while ctx.src_tail() < sequence_end {
-                let item = ctx.typelen_from_ber()?;
-                let item_end = checked_end(ctx.src_tail(), item.len)?;
-                if item_end > sequence_end {
-                    return Err(SpnegoError::InvalidBlob);
-                }
-
-                match item.type_code {
-                    code if code == BerType::context(0) => {
-                        let mech_seq = require_typelen(&mut ctx, BerType::sequence(0), 0)?;
-                        let mech_end = checked_end(ctx.src_tail(), mech_seq.len)?;
-                        if mech_end > item_end {
-                            return Err(SpnegoError::InvalidBlob);
-                        }
-                        while ctx.src_tail() < mech_end {
-                            let oid = ctx.oid_from_ber()?;
-                            if oid_matches(&oid, OID_SPNEGO_MECH_KRB5)
-                                || oid_matches(&oid, OID_SPNEGO_MECH_MS_KRB5)
-                            {
-                                mechanisms.insert_bits(SPNEGO_MECHANISM_KRB5);
-                            } else if oid_matches(&oid, OID_SPNEGO_MECH_NTLMSSP) {
-                                mechanisms.insert_bits(SPNEGO_MECHANISM_NTLMSSP);
-                            }
-                        }
-                    }
-                    code if code == BerType::context(2) => {
-                        let octets = require_typelen(&mut ctx, BerType::OCTET_STRING, 0)?;
-                        let token_end = checked_end(ctx.src_tail(), octets.len)?;
-                        if token_end > spnego.len() || token_end > item_end {
-                            return Err(SpnegoError::InvalidBlob);
-                        }
-                        token = &spnego[ctx.src_tail()..token_end];
-                        ctx.skip_src(octets.len as usize)?;
-                    }
-                    _ => ctx.skip_src(item.len as usize)?,
-                }
-
-                if ctx.src_tail() < item_end {
-                    ctx.skip_src(item_end - ctx.src_tail())?;
-                }
-            }
-
-            Ok(UnwrappedSpnego {
-                token,
-                mechanisms,
-                kind: SpnegoBlobKind::GssApi,
-            })
+            parse_neg_token_init(&mut ctx, spnego, neg_token_end, SpnegoBlobKind::GssApi)
         })();
 
         match unwrapped {
-            Err(SpnegoError::InvalidBlob) if suppress_errors => Ok(empty_gssapi_unwrapped()),
+            Err(SpnegoError::InvalidBlob) if suppress_errors => {
+                Ok(empty_unwrapped(SpnegoBlobKind::GssApi))
+            }
             other => other,
         }
     }
@@ -548,14 +579,12 @@ impl SpnegoWrapper {
     /// Classifies and unwraps a raw NTLMSSP, GSS-API, or raw SPNEGO blob.
     ///
     /// Raw NTLMSSP detection is implemented as the same dispatch shortcut used
-    /// by the C entry point. Full SPNEGO ASN.1 parsing is intentionally deferred.
+    /// by the C entry point.
     ///
     /// # Errors
     ///
     /// Returns [`SpnegoError::BufferTooShort`] for inputs shorter than the legacy
-    /// minimum, [`SpnegoError::InvalidBlob`] for unknown blob types, or
-    /// [`SpnegoError::ProtocolLogicNotImplemented`] for recognized SPNEGO forms
-    /// whose BER parsing is not migrated yet.
+    /// minimum or [`SpnegoError::InvalidBlob`] for unknown or malformed blob types.
     pub fn unwrap_blob<'a>(
         &self,
         spnego: &'a [u8],
@@ -565,9 +594,11 @@ impl SpnegoWrapper {
             SpnegoBlobKind::RawNtlmssp => Ok(UnwrappedSpnego {
                 token: spnego,
                 mechanisms: SpnegoMechanisms::empty(),
+                neg_result: None,
                 kind: SpnegoBlobKind::RawNtlmssp,
             }),
             SpnegoBlobKind::GssApi => self.unwrap_gssapi(spnego, suppress_errors),
+            SpnegoBlobKind::NegTokenInit => self.unwrap_init(spnego, suppress_errors),
             SpnegoBlobKind::NegTokenTarg => self.unwrap_targ(spnego),
             SpnegoBlobKind::Unknown => Err(SpnegoError::InvalidBlob),
         }
@@ -629,11 +660,77 @@ fn read_wrapped_u32(ctx: &mut Asn1BerContext<'_, '_>, end: usize) -> SpnegoResul
     Ok(value)
 }
 
-fn empty_gssapi_unwrapped() -> UnwrappedSpnego<'static> {
+fn parse_neg_token_init<'a>(
+    ctx: &mut Asn1BerContext<'a, '_>,
+    spnego: &'a [u8],
+    end: usize,
+    kind: SpnegoBlobKind,
+) -> SpnegoResult<UnwrappedSpnego<'a>> {
+    let sequence = require_typelen(ctx, BerType::sequence(0), 0)?;
+    let sequence_end = checked_end(ctx.src_tail(), sequence.len)?;
+    if sequence_end > end {
+        return Err(SpnegoError::InvalidBlob);
+    }
+
+    let mut mechanisms = SpnegoMechanisms::empty();
+    let mut token = &[][..];
+
+    while ctx.src_tail() < sequence_end {
+        let item = ctx.typelen_from_ber()?;
+        let item_end = checked_end(ctx.src_tail(), item.len)?;
+        if item_end > sequence_end {
+            return Err(SpnegoError::InvalidBlob);
+        }
+
+        match item.type_code {
+            code if code == BerType::context(0) => {
+                let mech_seq = require_typelen(ctx, BerType::sequence(0), 0)?;
+                let mech_end = checked_end(ctx.src_tail(), mech_seq.len)?;
+                if mech_end > item_end {
+                    return Err(SpnegoError::InvalidBlob);
+                }
+                while ctx.src_tail() < mech_end {
+                    let oid = ctx.oid_from_ber()?;
+                    if oid_matches(&oid, OID_SPNEGO_MECH_KRB5)
+                        || oid_matches(&oid, OID_SPNEGO_MECH_MS_KRB5)
+                    {
+                        mechanisms.insert_bits(SPNEGO_MECHANISM_KRB5);
+                    } else if oid_matches(&oid, OID_SPNEGO_MECH_NTLMSSP) {
+                        mechanisms.insert_bits(SPNEGO_MECHANISM_NTLMSSP);
+                    }
+                }
+            }
+            code if code == BerType::context(2) => {
+                let octets = require_typelen(ctx, BerType::OCTET_STRING, 0)?;
+                let token_end = checked_end(ctx.src_tail(), octets.len)?;
+                if token_end > spnego.len() || token_end > item_end {
+                    return Err(SpnegoError::InvalidBlob);
+                }
+                token = &spnego[ctx.src_tail()..token_end];
+                ctx.skip_src(octets.len as usize)?;
+            }
+            _ => ctx.skip_src(item.len as usize)?,
+        }
+
+        if ctx.src_tail() < item_end {
+            ctx.skip_src(item_end - ctx.src_tail())?;
+        }
+    }
+
+    Ok(UnwrappedSpnego {
+        token,
+        mechanisms,
+        neg_result: None,
+        kind,
+    })
+}
+
+fn empty_unwrapped(kind: SpnegoBlobKind) -> UnwrappedSpnego<'static> {
     UnwrappedSpnego {
         token: &[],
         mechanisms: SpnegoMechanisms::empty(),
-        kind: SpnegoBlobKind::GssApi,
+        neg_result: None,
+        kind,
     }
 }
 
@@ -670,7 +767,8 @@ pub fn classify_blob(spnego: &[u8]) -> SpnegoResult<SpnegoBlobKind> {
 
     match spnego[0] {
         0x60 => Ok(SpnegoBlobKind::GssApi),
-        0xa0..=0xa2 => Ok(SpnegoBlobKind::NegTokenTarg),
+        0xa0 => Ok(SpnegoBlobKind::NegTokenInit),
+        0xa1 => Ok(SpnegoBlobKind::NegTokenTarg),
         _ => Ok(SpnegoBlobKind::Unknown),
     }
 }

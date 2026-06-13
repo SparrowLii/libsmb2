@@ -49,6 +49,12 @@ pub const NTLMSSP_TARGET_TYPE_SERVER: u32 = 0x0002_0000;
 /// NTLMSSP always-sign negotiation flag.
 pub const NTLMSSP_NEGOTIATE_ALWAYS_SIGN: u32 = 0x0000_8000;
 
+/// NTLMSSP workstation-name supplied negotiation flag.
+pub const NTLMSSP_NEGOTIATE_OEM_WORKSTATION_SUPPLIED: u32 = 0x0000_2000;
+
+/// NTLMSSP domain-name supplied negotiation flag.
+pub const NTLMSSP_NEGOTIATE_OEM_DOMAIN_SUPPLIED: u32 = 0x0000_1000;
+
 /// NTLMSSP anonymous negotiation flag.
 pub const NTLMSSP_NEGOTIATE_ANONYMOUS: u32 = 0x0000_0800;
 
@@ -471,6 +477,19 @@ impl AuthData {
         self.exported_session_key
     }
 
+    /// Returns the exported session key after authentication has completed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NtlmError::InvalidMessage`] when authentication has not completed.
+    pub fn authenticated_session_key(&self) -> NtlmResult<&[u8; SMB2_KEY_SIZE]> {
+        if !self.is_authenticated() {
+            return Err(NtlmError::InvalidMessage);
+        }
+
+        Ok(&self.exported_session_key)
+    }
+
     /// Stores challenge data for a later authenticate-message generation step.
     ///
     /// # Errors
@@ -500,16 +519,43 @@ impl AuthData {
         self.encoder(NTLMSSP_SIGNATURE);
         self.encoder(&NEGOTIATE_MESSAGE.to_le_bytes());
 
-        let flags = NTLMSSP_NEGOTIATE_128
+        let mut flags = NTLMSSP_NEGOTIATE_128
             | NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY
             | NTLMSSP_NEGOTIATE_NTLM
             | NTLMSSP_NEGOTIATE_SEAL
             | NTLMSSP_REQUEST_TARGET
             | NTLMSSP_NEGOTIATE_OEM
             | NTLMSSP_NEGOTIATE_UNICODE;
+        if self
+            .domain
+            .as_deref()
+            .is_some_and(|value| !value.is_empty())
+        {
+            flags |= NTLMSSP_NEGOTIATE_OEM_DOMAIN_SUPPLIED;
+        }
+        if self
+            .workstation
+            .as_deref()
+            .is_some_and(|value| !value.is_empty())
+        {
+            flags |= NTLMSSP_NEGOTIATE_OEM_WORKSTATION_SUPPLIED;
+        }
         self.encoder(&flags.to_le_bytes());
         self.encoder(&SecurityBuffer::default().to_le_bytes());
         self.encoder(&SecurityBuffer::default().to_le_bytes());
+
+        if flags & NTLMSSP_NEGOTIATE_OEM_DOMAIN_SUPPLIED != 0 {
+            let domain = optional_str(self.domain.as_deref()).as_bytes().to_vec();
+            let descriptor = append_payload(&mut self.buffer, &domain)?;
+            write_security_buffer(&mut self.buffer, 16, descriptor)?;
+        }
+        if flags & NTLMSSP_NEGOTIATE_OEM_WORKSTATION_SUPPLIED != 0 {
+            let workstation = optional_str(self.workstation.as_deref())
+                .as_bytes()
+                .to_vec();
+            let descriptor = append_payload(&mut self.buffer, &workstation)?;
+            write_security_buffer(&mut self.buffer, 24, descriptor)?;
+        }
         self.state = NtlmState::Negotiated;
         self.negotiate_buffer = self.buffer.clone();
 
@@ -715,6 +761,11 @@ impl AuthData {
     /// session base key.
     pub fn authenticate_blob(&mut self, input: &[u8]) -> NtlmResult<AuthenticateMessage> {
         let mut auth = parse_authenticate_message(input)?;
+        if auth.flags & NTLMSSP_NEGOTIATE_KEY_EXCH != 0
+            || !auth.encrypted_random_session_key.is_empty()
+        {
+            return Err(NtlmError::UnsupportedNegotiatedFlag);
+        }
         auth.flags &= !NTLMSSP_NEGOTIATE_KEY_EXCH;
         self.domain = auth.domain_name.clone();
         self.user = auth.user_name.clone();
@@ -1170,19 +1221,13 @@ fn append_payload(output: &mut Vec<u8>, payload: &[u8]) -> NtlmResult<SecurityBu
 
 fn append_av_pair(output: &mut Vec<u8>, av_id: u16, value: &[u8]) {
     output.extend_from_slice(&av_id.to_le_bytes());
-    let length = match u16::try_from(value.len()) {
-        Ok(value) => value,
-        Err(_) => u16::MAX,
-    };
+    let length = u16::try_from(value.len()).unwrap_or(u16::MAX);
     output.extend_from_slice(&length.to_le_bytes());
     output.extend_from_slice(&value[..usize::from(length)]);
 }
 
 fn optional_str(value: Option<&str>) -> &str {
-    match value {
-        Some(value) => value,
-        None => "",
-    }
+    value.unwrap_or_default()
 }
 
 fn encode_temp(wintime: u64, client_challenge: &[u8; 8], target_info: &[u8]) -> Vec<u8> {
@@ -1245,7 +1290,7 @@ fn utf16le_bytes(value: &str) -> Vec<u8> {
 }
 
 fn utf16le_to_string(bytes: &[u8]) -> NtlmResult<String> {
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         return Err(NtlmError::InvalidUtf16);
     }
 

@@ -151,6 +151,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "libsmb2_ffi"
+version = "0.1.0"
+dependencies = [
+ "libsmb2_rs",
+]
+
+[[package]]
 name = "libsmb2_rs"
 version = "0.1.0"
 dependencies = [

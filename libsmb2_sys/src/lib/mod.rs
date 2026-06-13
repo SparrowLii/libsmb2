@@ -1,5 +1,9 @@
 pub mod aes;
 pub mod aes128ccm;
+pub mod aes_reference;
+pub mod alloc;
+pub mod asn1_ber;
+pub mod compat;
 pub mod errors;
 pub mod hmac_md5;
 pub mod md4;

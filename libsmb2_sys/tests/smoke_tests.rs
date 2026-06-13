@@ -1,7 +1,9 @@
 use libsmb2_sys::include::config::{AMIGA_OS_CONFIG, APPLE_CONFIG};
 use libsmb2_sys::include::libsmb2_private::{
-    pad_to_32bit, pad_to_64bit, private_constants, sizeof_smb2_context, sizeof_smb2_header,
-    sizeof_smb2_io_vectors, sizeof_smb2_pdu, sizeof_smb2dir,
+    context_layout, directory_layout, discard_const_addr, header_layout, io_vectors_layout,
+    is_server_for_owning_server, min_i32, pad_to_32bit, pad_to_64bit, pdu_layout,
+    private_constants, sizeof_smb2_context, sizeof_smb2_header, sizeof_smb2_io_vectors,
+    sizeof_smb2_pdu, sizeof_smb2dir, sync_cb_data_layout, tree_id_for_current_index,
 };
 use libsmb2_sys::include::{portable_endian, slist};
 use libsmb2_sys::legacy::{aes, aes128ccm, errors, hmac_md5, md4, md5, sha, timestamps, unicode};
@@ -33,6 +35,63 @@ fn test_smoke_libsmb2_private_constants_and_layouts() {
     assert!(sizeof_smb2_context() > 0);
     assert!(sizeof_smb2_pdu() > 0);
     assert!(sizeof_smb2dir() > 0);
+
+    assert_eq!(min_i32(3, 7), 3);
+    let marker = 42_u32;
+    assert_eq!(
+        discard_const_addr(&marker),
+        (&marker as *const u32) as usize
+    );
+
+    let context = context_layout();
+    assert_eq!(context.error_string_len, constants.max_error_size as usize);
+    assert_eq!(context.header_len, constants.header_size as usize);
+    assert_eq!(context.tree_id_len, constants.max_tree_nesting as usize);
+    assert_eq!(context.signing_key_len, constants.key_size as usize);
+    assert_eq!(context.serverin_key_len, constants.key_size as usize);
+    assert_eq!(context.serverout_key_len, constants.key_size as usize);
+    assert_eq!(context.salt_len, constants.salt_size as usize);
+    assert!(context.has_connect_cb_data);
+    assert!(context.has_io_vectors);
+    assert!(context.has_owning_server);
+
+    let vectors = io_vectors_layout();
+    assert_eq!(vectors.iov_len, constants.max_vectors as usize);
+    assert!(vectors.has_num_done);
+    assert!(vectors.has_total_size);
+    assert!(vectors.has_niov);
+
+    let header = header_layout();
+    assert_eq!(header.protocol_id_len, 4);
+    assert_eq!(header.signature_len, constants.signature_size as usize);
+    assert!(header.has_async_id);
+    assert!(header.has_process_id);
+    assert!(header.has_tree_id);
+
+    let pdu = pdu_layout();
+    assert_eq!(pdu.hdr_len, constants.header_size as usize);
+    assert!(pdu.has_header);
+    assert!(pdu.has_out_vectors);
+    assert!(pdu.has_in_vectors);
+    assert!(pdu.has_payload);
+    assert!(pdu.has_free_payload);
+
+    let callback = sync_cb_data_layout();
+    assert!(callback.has_is_finished);
+    assert!(callback.has_status);
+    assert!(callback.has_ptr);
+
+    let dir = directory_layout();
+    assert!(dir.has_internal_next);
+    assert!(dir.has_internal_dirent);
+    assert!(dir.has_entries);
+    assert!(dir.has_current_entry);
+    assert!(dir.has_index);
+
+    assert_eq!(tree_id_for_current_index(-1, 0x1122_3344), 0xdead_beef);
+    assert_eq!(tree_id_for_current_index(0, 0x1122_3344), 0x1122_3344);
+    assert!(!is_server_for_owning_server(false));
+    assert!(is_server_for_owning_server(true));
 }
 
 #[test]

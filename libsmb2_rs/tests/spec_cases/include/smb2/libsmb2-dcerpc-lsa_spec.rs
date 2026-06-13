@@ -1,12 +1,13 @@
+use libsmb2_sys::smb2::libsmb2_dcerpc::LSA_INTERFACE;
 use libsmb2_sys::smb2::libsmb2_dcerpc_lsa::{
     CloseRequest, CloseResponse, LookupSids2Request, LookupSids2Response, LsapLookupLevel,
     NdrContextHandle, ObjectAttributes, OpenPolicy2Request, OpenPolicy2Response,
     ReferencedDomainList, RpcSid, SidEnumBuffer, TranslatedNameEx, TranslatedNamesEx,
-    TrustInformation, LSA_CLOSE, LSA_LOOKUPSIDS2, LSA_OPENPOLICY2, NT_SID_AUTHORITY,
-    POLICY_AUDIT_LOG_ADMIN, POLICY_CREATE_ACCOUNT, POLICY_CREATE_PRIVILEGE, POLICY_CREATE_SECRET,
-    POLICY_GET_PRIVATE_INFORMATION, POLICY_LOOKUP_NAMES, POLICY_NOTIFICATION, POLICY_SERVER_ADMIN,
-    POLICY_SET_AUDIT_REQUIREMENTS, POLICY_SET_DEFAULT_QUOTA_LIMITS, POLICY_TRUST_ADMIN,
-    POLICY_VIEW_AUDIT_INFORMATION, POLICY_VIEW_LOCAL_INFORMATION,
+    TrustInformation, LSA_CLOSE, LSA_LOOKUPSIDS2, LSA_OPENPOLICY2, LSA_UUID_PARTS,
+    NT_SID_AUTHORITY, POLICY_AUDIT_LOG_ADMIN, POLICY_CREATE_ACCOUNT, POLICY_CREATE_PRIVILEGE,
+    POLICY_CREATE_SECRET, POLICY_GET_PRIVATE_INFORMATION, POLICY_LOOKUP_NAMES, POLICY_NOTIFICATION,
+    POLICY_SERVER_ADMIN, POLICY_SET_AUDIT_REQUIREMENTS, POLICY_SET_DEFAULT_QUOTA_LIMITS,
+    POLICY_TRUST_ADMIN, POLICY_VIEW_AUDIT_INFORMATION, POLICY_VIEW_LOCAL_INFORMATION,
 };
 
 // Trace: `include/smb2/libsmb2-dcerpc-lsa.h:LSA_CLOSE`, `lib/dcerpc-lsa.c:lsa_Close_req_coder`
@@ -440,4 +441,51 @@ fn test_libsmb2_dcerpc_lsa_lookupsids2_response_carries_domains_names_count_and_
     assert_eq!(rep.translated_names.entries(), 1);
     assert_eq!(rep.mapped_count, 1);
     assert_eq!(rep.status, 0);
+}
+
+// Trace: `lib/dcerpc-lsa.c:LSA_UUID`, `lib/dcerpc-lsa.c:lsa_interface`
+// Spec: LSA_UUID defines the LSA transfer syntax UUID#LSA UUID initializes syntax identifier
+// - **GIVEN** the LSA DCERPC implementation is compiled
+// - **WHEN** `lsa_interface` is initialized
+// - **THEN** the syntax identifier uses the byte sequence from `LSA_UUID`
+#[test]
+fn test_dcerpc_lsa_lsa_uuid_initializes_syntax_identifier() {
+    assert_eq!(LSA_UUID_PARTS.0, 0x1234_5778);
+    assert_eq!(LSA_UUID_PARTS.1, 0x1234);
+    assert_eq!(LSA_UUID_PARTS.2, 0xabcd);
+    assert_eq!(
+        LSA_UUID_PARTS.3,
+        [0xef, 0x00, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab]
+    );
+    assert_eq!(LSA_INTERFACE.uuid.v1, LSA_UUID_PARTS.0);
+    assert_eq!(LSA_INTERFACE.uuid.v2, LSA_UUID_PARTS.1);
+    assert_eq!(LSA_INTERFACE.uuid.v3, LSA_UUID_PARTS.2);
+    assert_eq!(LSA_INTERFACE.uuid.v4, LSA_UUID_PARTS.3);
+}
+
+// Trace: `lib/dcerpc-lsa.c:lsa_interface`, `examples/smb2-lsa-lookupsids.c:261`
+// Spec: lsa_interface exposes the LSA syntax identifier#caller binds to LSA interface
+// - **GIVEN** a caller needs to connect a DCERPC context to the LSA endpoint
+// - **WHEN** the caller passes `lsa_interface` to the DCERPC connect path
+// - **THEN** the object supplies the LSA UUID with both version fields set to zero
+#[test]
+fn test_dcerpc_lsa_caller_binds_to_lsa_interface() {
+    assert_eq!(LSA_INTERFACE.uuid.v1, LSA_UUID_PARTS.0);
+    assert_eq!(LSA_INTERFACE.uuid.v2, LSA_UUID_PARTS.1);
+    assert_eq!(LSA_INTERFACE.uuid.v3, LSA_UUID_PARTS.2);
+    assert_eq!(LSA_INTERFACE.uuid.v4, LSA_UUID_PARTS.3);
+    assert_eq!(LSA_INTERFACE.vers, 0);
+    assert_eq!(LSA_INTERFACE.vers_minor, 0);
+}
+
+// Trace: `lib/dcerpc-lsa.c:NT_SID_AUTHORITY`, `include/smb2/libsmb2-dcerpc-lsa.h:NT_SID_AUTHORITY`, `examples/smb2-lsa-lookupsids.c:148`
+// Spec: NT_SID_AUTHORITY defines NT SID authority bytes#caller constructs NT authority SID
+// - **GIVEN** a caller prepares an `RPC_SID.IdentifierAuthority` buffer
+// - **WHEN** the caller copies `NT_SID_AUTHORITY`
+// - **THEN** the available byte sequence is exactly six bytes ending with authority byte `0x05`
+#[test]
+fn test_dcerpc_lsa_caller_constructs_nt_authority_sid() {
+    assert_eq!(NT_SID_AUTHORITY.len(), 6);
+    assert_eq!(NT_SID_AUTHORITY, [0, 0, 0, 0, 0, 5]);
+    assert_eq!(NT_SID_AUTHORITY[5], 0x05);
 }

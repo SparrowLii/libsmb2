@@ -553,14 +553,26 @@ impl NdrCodec {
     /// Encodes or decodes a unique pointer discriminant, returning whether it is non-null.
     pub fn code_unique_pointer_present(&mut self, present: bool) -> DceRpcResult<bool> {
         let mut referent = if present { UPTR } else { 0 };
-        self.code_u3264(&mut referent)?;
+        self.code_pointer_referent(&mut referent)?;
         Ok(referent != 0)
     }
 
     /// Encodes or decodes a reference pointer discriminant for nested pointed data.
     pub fn code_ref_pointer(&mut self) -> DceRpcResult<()> {
         let mut referent = RPTR;
-        self.code_u3264(&mut referent)
+        self.code_pointer_referent(&mut referent)
+    }
+
+    fn code_pointer_referent(&mut self, referent: &mut u64) -> DceRpcResult<()> {
+        match self.transfer_syntax {
+            TransferSyntax::Ndr32 => {
+                let mut value = *referent as u32;
+                self.code_u32(&mut value)?;
+                *referent = u64::from(value);
+                Ok(())
+            }
+            TransferSyntax::Ndr64 => self.code_u64(referent),
+        }
     }
 
     fn encode_utf16(&mut self, value: &mut DceRpcUtf16, nul_terminated: bool) -> DceRpcResult<()> {

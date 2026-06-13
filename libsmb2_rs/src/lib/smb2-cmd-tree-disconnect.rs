@@ -43,10 +43,7 @@ impl Smb2TreeDisconnectContext {
     /// Returns the currently connected tree id tracked by this skeleton.
     #[must_use]
     pub fn tree_id(&self) -> u32 {
-        match self.tree_ids.first().copied() {
-            Some(tree_id) => tree_id,
-            None => 0,
-        }
+        self.tree_ids.first().copied().unwrap_or_default()
     }
 
     /// Returns the active tree-id stack, newest/current tree first.

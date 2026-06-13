@@ -1,5 +1,8 @@
 //! Filesystem information data skeletons migrated from `lib/smb2-data-filesystem-info.c`.
 
+use super::timestamps::smb2_win_to_timeval as smb2_win_to_shared_timeval;
+use super::unicode::smb2_utf16_to_utf8;
+
 /// SMB2 GUID size used by FILE_FS_OBJECT_ID_INFORMATION.
 pub const SMB2_GUID_SIZE: usize = 16;
 /// FILE_FS_VOLUME_INFORMATION fixed byte count before the UTF-16 label.
@@ -32,6 +35,8 @@ pub enum FilesystemInfoError {
     LengthOverflow,
     /// A variable-length field cannot be represented in the C wire field width.
     LengthOutOfRange,
+    /// A declared UTF-16LE name length is not divisible by two bytes.
+    OddUtf16NameLength,
 }
 
 impl core::fmt::Display for FilesystemInfoError {
@@ -42,6 +47,9 @@ impl core::fmt::Display for FilesystemInfoError {
                 f.write_str("filesystem information length calculation overflowed")
             }
             Self::LengthOutOfRange => f.write_str("filesystem information length is out of range"),
+            Self::OddUtf16NameLength => {
+                f.write_str("filesystem information UTF-16LE name length is odd")
+            }
         }
     }
 }
@@ -88,6 +96,8 @@ pub struct Smb2FileFsVolumeInfo {
     pub volume_serial_number: u32,
     /// UTF-16LE volume label bytes from the wire payload.
     pub volume_label: Vec<u8>,
+    /// Volume label decoded from UTF-16LE when present.
+    pub volume_label_text: Option<String>,
     /// Non-zero when object identifiers are supported.
     pub supports_objects: u8,
     /// Reserved byte from the wire payload.
@@ -229,6 +239,8 @@ pub struct Smb2FileFsAttributeInfo {
     pub maximum_component_name_length: u32,
     /// UTF-16LE filesystem name bytes from the wire payload.
     pub filesystem_name: Vec<u8>,
+    /// Filesystem name decoded from UTF-16LE when present.
+    pub filesystem_name_text: Option<String>,
 }
 
 impl Smb2FileFsAttributeInfo {
@@ -485,13 +497,17 @@ impl Smb2FileFsSectorSizeInfo {
 /// Returns [`FilesystemInfoError::BufferTooShort`] when `buf` does not contain the fixed fields or declared label.
 pub fn smb2_decode_file_fs_volume_info(buf: &[u8]) -> FilesystemInfoResult<Smb2FileFsVolumeInfo> {
     require_len(buf, FILE_FS_VOLUME_INFO_FIXED_LEN)?;
+    let creation_time_windows = read_u64(buf, 0)?;
     let label_len = read_u32(buf, 12)? as usize;
+    validate_utf16_name_len(label_len)?;
     let label = slice_at(buf, FILE_FS_VOLUME_INFO_FIXED_LEN, label_len)?.to_vec();
+    let volume_label_text = decode_optional_utf16_name(&label)?;
     Ok(Smb2FileFsVolumeInfo {
-        creation_time: Smb2Timeval::zero(),
-        creation_time_windows: read_u64(buf, 0)?,
+        creation_time: smb2_win_to_timeval(creation_time_windows),
+        creation_time_windows,
         volume_serial_number: read_u32(buf, 8)?,
         volume_label: label,
+        volume_label_text,
         supports_objects: read_u8(buf, 16)?,
         reserved: read_u8(buf, 17)?,
     })
@@ -570,8 +586,9 @@ pub fn smb2_encode_file_fs_device_info(fs: &Smb2FileFsDeviceInfo) -> Vec<u8> {
 pub fn smb2_decode_file_fs_attribute_info(
     buf: &[u8],
 ) -> FilesystemInfoResult<Smb2FileFsAttributeInfo> {
-    require_len(buf, FILE_FS_ATTRIBUTE_INFO_MIN_LEN)?;
+    require_len(buf, FILE_FS_ATTRIBUTE_INFO_FIXED_LEN)?;
     let name_len = read_u32(buf, 8)? as usize;
+    validate_utf16_name_len(name_len)?;
     let name = if name_len == 0 {
         Vec::new()
     } else {
@@ -580,6 +597,7 @@ pub fn smb2_decode_file_fs_attribute_info(
     Ok(Smb2FileFsAttributeInfo {
         filesystem_attributes: read_u32(buf, 0)?,
         maximum_component_name_length: read_u32(buf, 4)?,
+        filesystem_name_text: decode_optional_utf16_name(&name)?,
         filesystem_name: name,
     })
 }
@@ -760,6 +778,26 @@ fn read_u64(data: &[u8], offset: usize) -> FilesystemInfoResult<u64> {
     ]))
 }
 
+fn decode_optional_utf16_name(bytes: &[u8]) -> FilesystemInfoResult<Option<String>> {
+    if bytes.is_empty() {
+        return Ok(None);
+    }
+    if bytes.len() % 2 != 0 {
+        return Err(FilesystemInfoError::OddUtf16NameLength);
+    }
+
+    let units = bytes
+        .chunks_exact(2)
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect::<Vec<_>>();
+    Ok(Some(smb2_utf16_to_utf8(&units)))
+}
+
+fn smb2_win_to_timeval(windows_time: u64) -> Smb2Timeval {
+    let shared = smb2_win_to_shared_timeval(windows_time);
+    Smb2Timeval::new(shared.tv_sec, shared.tv_usec as i32)
+}
+
 fn write_u8(data: &mut [u8], offset: usize, value: u8) -> FilesystemInfoResult<()> {
     let Some(slot) = data.get_mut(offset) else {
         return Err(FilesystemInfoError::BufferTooShort);
@@ -810,6 +848,76 @@ fn slice_at(data: &[u8], offset: usize, len: usize) -> FilesystemInfoResult<&[u8
         .ok_or(FilesystemInfoError::BufferTooShort)
 }
 
+fn validate_utf16_name_len(len: usize) -> FilesystemInfoResult<()> {
+    if len % 2 != 0 {
+        return Err(FilesystemInfoError::OddUtf16NameLength);
+    }
+    Ok(())
+}
+
 fn len_to_u32(len: usize) -> FilesystemInfoResult<u32> {
     u32::try_from(len).map_err(|_| FilesystemInfoError::LengthOutOfRange)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn utf16le(value: &str) -> Vec<u8> {
+        value.encode_utf16().flat_map(u16::to_le_bytes).collect()
+    }
+
+    #[test]
+    fn volume_info_roundtrips_declared_utf16_label() {
+        let info = Smb2FileFsVolumeInfo {
+            creation_time_windows: 42,
+            volume_serial_number: 7,
+            volume_label: utf16le("卷标"),
+            supports_objects: 1,
+            reserved: 0,
+            ..Smb2FileFsVolumeInfo::default()
+        };
+
+        let encoded = smb2_encode_file_fs_volume_info(&info).unwrap();
+        let decoded = smb2_decode_file_fs_volume_info(&encoded).unwrap();
+
+        assert_eq!(decoded.volume_label, info.volume_label);
+        assert_eq!(decoded.volume_label_text.as_deref(), Some("卷标"));
+        assert_eq!(decoded.volume_label_length(), 4);
+    }
+
+    #[test]
+    fn volume_info_rejects_truncated_label() {
+        let mut buf = vec![0; FILE_FS_VOLUME_INFO_FIXED_LEN + 2];
+        buf[12..16].copy_from_slice(&4u32.to_le_bytes());
+
+        assert_eq!(
+            smb2_decode_file_fs_volume_info(&buf),
+            Err(FilesystemInfoError::BufferTooShort)
+        );
+    }
+
+    #[test]
+    fn attribute_info_accepts_empty_variable_buffer() {
+        let mut buf = vec![0; FILE_FS_ATTRIBUTE_INFO_FIXED_LEN];
+        buf[0..4].copy_from_slice(&1u32.to_le_bytes());
+        buf[4..8].copy_from_slice(&255u32.to_le_bytes());
+
+        let decoded = smb2_decode_file_fs_attribute_info(&buf).unwrap();
+
+        assert_eq!(decoded.filesystem_attributes, 1);
+        assert_eq!(decoded.maximum_component_name_length, 255);
+        assert_eq!(decoded.filesystem_name_text, None);
+    }
+
+    #[test]
+    fn attribute_info_rejects_odd_utf16_name_length() {
+        let mut buf = vec![0; FILE_FS_ATTRIBUTE_INFO_FIXED_LEN + 1];
+        buf[8..12].copy_from_slice(&1u32.to_le_bytes());
+
+        assert_eq!(
+            smb2_decode_file_fs_attribute_info(&buf),
+            Err(FilesystemInfoError::OddUtf16NameLength)
+        );
+    }
 }

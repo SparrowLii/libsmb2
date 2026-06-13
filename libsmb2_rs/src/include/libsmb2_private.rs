@@ -80,6 +80,8 @@ pub enum PrivateError {
     BufferTooShort,
     /// The requested vector count would exceed [`SMB2_MAX_VECTORS`].
     TooManyVectors,
+    /// The accumulated IO vector size would overflow `usize`.
+    VectorSizeOverflow,
     /// The tree-id stack would exceed [`SMB2_MAX_TREE_NESTING`].
     TooManyTreeIds,
     /// No matching active tree id exists.
@@ -90,6 +92,10 @@ pub enum PrivateError {
     BadSignature,
     /// A requested PDU was not present.
     MissingPdu,
+    /// A string could not be represented as a C-compatible string.
+    InteriorNul,
+    /// No credential fields are available for delegation.
+    NoCredentials,
 }
 
 impl PrivateError {
@@ -99,9 +105,9 @@ impl PrivateError {
         let code = match self {
             Self::ProtocolLogicUnavailable => -38,
             Self::BufferTooShort => -22,
-            Self::TooManyVectors | Self::TooManyTreeIds => -75,
+            Self::TooManyVectors | Self::TooManyTreeIds | Self::VectorSizeOverflow => -75,
             Self::NoCurrentTreeId | Self::UnknownFixedSize | Self::MissingPdu => -2,
-            Self::BadSignature => -22,
+            Self::BadSignature | Self::InteriorNul | Self::NoCredentials => -22,
         };
         ErrorCode(code)
     }
@@ -121,6 +127,9 @@ impl From<crate::lib::pdu::PduError> for PrivateError {
                 Self::MissingPdu
             }
             crate::lib::pdu::PduError::TooManyVectors => Self::TooManyVectors,
+            crate::lib::pdu::PduError::Signing(_) | crate::lib::pdu::PduError::Sealing(_) => {
+                Self::ProtocolLogicUnavailable
+            }
         }
     }
 }
@@ -240,12 +249,16 @@ impl IoVectors {
     ///
     /// # Errors
     ///
-    /// Returns [`PrivateError::TooManyVectors`] when the legacy vector limit would be exceeded.
+    /// Returns [`PrivateError::TooManyVectors`] when the legacy vector limit would be exceeded, or
+    /// [`PrivateError::VectorSizeOverflow`] when the accumulated byte count overflows.
     pub fn add_iovector(&mut self, iov: IoVec) -> PrivateResult<&mut IoVec> {
         if self.vectors.len() >= SMB2_MAX_VECTORS {
             return Err(PrivateError::TooManyVectors);
         }
-        self.total_size = self.total_size.saturating_add(iov.len());
+        self.total_size = self
+            .total_size
+            .checked_add(iov.len())
+            .ok_or(PrivateError::VectorSizeOverflow)?;
         self.vectors.push(iov);
         let index = self.vectors.len() - 1;
         Ok(&mut self.vectors[index])
@@ -839,6 +852,8 @@ pub struct Context {
     pub outqueue: Vec<Pdu>,
     /// Waiting PDUs.
     pub waitqueue: Vec<Pdu>,
+    /// Rust-owned private fields migrated from `struct smb2_context`.
+    pub private: ContextPrivateFields,
 }
 
 impl Default for Context {
@@ -853,6 +868,7 @@ impl Default for Context {
             header: Smb2Header::default(),
             outqueue: Vec::new(),
             waitqueue: Vec::new(),
+            private: ContextPrivateFields::default(),
         }
     }
 }
@@ -867,7 +883,48 @@ impl Context {
     /// Returns true when this context is owned by a server.
     #[must_use]
     pub const fn is_server(&self) -> bool {
-        false
+        self.private.owning_server.is_some()
+    }
+
+    /// Releases socket, queue, vector, and private owned state while keeping the context reusable.
+    pub fn close_context(&mut self) {
+        self.private.fd = None;
+        self.private.connecting_fds.clear();
+        self.private.addrinfos.clear();
+        self.private.next_addrinfo = None;
+        self.private.enc.clear();
+        self.private.enc_pos = 0;
+        self.input.clear();
+        self.outqueue.clear();
+        self.waitqueue.clear();
+        self.private.events = 0;
+    }
+
+    /// Releases all Rust-owned lifecycle state for this private context.
+    pub fn destroy_context(&mut self) {
+        self.close_context();
+        self.private = ContextPrivateFields::default();
+        self.recv_state = RecvState::Spl;
+        self.credits = 0;
+        self.message_id = 0;
+        self.session_id = 0;
+        self.tree_ids.clear();
+        self.header = Smb2Header::default();
+    }
+
+    /// Stores a bounded error string and clears NT status when the message is empty.
+    pub fn set_error(&mut self, error_string: impl Into<String>) {
+        let error_string = truncate_error_string(error_string.into());
+        if error_string.is_empty() {
+            self.private.nterror = 0;
+        }
+        self.private.error_string = error_string;
+    }
+
+    /// Returns the last private-context error string.
+    #[must_use]
+    pub fn error(&self) -> &str {
+        &self.private.error_string
     }
 
     /// Returns the current tree id or [`DEAD_TREE_ID`] when no tree id is active.
@@ -880,12 +937,150 @@ impl Context {
     }
 
     /// Records an NT error on the header status field and stores a bounded error code surrogate.
-    pub fn set_nterror(&mut self, nterror: i32, _error_string: impl Into<String>) {
+    pub fn set_nterror(&mut self, nterror: i32, error_string: impl Into<String>) {
         self.header.status = nterror as u32;
+        self.private.nterror = nterror;
+        self.private.error_string = truncate_error_string(error_string.into());
+    }
+
+    /// Returns the last private-context NT status.
+    #[must_use]
+    pub const fn nterror(&self) -> i32 {
+        self.private.nterror
     }
 
     /// Closes and forgets sockets that are still in the connecting set.
     pub const fn close_connecting_fds(&mut self) {}
+
+    /// Sets the operation timeout in seconds.
+    pub const fn set_timeout(&mut self, timeout: i32) {
+        self.private.timeout = timeout;
+    }
+
+    /// Returns the configured operation timeout in seconds.
+    #[must_use]
+    pub const fn timeout(&self) -> i32 {
+        self.private.timeout
+    }
+
+    /// Sets the server name.
+    pub fn set_server(&mut self, server: Option<&str>) {
+        self.private.server = server.map(str::to_owned);
+    }
+
+    /// Returns the server name.
+    #[must_use]
+    pub fn server(&self) -> Option<&str> {
+        self.private.server.as_deref()
+    }
+
+    /// Sets the share name.
+    pub fn set_share(&mut self, share: Option<&str>) {
+        self.private.share = share.map(str::to_owned);
+    }
+
+    /// Returns the share name.
+    #[must_use]
+    pub fn share(&self) -> Option<&str> {
+        self.private.share.as_deref()
+    }
+
+    /// Sets the authentication user.
+    pub fn set_user(&mut self, user: Option<&str>) {
+        self.private.user = user.map(str::to_owned);
+    }
+
+    /// Returns the authentication user.
+    #[must_use]
+    pub fn user(&self) -> Option<&str> {
+        self.private.user.as_deref()
+    }
+
+    /// Sets the authentication domain.
+    pub fn set_domain(&mut self, domain: Option<&str>) {
+        self.private.domain = domain.map(str::to_owned);
+    }
+
+    /// Returns the authentication domain.
+    #[must_use]
+    pub fn domain(&self) -> Option<&str> {
+        self.private.domain.as_deref()
+    }
+
+    /// Sets the authentication workstation.
+    pub fn set_workstation(&mut self, workstation: Option<&str>) {
+        self.private.workstation = workstation.map(str::to_owned);
+    }
+
+    /// Returns the authentication workstation.
+    #[must_use]
+    pub fn workstation(&self) -> Option<&str> {
+        self.private.workstation.as_deref()
+    }
+
+    /// Sets the password as owned C-compatible state for staged FFI compatibility.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PrivateError::InteriorNul`] when `password` contains an interior NUL byte.
+    pub fn set_password(&mut self, password: Option<&str>) -> PrivateResult<()> {
+        self.private.password = match password {
+            Some(password) => Some(CString::new(password).map_err(|_| PrivateError::InteriorNul)?),
+            None => None,
+        };
+        Ok(())
+    }
+
+    /// Returns the authentication password when configured.
+    #[must_use]
+    pub fn password(&self) -> Option<&str> {
+        self.private
+            .password
+            .as_ref()
+            .and_then(|password| password.to_str().ok())
+    }
+
+    /// Returns true when password state is owned by this context.
+    #[must_use]
+    pub fn has_password(&self) -> bool {
+        self.private.password.is_some()
+    }
+
+    /// Sets caller-defined opaque data.
+    pub const fn set_opaque(&mut self, opaque: Option<usize>) {
+        self.private.opaque = opaque;
+    }
+
+    /// Returns caller-defined opaque data.
+    #[must_use]
+    pub const fn opaque(&self) -> Option<usize> {
+        self.private.opaque
+    }
+
+    /// Transfers credential ownership into another context.
+    ///
+    /// The password is moved while identity fields are cloned, matching legacy
+    /// delegation where password ownership leaves the source context.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PrivateError::NoCredentials`] when no credential fields are configured.
+    pub fn delegate_credentials(&mut self, out: &mut Context) -> PrivateResult<()> {
+        let has_credentials = self.private.password.is_some()
+            || self.private.user.is_some()
+            || self.private.domain.is_some();
+        if !has_credentials {
+            self.set_error("No credentials to delegate");
+            return Err(PrivateError::NoCredentials);
+        }
+        out.private.password = self.private.password.take();
+        out.private.user = self.private.user.clone();
+        out.private.domain = self.private.domain.clone();
+        out.private.workstation = self.private.workstation.clone();
+        out.private.sec = self.private.sec;
+        out.private.use_cached_creds = self.private.use_cached_creds;
+        Ok(())
+    }
 
     /// Pushes a tree id onto the current tree-id stack.
     ///
@@ -1484,4 +1679,55 @@ fn read_fixed<const N: usize>(bytes: &[u8], offset: usize) -> PrivateResult<[u8;
     let mut out = [0; N];
     out.copy_from_slice(slice);
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Context, IoVec, IoVectors, PrivateError};
+
+    #[test]
+    fn iovector_add_rejects_size_overflow_without_push() {
+        let mut vectors = IoVectors::new();
+        vectors.total_size = usize::MAX;
+
+        assert_eq!(
+            vectors.add_iovector(IoVec::new(vec![0])).map(|_| ()),
+            Err(PrivateError::VectorSizeOverflow)
+        );
+        assert_eq!(vectors.niov(), 0);
+        assert_eq!(vectors.total_size, usize::MAX);
+    }
+
+    #[test]
+    fn context_delegate_credentials_moves_password() {
+        let mut source = Context::new();
+        source.set_user(Some("alice"));
+        source.set_domain(Some("DOMAIN"));
+        source
+            .set_password(Some("secret"))
+            .expect("password has no interior NUL");
+        let mut out = Context::new();
+
+        source
+            .delegate_credentials(&mut out)
+            .expect("credentials are present");
+
+        assert_eq!(source.user(), Some("alice"));
+        assert!(!source.has_password());
+        assert_eq!(out.user(), Some("alice"));
+        assert_eq!(out.domain(), Some("DOMAIN"));
+        assert_eq!(out.password(), Some("secret"));
+    }
+
+    #[test]
+    fn context_delegate_credentials_reports_missing_state() {
+        let mut source = Context::new();
+        let mut out = Context::new();
+
+        assert_eq!(
+            source.delegate_credentials(&mut out),
+            Err(PrivateError::NoCredentials)
+        );
+        assert_eq!(source.error(), "No credentials to delegate");
+    }
 }

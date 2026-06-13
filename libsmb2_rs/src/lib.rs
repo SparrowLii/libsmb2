@@ -19,3 +19,8 @@ pub use include::libsmb2_private::{Context, IoVectors, Pdu, RecvState, Smb2Heade
 pub use include::smb2::libsmb2::{
     ErrorCode, FileHandle, Result, Smb2Client, Smb2Url, Stat, StatVfs,
 };
+#[cfg(feature = "migration_modules")]
+pub use include::smb2::libsmb2_raw::{
+    RawCommand, RawCommandDirection, RawCommandError, RawCommandKind, RawCommandResult,
+    RawCommandState, RawDataRelease,
+};

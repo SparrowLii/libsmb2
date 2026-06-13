@@ -1,0 +1,13 @@
+[package]
+name = "libsmb2_ffi"
+version = "0.1.0"
+edition = "2021"
+license = "LGPL-2.1-or-later"
+description = "C ABI adapter for the Rust libsmb2 implementation"
+
+[lib]
+name = "smb2_rust"
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[dependencies]
+libsmb2_rs = { path = "../libsmb2_rs", features = ["migration_modules"] }

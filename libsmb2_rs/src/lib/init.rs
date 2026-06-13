@@ -1,9 +1,13 @@
 //! Context initialization migrated from `lib/init.c`.
 
 use crate::include::libsmb2_private::{
-    Context, IoVec, IoVectors, RecvState, Smb2Header, SMB2_MAX_TREE_NESTING, SMB2_MAX_VECTORS,
+    truncate_error_string, Context, IoVec, IoVectors, RecvState, Smb2Header, SMB2_MAX_TREE_NESTING,
+    SMB2_MAX_VECTORS,
 };
 use crate::include::smb2::libsmb2::Smb2Url;
+
+use super::sha384_512::Sha512Context;
+use super::smb2_signing::{derive_session_keys, SessionDerivedKeys, SigningAlgorithm};
 
 /// Maximum URL payload accepted by the legacy parser after `smb://`.
 pub const MAX_URL_SIZE: usize = 1024;
@@ -15,6 +19,15 @@ pub const SMB2_SALT_SIZE: usize = 32;
 pub const SMB2_PREAUTH_HASH_SIZE: usize = 64;
 /// Maximum stored error string length used by `lib/init.c`.
 pub const MAX_ERROR_SIZE: usize = 256;
+
+/// Security mode bit indicating the server requires signing.
+pub const SMB2_NEGOTIATE_SIGNING_REQUIRED: u16 = 0x0002;
+/// Server/session capability bit indicating encryption support.
+pub const SMB2_GLOBAL_CAP_ENCRYPTION: u32 = 0x0000_0040;
+/// SMB 3.0 dialect threshold.
+pub const SMB2_VERSION_0300: u16 = 0x0300;
+/// SMB 3.1.1 dialect value.
+pub const SMB2_VERSION_0311: u16 = 0x0311;
 
 /// Result type for initialization helpers migrated from `lib/init.c`.
 pub type InitResult<T> = core::result::Result<T, InitError>;
@@ -40,6 +53,8 @@ pub enum InitError {
     TreeNestingTooDeep,
     /// The requested tree id is not present in the active stack.
     TreeIdNotFound,
+    /// No credential fields are available for delegation.
+    NoCredentials,
 }
 
 /// Authentication selector corresponding to `enum smb2_sec`.
@@ -106,6 +121,59 @@ pub enum Endianness {
     Big,
 }
 
+/// Negotiation phase and selected server properties.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum NegotiationState {
+    /// No NEGOTIATE reply has been applied yet.
+    #[default]
+    NotNegotiated,
+    /// A NEGOTIATE reply selected a dialect and connection capabilities.
+    Negotiated {
+        /// Dialect selected by the server.
+        dialect: u16,
+        /// Capability flags selected by the server.
+        capabilities: u32,
+        /// Security mode selected by the server.
+        security_mode: u16,
+        /// First locally supported encryption cipher selected from SMB 3.1.1 contexts.
+        encryption_cipher: Option<u16>,
+        /// Whether signing is required by configuration or server policy.
+        signing_required: bool,
+        /// Whether sealing can be enabled with the negotiated dialect/capabilities/cipher.
+        sealing_available: bool,
+    },
+}
+
+/// Authentication/session phase derived from SESSION_SETUP metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum SessionState {
+    /// No usable session material has been applied yet.
+    #[default]
+    NoSession,
+    /// A session id was observed, but no key material was supplied by authentication.
+    SessionIdOnly {
+        /// Session id selected by the server.
+        session_id: u64,
+        /// SESSION_SETUP reply flags.
+        session_flags: u16,
+    },
+    /// Session key material was supplied and signing/sealing keys were derived.
+    Established {
+        /// Session id selected by the server.
+        session_id: u64,
+        /// SESSION_SETUP reply flags.
+        session_flags: u16,
+        /// Session key length supplied by the authentication layer.
+        session_key_len: usize,
+        /// Signing algorithm selected by the negotiated dialect.
+        signing_algorithm: SigningAlgorithm,
+        /// Whether signing has enough material to operate.
+        signing_ready: bool,
+        /// Whether sealing has enough material and policy support to operate.
+        sealing_ready: bool,
+    },
+}
+
 /// Mutable configuration fields initialized and updated by `lib/init.c` helpers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InitConfig {
@@ -165,6 +233,8 @@ pub struct InitState {
     pub domain: Option<String>,
     /// Optional client workstation name.
     pub workstation: Option<String>,
+    /// Optional path within the parsed share.
+    pub path: Option<String>,
     /// Caller-defined opaque data represented as an address-sized value.
     pub opaque: Option<usize>,
     /// Client challenge bytes created during context initialization.
@@ -177,6 +247,8 @@ pub struct InitState {
     pub dialect: u16,
     /// Negotiated server capability flags.
     pub capabilities: u32,
+    /// Explicit negotiation state derived from the NEGOTIATE reply and contexts.
+    pub negotiation_state: NegotiationState,
     /// Negotiated maximum transaction size.
     pub max_transact_size: u32,
     /// Negotiated maximum read size.
@@ -187,10 +259,16 @@ pub struct InitState {
     pub preauth_hash: [u8; SMB2_PREAUTH_HASH_SIZE],
     /// Number of skeleton pre-authentication hash updates applied.
     pub preauth_hash_updates: usize,
+    /// Selected SMB3 encryption cipher, if negotiation supplied one supported locally.
+    pub encryption_cipher: Option<u16>,
     /// Negotiated session id from the SESSION_SETUP reply header.
     pub session_id: u64,
     /// Session key bytes supplied by the authentication layer skeleton.
     pub session_key: Vec<u8>,
+    /// Derived signing and sealing keys for the authenticated session.
+    pub derived_keys: Option<SessionDerivedKeys>,
+    /// Explicit session state derived from SESSION_SETUP and session material.
+    pub session_state: SessionState,
     /// Active tree id stack, newest/current tree first.
     pub tree_ids: Vec<u32>,
     /// Last NT status associated with the context.
@@ -208,19 +286,24 @@ impl Default for InitState {
             password: None,
             domain: None,
             workstation: None,
+            path: None,
             opaque: None,
             client_challenge: [0; 8],
             salt: [0; SMB2_SALT_SIZE],
             client_guid: default_client_guid(),
             dialect: 0,
             capabilities: 0,
+            negotiation_state: NegotiationState::NotNegotiated,
             max_transact_size: 0,
             max_read_size: 0,
             max_write_size: 0,
             preauth_hash: [0; SMB2_PREAUTH_HASH_SIZE],
             preauth_hash_updates: 0,
+            encryption_cipher: None,
             session_id: 0,
             session_key: Vec::new(),
+            derived_keys: None,
+            session_state: SessionState::NoSession,
             tree_ids: Vec::new(),
             nterror: 0,
             error_string: String::new(),
@@ -285,11 +368,17 @@ impl InitState {
             }
             _ => (None, auth_server),
         };
-        let (user, server) = match auth_server.split_once('@') {
-            Some((user, server)) if !user.is_empty() && !server.is_empty() => {
-                (Some(user.to_owned()), server)
+        let (user, password, server) = match auth_server.split_once('@') {
+            Some((auth, server)) if !auth.is_empty() && !server.is_empty() => {
+                let (user, password) = match auth.split_once(':') {
+                    Some((user, password)) if !user.is_empty() => {
+                        (Some(user.to_owned()), Some(password.to_owned()))
+                    }
+                    _ => (Some(auth.to_owned()), None),
+                };
+                (user, password, server)
             }
-            _ => (None, auth_server),
+            _ => (None, None, auth_server),
         };
 
         if server.is_empty() {
@@ -299,12 +388,15 @@ impl InitState {
 
         let parsed = Smb2Url {
             domain,
-            user,
+            user: user.clone(),
             server: server.to_owned(),
             share: share.to_owned(),
             path,
         };
         self.apply_url(&parsed);
+        if let Some(password) = password {
+            self.password = Some(password);
+        }
         Ok(parsed)
     }
 
@@ -315,7 +407,7 @@ impl InitState {
 
     /// Stores an error string and clears NT status when the message is empty.
     pub fn set_error(&mut self, error_string: &str) {
-        self.error_string = error_string.chars().take(MAX_ERROR_SIZE).collect();
+        self.error_string = truncate_error_string(error_string.to_owned());
         if error_string.is_empty() {
             self.nterror = 0;
         }
@@ -370,27 +462,84 @@ impl InitState {
         self.max_transact_size = max_transact_size;
         self.max_read_size = max_read_size;
         self.max_write_size = max_write_size;
-        self.update_preauth_hash_skeleton(&dialect.to_le_bytes());
-        self.update_preauth_hash_skeleton(&capabilities.to_le_bytes());
-        self.update_preauth_hash_skeleton(&max_transact_size.to_le_bytes());
-        self.update_preauth_hash_skeleton(&max_read_size.to_le_bytes());
-        self.update_preauth_hash_skeleton(&max_write_size.to_le_bytes());
+        self.refresh_negotiation_state();
+        self.update_preauth_hash(&dialect.to_le_bytes());
+        self.update_preauth_hash(&capabilities.to_le_bytes());
+        self.update_preauth_hash(&max_transact_size.to_le_bytes());
+        self.update_preauth_hash(&max_read_size.to_le_bytes());
+        self.update_preauth_hash(&max_write_size.to_le_bytes());
     }
 
-    /// Folds bytes into the deterministic pre-authentication hash skeleton.
-    pub fn update_preauth_hash_skeleton(&mut self, input: &[u8]) {
-        for (index, byte) in input.iter().enumerate() {
-            let slot = (self.preauth_hash_updates + index) % SMB2_PREAUTH_HASH_SIZE;
-            self.preauth_hash[slot] ^= *byte;
+    /// Applies negotiate context selections that are not present in the fixed reply.
+    pub fn apply_negotiate_context_state(&mut self, encryption_cipher: Option<u16>) {
+        self.encryption_cipher = encryption_cipher;
+        self.refresh_negotiation_state();
+    }
+
+    /// Folds bytes into the SMB 3.1.1 pre-authentication hash chain.
+    pub fn update_preauth_hash(&mut self, input: &[u8]) {
+        let mut digest = [0; SMB2_PREAUTH_HASH_SIZE];
+        let mut ctx = Sha512Context::new_sha512();
+        if ctx.input(&self.preauth_hash).is_ok()
+            && ctx.input(input).is_ok()
+            && ctx.result(&mut digest).is_ok()
+        {
+            self.preauth_hash = digest;
         }
         self.preauth_hash_updates = self.preauth_hash_updates.saturating_add(input.len());
     }
 
+    /// Folds bytes into the deterministic pre-authentication hash chain.
+    pub fn update_preauth_hash_skeleton(&mut self, input: &[u8]) {
+        self.update_preauth_hash(input);
+    }
+
     /// Applies SESSION_SETUP reply metadata to the initialization state.
     pub fn apply_session_setup_reply(&mut self, session_id: u64, session_key: &[u8]) {
+        self.apply_session_setup_reply_with_flags(session_id, 0, session_key);
+    }
+
+    /// Applies SESSION_SETUP reply metadata and derives signing/sealing state when material exists.
+    pub fn apply_session_setup_reply_with_flags(
+        &mut self,
+        session_id: u64,
+        session_flags: u16,
+        session_key: &[u8],
+    ) {
         self.session_id = session_id;
         self.session_key.clear();
         self.session_key.extend_from_slice(session_key);
+        self.update_preauth_hash(&session_id.to_le_bytes());
+        self.update_preauth_hash(&session_flags.to_le_bytes());
+        self.update_preauth_hash(session_key);
+        self.derived_keys = if session_key.is_empty() {
+            None
+        } else {
+            derive_session_keys(self.dialect, session_key, self.preauth_hash_for_keys()).ok()
+        };
+        self.refresh_session_state(session_flags);
+    }
+
+    /// Copies negotiated session/security state into the lower-level PDU context.
+    pub fn apply_to_context(&self, context: &mut Context) {
+        context.session_id = self.session_id;
+        context.private.dialect = self.dialect;
+        context.private.capabilities = self.capabilities;
+        context.private.security_mode = self.config.security_mode;
+        context.private.sign = self.config.sign;
+        context.private.seal = self.config.seal;
+        context.private.session_key.clear();
+        context
+            .private
+            .session_key
+            .extend_from_slice(&self.session_key);
+        context.private.cypher = self.encryption_cipher.unwrap_or_default();
+        context.private.preauthhash = self.preauth_hash;
+        if let Some(keys) = self.derived_keys {
+            context.private.signing_key = keys.signing_key;
+            context.private.serverin_key = keys.serverin_key;
+            context.private.serverout_key = keys.serverout_key;
+        }
     }
 
     /// Pushes a connected tree id onto the active tree stack.
@@ -422,6 +571,46 @@ impl InitState {
     /// Sets the configured security mode bitmask.
     pub fn set_security_mode(&mut self, security_mode: u16) {
         self.config.security_mode = security_mode;
+        self.refresh_negotiation_state();
+    }
+
+    /// Returns the configured security mode bitmask.
+    #[must_use]
+    pub fn security_mode(&self) -> u16 {
+        self.config.security_mode
+    }
+
+    /// Sets the server name.
+    pub fn set_server(&mut self, server: Option<&str>) {
+        self.server = server.map(str::to_owned);
+    }
+
+    /// Returns the configured server name.
+    #[must_use]
+    pub fn server(&self) -> Option<&str> {
+        self.server.as_deref()
+    }
+
+    /// Sets the share name.
+    pub fn set_share(&mut self, share: Option<&str>) {
+        self.share = share.map(str::to_owned);
+    }
+
+    /// Returns the configured share name.
+    #[must_use]
+    pub fn share(&self) -> Option<&str> {
+        self.share.as_deref()
+    }
+
+    /// Sets the path within the current share.
+    pub fn set_path(&mut self, path: Option<&str>) {
+        self.path = path.map(str::to_owned);
+    }
+
+    /// Returns the configured path within the current share.
+    #[must_use]
+    pub fn path(&self) -> Option<&str> {
+        self.path.as_deref()
     }
 
     /// Sets the authentication user.
@@ -438,6 +627,18 @@ impl InitState {
     /// Sets the authentication password.
     pub fn set_password(&mut self, password: Option<&str>) {
         self.password = password.map(str::to_owned);
+    }
+
+    /// Returns the configured authentication password.
+    #[must_use]
+    pub fn password(&self) -> Option<&str> {
+        self.password.as_deref()
+    }
+
+    /// Returns true when password state is owned by this context.
+    #[must_use]
+    pub fn has_password(&self) -> bool {
+        self.password.is_some()
     }
 
     /// Sets the authentication domain.
@@ -476,11 +677,25 @@ impl InitState {
     /// Enables or disables SMB3 sealing.
     pub fn set_seal(&mut self, val: bool) {
         self.config.seal = val;
+        self.refresh_negotiation_state();
+    }
+
+    /// Returns whether SMB3 sealing is enabled.
+    #[must_use]
+    pub fn seal(&self) -> bool {
+        self.config.seal
     }
 
     /// Enables or disables SMB2 signing.
     pub fn set_sign(&mut self, val: bool) {
         self.config.sign = val;
+        self.refresh_negotiation_state();
+    }
+
+    /// Returns whether signing is required.
+    #[must_use]
+    pub fn sign(&self) -> bool {
+        self.config.sign
     }
 
     /// Sets the authentication method.
@@ -488,14 +703,33 @@ impl InitState {
         self.config.authentication = val;
     }
 
+    /// Returns the selected authentication method.
+    #[must_use]
+    pub fn authentication(&self) -> AuthenticationMethod {
+        self.config.authentication
+    }
+
     /// Sets the operation timeout in seconds.
     pub fn set_timeout(&mut self, seconds: i32) {
         self.config.timeout = seconds;
     }
 
+    /// Returns the configured operation timeout.
+    #[must_use]
+    pub fn timeout(&self) -> i32 {
+        self.config.timeout
+    }
+
     /// Sets the dialect version selector.
     pub fn set_version(&mut self, version: NegotiateVersion) {
         self.config.version = version;
+        self.refresh_negotiation_state();
+    }
+
+    /// Returns the configured dialect version selector.
+    #[must_use]
+    pub fn version(&self) -> NegotiateVersion {
+        self.config.version
     }
 
     /// Sets pass-through decoding for complex command payloads.
@@ -509,11 +743,93 @@ impl InitState {
         self.config.passthrough
     }
 
+    /// Transfers credential ownership into another initialization context.
+    ///
+    /// The password is moved, matching the C delegation path where password
+    /// ownership leaves the source context. Identity strings remain available on
+    /// the source context because Rust callers may still inspect them safely.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InitError::NoCredentials`] when no user, password, or domain is configured.
+    pub fn delegate_credentials(&mut self, out: &mut InitState) -> InitResult<()> {
+        let has_credentials =
+            self.password.is_some() || self.user.is_some() || self.domain.is_some();
+        if !has_credentials {
+            self.set_error("No credentials to delegate");
+            return Err(InitError::NoCredentials);
+        }
+        out.password = self.password.take();
+        out.user = self.user.clone();
+        out.domain = self.domain.clone();
+        out.workstation = self.workstation.clone();
+        out.config.authentication = self.config.authentication;
+        out.config.use_cached_creds = self.config.use_cached_creds;
+        Ok(())
+    }
+
     fn apply_url(&mut self, url: &Smb2Url) {
         self.domain = url.domain.clone();
         self.user = url.user.clone().or_else(|| self.user.clone());
         self.server = Some(url.server.clone());
         self.share = Some(url.share.clone());
+        self.path = url.path.clone();
+    }
+
+    fn preauth_hash_for_keys(&self) -> Option<&[u8; SMB2_PREAUTH_HASH_SIZE]> {
+        if self.dialect >= SMB2_VERSION_0311 {
+            Some(&self.preauth_hash)
+        } else {
+            None
+        }
+    }
+
+    fn refresh_negotiation_state(&mut self) {
+        if self.dialect == 0 {
+            self.negotiation_state = NegotiationState::NotNegotiated;
+            return;
+        }
+
+        let signing_required =
+            self.config.sign || self.config.security_mode & SMB2_NEGOTIATE_SIGNING_REQUIRED != 0;
+        let sealing_available = self.dialect >= SMB2_VERSION_0300
+            && (self.capabilities & SMB2_GLOBAL_CAP_ENCRYPTION != 0
+                || self.encryption_cipher.is_some());
+        self.negotiation_state = NegotiationState::Negotiated {
+            dialect: self.dialect,
+            capabilities: self.capabilities,
+            security_mode: self.config.security_mode,
+            encryption_cipher: self.encryption_cipher,
+            signing_required,
+            sealing_available,
+        };
+    }
+
+    fn refresh_session_state(&mut self, session_flags: u16) {
+        if self.session_id == 0 {
+            self.session_state = SessionState::NoSession;
+            return;
+        }
+        let Some(_keys) = self.derived_keys else {
+            self.session_state = SessionState::SessionIdOnly {
+                session_id: self.session_id,
+                session_flags,
+            };
+            return;
+        };
+
+        let sealing_requested = self.config.seal || session_flags & 0x0004 != 0;
+        let sealing_ready = sealing_requested
+            && self.dialect >= SMB2_VERSION_0300
+            && self.encryption_cipher.is_some();
+        self.session_state = SessionState::Established {
+            session_id: self.session_id,
+            session_flags,
+            session_key_len: self.session_key.len(),
+            signing_algorithm: SigningAlgorithm::for_dialect(self.dialect),
+            signing_ready: !self.session_key.is_empty(),
+            sealing_ready,
+        };
     }
 
     fn parse_args(&mut self, args: &str) -> InitResult<()> {
@@ -625,6 +941,7 @@ pub fn init_context() -> Context {
         },
         outqueue: Vec::new(),
         waitqueue: Vec::new(),
+        private: Default::default(),
     }
 }
 
@@ -642,14 +959,16 @@ pub fn free_iovector(v: &mut IoVectors) {
 /// Returns [`InitError::TooManyIoVectors`] when the legacy vector limit is
 /// reached, or [`InitError::IoVectorSizeOverflow`] if the total size overflows.
 pub fn add_iovector(v: &mut IoVectors, buf: Vec<u8>) -> InitResult<()> {
-    if v.vectors.len() >= SMB2_MAX_VECTORS {
+    if v.niov() >= SMB2_MAX_VECTORS {
         return Err(InitError::TooManyIoVectors);
     }
-    v.total_size = v
+    let total_size = v
         .total_size
         .checked_add(buf.len())
         .ok_or(InitError::IoVectorSizeOverflow)?;
-    v.vectors.push(IoVec { buf });
+    v.add_iovector(IoVec { buf })
+        .map_err(|_| InitError::TooManyIoVectors)?;
+    v.total_size = total_size;
     Ok(())
 }
 
@@ -661,8 +980,84 @@ fn default_client_guid() -> [u8; SMB2_GUID_SIZE] {
 }
 
 fn parse_i32(value: Option<&str>) -> i32 {
-    match value.and_then(|value| value.parse().ok()) {
-        Some(parsed) => parsed,
-        None => 0,
+    value
+        .and_then(|value| value.parse().ok())
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{add_iovector, InitError, InitState, MAX_ERROR_SIZE};
+    use crate::include::libsmb2_private::IoVectors;
+
+    #[test]
+    fn parse_url_updates_owned_context_fields() {
+        let mut state = InitState::new();
+        let parsed = state
+            .parse_url("smb://DOMAIN;alice:secret@example/share/path/to/file?seal&sign&vers=3.1.1")
+            .expect("valid URL parses");
+
+        assert_eq!(parsed.domain.as_deref(), Some("DOMAIN"));
+        assert_eq!(parsed.user.as_deref(), Some("alice"));
+        assert_eq!(state.server(), Some("example"));
+        assert_eq!(state.share(), Some("share"));
+        assert_eq!(state.path(), Some("path/to/file"));
+        assert_eq!(state.password(), Some("secret"));
+        assert!(state.seal());
+        assert!(state.sign());
+    }
+
+    #[test]
+    fn delegate_credentials_moves_password_only() {
+        let mut source = InitState::new();
+        source.set_user(Some("alice"));
+        source.set_domain(Some("DOMAIN"));
+        source.set_password(Some("secret"));
+        let mut out = InitState::new();
+
+        source
+            .delegate_credentials(&mut out)
+            .expect("credentials are present");
+
+        assert_eq!(source.user(), Some("alice"));
+        assert!(!source.has_password());
+        assert_eq!(out.user(), Some("alice"));
+        assert_eq!(out.domain(), Some("DOMAIN"));
+        assert_eq!(out.password(), Some("secret"));
+    }
+
+    #[test]
+    fn delegate_credentials_reports_missing_state() {
+        let mut source = InitState::new();
+        source.set_user(None);
+        let mut out = InitState::new();
+
+        assert_eq!(
+            source.delegate_credentials(&mut out),
+            Err(InitError::NoCredentials)
+        );
+        assert_eq!(source.error(), "No credentials to delegate");
+    }
+
+    #[test]
+    fn error_string_is_byte_bounded_on_char_boundary() {
+        let mut state = InitState::new();
+        state.set_error(&"é".repeat(MAX_ERROR_SIZE));
+
+        assert!(state.error().len() <= MAX_ERROR_SIZE);
+        assert!(state.error().is_char_boundary(state.error().len()));
+    }
+
+    #[test]
+    fn add_iovector_preserves_checked_total_size() {
+        let mut vectors = IoVectors::new();
+        vectors.total_size = usize::MAX;
+
+        assert_eq!(
+            add_iovector(&mut vectors, vec![0]),
+            Err(InitError::IoVectorSizeOverflow)
+        );
+        assert_eq!(vectors.niov(), 0);
+        assert_eq!(vectors.total_size, usize::MAX);
     }
 }

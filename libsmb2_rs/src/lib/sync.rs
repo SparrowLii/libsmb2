@@ -937,7 +937,11 @@ fn share_names(share_info: SrvsvcShareEnumUnion) -> Vec<String> {
             .into_iter()
             .filter_map(|share| share.netname)
             .collect(),
-        SrvsvcShareEnumUnion::Raw { .. } => Vec::new(),
+        SrvsvcShareEnumUnion::Level2(_)
+        | SrvsvcShareEnumUnion::Level501(_)
+        | SrvsvcShareEnumUnion::Level502(_)
+        | SrvsvcShareEnumUnion::Level503(_)
+        | SrvsvcShareEnumUnion::Raw { .. } => Vec::new(),
     }
 }
 

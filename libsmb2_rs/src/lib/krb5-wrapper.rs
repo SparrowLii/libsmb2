@@ -2,8 +2,8 @@
 //!
 //! This module mirrors the state and function responsibilities of the legacy C
 //! Kerberos/GSSAPI wrapper. No platform GSSAPI dependency is linked yet; local
-//! testing uses a deterministic backend while real credential/keytab operations
-//! remain explicitly unavailable.
+//! no platform GSSAPI dependency is linked, so capability operations report an
+//! explicit unsupported-backend error after validating caller-owned state.
 
 /// GSS request flag matching the legacy sequence flag usage.
 pub const GSS_SEQUENCE_FLAG: u32 = 1 << 0;
@@ -50,7 +50,7 @@ impl Krb5Backend {
     /// Returns the backend compiled into this crate.
     #[must_use]
     pub const fn current() -> Self {
-        Self::Local
+        Self::Unavailable
     }
 
     /// Returns whether this backend can provide Kerberos-backed NTLMSSP.
@@ -69,14 +69,14 @@ impl Krb5Backend {
         }
     }
 
-    fn init_server_client_cred(self, auth_data: &PrivateAuthData) -> Krb5Result<()> {
+    fn init_server_client_cred(self, auth_data: &mut PrivateAuthData) -> Krb5Result<()> {
         match self {
             Self::Local => LocalKrb5Backend.init_server_client_cred(auth_data),
             Self::Unavailable => UnavailableKrb5Backend.init_server_client_cred(auth_data),
         }
     }
 
-    fn init_server_credentials(self, auth_data: &PrivateAuthData) -> Krb5Result<()> {
+    fn init_server_credentials(self, auth_data: &mut PrivateAuthData) -> Krb5Result<()> {
         match self {
             Self::Local => LocalKrb5Backend.init_server_credentials(auth_data),
             Self::Unavailable => UnavailableKrb5Backend.init_server_credentials(auth_data),
@@ -115,8 +115,8 @@ impl Krb5Backend {
 
 trait Krb5BackendOps {
     fn negotiate_reply(&self, auth_data: &PrivateAuthData) -> Krb5Result<()>;
-    fn init_server_client_cred(&self, auth_data: &PrivateAuthData) -> Krb5Result<()>;
-    fn init_server_credentials(&self, auth_data: &PrivateAuthData) -> Krb5Result<()>;
+    fn init_server_client_cred(&self, auth_data: &mut PrivateAuthData) -> Krb5Result<()>;
+    fn init_server_credentials(&self, auth_data: &mut PrivateAuthData) -> Krb5Result<()>;
     fn session_request(
         &self,
         auth_data: &mut PrivateAuthData,
@@ -199,19 +199,44 @@ impl LocalKrb5Backend {
             ),
         }
     }
+
+    fn local_credential(auth_data: &PrivateAuthData, purpose: &str) -> String {
+        format!(
+            "LOCAL-GSS:{purpose}:{}:{}:{}:{:?}",
+            auth_data.target_name.as_deref().unwrap_or("local"),
+            auth_data
+                .principal_name
+                .as_deref()
+                .unwrap_or("local-principal"),
+            auth_data.keytab_path.as_deref().unwrap_or("local-keytab"),
+            auth_data.mechanism,
+        )
+    }
+
+    fn ensure_ccache(auth_data: &mut PrivateAuthData) {
+        if auth_data.ccache_name.is_none() {
+            auth_data.ccache_name = Some(String::from("MEMORY:libsmb2-rs-local"));
+        }
+    }
 }
 
 impl Krb5BackendOps for LocalKrb5Backend {
     fn negotiate_reply(&self, _auth_data: &PrivateAuthData) -> Krb5Result<()> {
+        unsupported("krb5_negotiate_reply")
+    }
+
+    fn init_server_client_cred(&self, auth_data: &mut PrivateAuthData) -> Krb5Result<()> {
+        Self::ensure_ccache(auth_data);
+        auth_data.credential = Some(Self::local_credential(auth_data, "server-client"));
+        auth_data.context_state = Krb5ContextState::Accepting;
         Ok(())
     }
 
-    fn init_server_client_cred(&self, _auth_data: &PrivateAuthData) -> Krb5Result<()> {
-        unsupported("krb5_init_server_client_cred")
-    }
-
-    fn init_server_credentials(&self, _auth_data: &PrivateAuthData) -> Krb5Result<()> {
-        unsupported("krb5_init_server_credentials")
+    fn init_server_credentials(&self, auth_data: &mut PrivateAuthData) -> Krb5Result<()> {
+        Self::ensure_ccache(auth_data);
+        auth_data.credential = Some(Self::local_credential(auth_data, "server"));
+        auth_data.context_state = Krb5ContextState::Accepting;
+        Ok(())
     }
 
     fn session_request(
@@ -258,7 +283,7 @@ impl Krb5BackendOps for LocalKrb5Backend {
     }
 
     fn renew_server_credentials(&self, _auth_data: &PrivateAuthData) -> Krb5Result<()> {
-        unsupported("krb5_renew_server_credentials")
+        Ok(())
     }
 }
 
@@ -270,11 +295,11 @@ impl Krb5BackendOps for UnavailableKrb5Backend {
         unsupported("krb5_negotiate_reply")
     }
 
-    fn init_server_client_cred(&self, _auth_data: &PrivateAuthData) -> Krb5Result<()> {
+    fn init_server_client_cred(&self, _auth_data: &mut PrivateAuthData) -> Krb5Result<()> {
         unsupported("krb5_init_server_client_cred")
     }
 
-    fn init_server_credentials(&self, _auth_data: &PrivateAuthData) -> Krb5Result<()> {
+    fn init_server_credentials(&self, _auth_data: &mut PrivateAuthData) -> Krb5Result<()> {
         unsupported("krb5_init_server_credentials")
     }
 
@@ -534,12 +559,11 @@ impl PrivateAuthData {
     ///
     /// # Errors
     ///
-    /// Returns [`Krb5Error::EmptyHost`] when the configured host is empty and
-    /// [`Krb5Error::UnsupportedBackend`] when no GSSAPI backend is linked.
+    /// Returns [`Krb5Error::EmptyHost`] when the configured host is empty.
     pub fn init_server_client_cred(config: Krb5ServerClientCredConfig) -> Krb5Result<Self> {
         let host = strip_port(&config.hostname)?;
         let g_server = service_name(&host);
-        let auth_data = Self {
+        let mut auth_data = Self {
             g_server: Some(g_server.clone()),
             target_name: Some(g_server),
             keytab_path: config.keytab_path,
@@ -550,7 +574,7 @@ impl PrivateAuthData {
             ..Self::default()
         };
 
-        Krb5Backend::current().init_server_client_cred(&auth_data)?;
+        Krb5Backend::current().init_server_client_cred(&mut auth_data)?;
         Ok(auth_data)
     }
 
@@ -558,9 +582,7 @@ impl PrivateAuthData {
     ///
     /// # Errors
     ///
-    /// Returns [`Krb5Error::EmptyHost`] when the host is empty. Returns
-    /// [`Krb5Error::UnsupportedBackend`] when a keytab path is present and no
-    /// GSSAPI backend is linked.
+    /// Returns [`Krb5Error::EmptyHost`] when the host is empty.
     pub fn init_server_credentials(
         config: Krb5ServerCredentialsConfig,
     ) -> Krb5Result<Option<Self>> {
@@ -573,7 +595,7 @@ impl PrivateAuthData {
 
         let host = strip_port(&config.hostname)?;
         let principal_name = format!("cifs/{host}");
-        let auth_data = Self {
+        let mut auth_data = Self {
             g_server: Some(service_name(&host)),
             target_name: Some(service_name(&host)),
             keytab_path: Some(keytab_path),
@@ -584,7 +606,7 @@ impl PrivateAuthData {
             ..Self::default()
         };
 
-        Krb5Backend::current().init_server_credentials(&auth_data)?;
+        Krb5Backend::current().init_server_credentials(&mut auth_data)?;
         Ok(Some(auth_data))
     }
 
@@ -610,8 +632,8 @@ impl PrivateAuthData {
     ///
     /// # Errors
     ///
-    /// Returns [`Krb5Error::UnsupportedBackend`] and preserves existing state
-    /// when the selected backend cannot process the request.
+    /// Returns [`Krb5Error::UnsupportedBackend`] and preserves existing state if
+    /// the selected backend cannot process the request.
     pub fn session_request(&mut self, input: Option<&[u8]>) -> Krb5Result<Krb5SessionRequest> {
         let previous = self.clone();
         let result = Krb5Backend::current().session_request(self, input);
@@ -625,8 +647,8 @@ impl PrivateAuthData {
     ///
     /// # Errors
     ///
-    /// Returns [`Krb5Error::UnsupportedBackend`] and preserves existing state
-    /// when the selected backend cannot process the reply.
+    /// Returns [`Krb5Error::UnsupportedBackend`] and preserves existing state if
+    /// the selected backend cannot process the reply.
     pub fn session_reply(&mut self, input: &[u8]) -> Krb5Result<Krb5SessionReply> {
         let previous = self.clone();
         let result = Krb5Backend::current().session_reply(self, input);
@@ -658,8 +680,8 @@ impl PrivateAuthData {
     ///
     /// # Errors
     ///
-    /// Returns [`Krb5Error::UnsupportedBackend`] when a keytab-backed credential
-    /// exists and no GSSAPI backend is linked.
+    /// Returns [`Krb5Error::UnsupportedBackend`] if the selected backend cannot
+    /// renew keytab-backed credential state.
     pub fn renew_server_credentials(&self) -> Krb5Result<()> {
         if self.keytab_path.is_none() {
             return Ok(());
@@ -735,88 +757,6 @@ pub const fn krb5_can_do_ntlmssp() -> bool {
     Krb5Backend::current().can_do_ntlmssp()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn negotiate_reply_uses_local_backend() {
-        let result = PrivateAuthData::negotiate_reply(Krb5NegotiateConfig {
-            server: String::from("server.example.com:445"),
-            user_name: Some(String::from("user")),
-            ..Krb5NegotiateConfig::default()
-        })
-        .expect("local backend should initialize client auth data");
-
-        assert_eq!(result.g_server(), Some("cifs@server.example.com"));
-        assert_eq!(result.target_name(), Some("cifs@server.example.com"));
-        assert_eq!(result.user_name(), Some("user"));
-        assert_eq!(result.context_state(), Krb5ContextState::Initiating);
-    }
-
-    #[test]
-    fn delegated_negotiate_reply_uses_local_backend() {
-        let result = PrivateAuthData::negotiate_reply(Krb5NegotiateConfig {
-            server: String::from("server.example.com"),
-            delegated_credential: Some(String::from("delegated")),
-            ..Krb5NegotiateConfig::default()
-        })
-        .expect("local backend should accept delegated auth data");
-
-        assert_eq!(result.g_server(), Some("cifs@server.example.com"));
-        assert_eq!(result.user_name(), None);
-        assert_eq!(result.context_state(), Krb5ContextState::Initiating);
-    }
-
-    #[test]
-    fn session_request_completes_with_local_backend() {
-        let mut auth_data = PrivateAuthData::new();
-        auth_data.target_name = Some(String::from("cifs@server.example.com"));
-        auth_data.user_name = Some(String::from("user@example.com"));
-
-        let result = auth_data
-            .session_request(Some(&[9, 8, 7]))
-            .expect("local backend should complete request");
-
-        assert!(!result.continue_needed);
-        assert!(!result.output_token.is_empty());
-        assert_eq!(auth_data.context_state(), Krb5ContextState::Complete);
-        assert_eq!(auth_data.req_flags, DEFAULT_SESSION_REQUEST_FLAGS);
-        assert_eq!(
-            auth_data.get_output_token_buffer(),
-            result.output_token.as_bytes()
-        );
-        assert_eq!(auth_data.session_get_session_key().map(<[u8]>::len), Ok(16));
-    }
-
-    #[test]
-    fn session_reply_completes_with_local_backend() {
-        let mut auth_data = PrivateAuthData::new();
-        auth_data.target_name = Some(String::from("cifs@server.example.com"));
-        auth_data.user_name = Some(String::from("user@example.com"));
-
-        let result = auth_data
-            .session_reply(&[9, 8, 7])
-            .expect("local backend should complete reply");
-
-        assert!(!result.more_processing_needed);
-        assert_eq!(result.user.as_deref(), Some("user"));
-        assert_eq!(result.domain.as_deref(), Some("example.com"));
-        assert!(!result.output_token.is_empty());
-        assert_eq!(auth_data.context_state(), Krb5ContextState::Complete);
-        assert_eq!(
-            auth_data.get_output_token_buffer(),
-            result.output_token.as_bytes()
-        );
-        assert_eq!(auth_data.session_get_session_key().map(<[u8]>::len), Ok(16));
-    }
-
-    #[test]
-    fn unavailable_backend_has_no_ntlmssp_capability() {
-        assert!(!krb5_can_do_ntlmssp());
-    }
-}
-
 fn require_some(value: Option<&str>, name: &'static str) -> Krb5Result<()> {
     match value {
         Some(_) => Ok(()),
@@ -835,4 +775,88 @@ fn strip_port(server: &str) -> Krb5Result<String> {
     }
 
     Ok(host.to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn negotiate_reply_reports_unsupported_backend() {
+        let error = PrivateAuthData::negotiate_reply(Krb5NegotiateConfig {
+            server: String::from("server.example.com:445"),
+            user_name: Some(String::from("user")),
+            ..Krb5NegotiateConfig::default()
+        })
+        .expect_err("missing GSS backend should be explicit");
+
+        assert_eq!(
+            error,
+            Krb5Error::UnsupportedBackend {
+                operation: "krb5_negotiate_reply"
+            }
+        );
+    }
+
+    #[test]
+    fn delegated_negotiate_reply_reports_unsupported_backend() {
+        let error = PrivateAuthData::negotiate_reply(Krb5NegotiateConfig {
+            server: String::from("server.example.com"),
+            delegated_credential: Some(String::from("delegated")),
+            ..Krb5NegotiateConfig::default()
+        })
+        .expect_err("missing GSS backend should be explicit");
+
+        assert_eq!(
+            error,
+            Krb5Error::UnsupportedBackend {
+                operation: "krb5_negotiate_reply"
+            }
+        );
+    }
+
+    #[test]
+    fn session_request_preserves_state_without_backend() {
+        let mut auth_data = PrivateAuthData::new();
+        auth_data.target_name = Some(String::from("cifs@server.example.com"));
+        auth_data.user_name = Some(String::from("user@example.com"));
+        let previous = auth_data.clone();
+
+        let error = auth_data
+            .session_request(Some(&[9, 8, 7]))
+            .expect_err("missing GSS backend should be explicit");
+
+        assert_eq!(
+            error,
+            Krb5Error::UnsupportedBackend {
+                operation: "krb5_session_request"
+            }
+        );
+        assert_eq!(auth_data, previous);
+    }
+
+    #[test]
+    fn session_reply_preserves_state_without_backend() {
+        let mut auth_data = PrivateAuthData::new();
+        auth_data.target_name = Some(String::from("cifs@server.example.com"));
+        auth_data.user_name = Some(String::from("user@example.com"));
+        let previous = auth_data.clone();
+
+        let error = auth_data
+            .session_reply(&[9, 8, 7])
+            .expect_err("missing GSS backend should be explicit");
+
+        assert_eq!(
+            error,
+            Krb5Error::UnsupportedBackend {
+                operation: "krb5_session_reply"
+            }
+        );
+        assert_eq!(auth_data, previous);
+    }
+
+    #[test]
+    fn unavailable_backend_has_no_ntlmssp_capability() {
+        assert!(!krb5_can_do_ntlmssp());
+    }
 }

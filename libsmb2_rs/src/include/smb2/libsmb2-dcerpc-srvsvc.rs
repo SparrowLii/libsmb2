@@ -37,6 +37,14 @@ pub enum ShareInfoLevel {
     /// Level 1 contains the share network name, type, and remark.
     #[default]
     Level1,
+    /// Level 2 contains level 1 fields plus permissions, usage, path, and password.
+    Level2,
+    /// Level 501 contains level 1 fields plus flags.
+    Level501,
+    /// Level 502 contains level 2 fields plus a security descriptor.
+    Level502,
+    /// Level 503 contains level 502 fields plus a server name.
+    Level503,
     /// A level value not modeled by this migration skeleton.
     Unknown(u32),
 }
@@ -46,6 +54,10 @@ impl From<u32> for ShareInfoLevel {
         match level {
             0 => Self::Level0,
             1 => Self::Level1,
+            2 => Self::Level2,
+            501 => Self::Level501,
+            502 => Self::Level502,
+            503 => Self::Level503,
             value => Self::Unknown(value),
         }
     }
@@ -56,6 +68,10 @@ impl From<ShareInfoLevel> for u32 {
         match level {
             ShareInfoLevel::Level0 => 0,
             ShareInfoLevel::Level1 => 1,
+            ShareInfoLevel::Level2 => 2,
+            ShareInfoLevel::Level501 => 501,
+            ShareInfoLevel::Level502 => 502,
+            ShareInfoLevel::Level503 => 503,
             ShareInfoLevel::Unknown(value) => value,
         }
     }
@@ -175,6 +191,100 @@ pub struct SrvsvcShareInfo1Container {
     pub shares: Vec<SrvsvcShareInfo1>,
 }
 
+/// Rust representation of `struct srvsvc_SHARE_INFO_2`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SrvsvcShareInfo2 {
+    /// Share network name.
+    pub netname: String,
+    /// Raw SRVSVC share type bit field.
+    pub share_type: u32,
+    /// Optional share remark.
+    pub remark: String,
+    /// Legacy permissions field.
+    pub permissions: u32,
+    /// Maximum allowed simultaneous users.
+    pub max_uses: u32,
+    /// Current simultaneous users.
+    pub current_uses: u32,
+    /// Local path backing the share.
+    pub path: String,
+    /// Optional share password.
+    pub passwd: String,
+}
+
+/// Rust representation of `struct srvsvc_SHARE_INFO_2_CONTAINER`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SrvsvcShareInfo2Container {
+    /// Number of level 2 entries returned by the server.
+    pub entries_read: u32,
+    /// Level 2 share entries.
+    pub shares: Vec<SrvsvcShareInfo2>,
+}
+
+/// Rust representation of `struct srvsvc_SHARE_INFO_501`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SrvsvcShareInfo501 {
+    /// Share network name.
+    pub netname: String,
+    /// Raw SRVSVC share type bit field.
+    pub share_type: u32,
+    /// Optional share remark.
+    pub remark: String,
+    /// SHARE_INFO_501 flags.
+    pub flags: u32,
+}
+
+/// Rust representation of `struct srvsvc_SHARE_INFO_501_CONTAINER`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SrvsvcShareInfo501Container {
+    /// Number of level 501 entries returned by the server.
+    pub entries_read: u32,
+    /// Level 501 share entries.
+    pub shares: Vec<SrvsvcShareInfo501>,
+}
+
+/// Rust representation of `struct srvsvc_SHARE_INFO_502`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SrvsvcShareInfo502 {
+    /// Level 2-compatible share fields.
+    pub info2: SrvsvcShareInfo2,
+    /// Security descriptor byte count.
+    pub reserved: u32,
+    /// Self-relative security descriptor bytes.
+    pub security_descriptor: Vec<u8>,
+}
+
+/// Rust representation of `struct srvsvc_SHARE_INFO_502_CONTAINER`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SrvsvcShareInfo502Container {
+    /// Number of level 502 entries returned by the server.
+    pub entries_read: u32,
+    /// Level 502 share entries.
+    pub shares: Vec<SrvsvcShareInfo502>,
+}
+
+/// Rust representation of `struct srvsvc_SHARE_INFO_503`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SrvsvcShareInfo503 {
+    /// Level 2-compatible share fields.
+    pub info2: SrvsvcShareInfo2,
+    /// Server name that owns the share.
+    pub servername: String,
+    /// Security descriptor byte count.
+    pub reserved: u32,
+    /// Self-relative security descriptor bytes.
+    pub security_descriptor: Vec<u8>,
+}
+
+/// Rust representation of `struct srvsvc_SHARE_INFO_503_CONTAINER`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SrvsvcShareInfo503Container {
+    /// Number of level 503 entries returned by the server.
+    pub entries_read: u32,
+    /// Level 503 share entries.
+    pub shares: Vec<SrvsvcShareInfo503>,
+}
+
 /// Union-like SRVSVC share enumeration payload selected by level.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SrvsvcShareEnumUnion {
@@ -182,6 +292,14 @@ pub enum SrvsvcShareEnumUnion {
     Level0(SrvsvcShareInfo0Container),
     /// Level 1 share enumeration container.
     Level1(SrvsvcShareInfo1Container),
+    /// Level 2 share enumeration container.
+    Level2(SrvsvcShareInfo2Container),
+    /// Level 501 share enumeration container.
+    Level501(SrvsvcShareInfo501Container),
+    /// Level 502 share enumeration container.
+    Level502(SrvsvcShareInfo502Container),
+    /// Level 503 share enumeration container.
+    Level503(SrvsvcShareInfo503Container),
     /// Unsupported level placeholder retained for forward compatibility.
     ///
     /// Known raw levels are safely converted to empty modeled containers when
@@ -248,6 +366,14 @@ pub enum SrvsvcShareInfoUnion {
     Level0(SrvsvcShareInfo0),
     /// Level 1 share information.
     Level1(SrvsvcShareInfo1),
+    /// Level 2 share information.
+    Level2(SrvsvcShareInfo2),
+    /// Level 501 share information.
+    Level501(SrvsvcShareInfo501),
+    /// Level 502 share information.
+    Level502(SrvsvcShareInfo502),
+    /// Level 503 share information.
+    Level503(SrvsvcShareInfo503),
     /// Unsupported level placeholder retained for forward compatibility.
     Unsupported { level: u32 },
 }
@@ -527,6 +653,18 @@ fn to_lib_share_info(value: &SrvsvcShareInfo) -> Result<lib_srvsvc::SrvsvcShareI
         SrvsvcShareInfoUnion::Level1(info) => Ok(lib_srvsvc::SrvsvcShareInfo::Level1(
             to_lib_share_info_1(info),
         )),
+        SrvsvcShareInfoUnion::Level2(info) => Ok(lib_srvsvc::SrvsvcShareInfo::Level2(
+            to_lib_share_info_2(info),
+        )),
+        SrvsvcShareInfoUnion::Level501(info) => Ok(lib_srvsvc::SrvsvcShareInfo::Level501(
+            to_lib_share_info_501(info),
+        )),
+        SrvsvcShareInfoUnion::Level502(info) => Ok(lib_srvsvc::SrvsvcShareInfo::Level502(
+            to_lib_share_info_502(info),
+        )),
+        SrvsvcShareInfoUnion::Level503(info) => Ok(lib_srvsvc::SrvsvcShareInfo::Level503(
+            to_lib_share_info_503(info),
+        )),
         SrvsvcShareInfoUnion::Unsupported { .. } => Err(not_implemented()),
     }
 }
@@ -551,6 +689,26 @@ fn to_lib_share_enum_struct(
                 container.shares.iter().map(to_lib_share_info_1).collect(),
             ))
         }
+        SrvsvcShareEnumUnion::Level2(container) => {
+            lib_srvsvc::SrvsvcShareEnumUnion::Level2(lib_srvsvc::SrvsvcShareInfo2Container::new(
+                container.shares.iter().map(to_lib_share_info_2).collect(),
+            ))
+        }
+        SrvsvcShareEnumUnion::Level501(container) => lib_srvsvc::SrvsvcShareEnumUnion::Level501(
+            lib_srvsvc::SrvsvcShareInfo501Container::new(
+                container.shares.iter().map(to_lib_share_info_501).collect(),
+            ),
+        ),
+        SrvsvcShareEnumUnion::Level502(container) => lib_srvsvc::SrvsvcShareEnumUnion::Level502(
+            lib_srvsvc::SrvsvcShareInfo502Container::new(
+                container.shares.iter().map(to_lib_share_info_502).collect(),
+            ),
+        ),
+        SrvsvcShareEnumUnion::Level503(container) => lib_srvsvc::SrvsvcShareEnumUnion::Level503(
+            lib_srvsvc::SrvsvcShareInfo503Container::new(
+                container.shares.iter().map(to_lib_share_info_503).collect(),
+            ),
+        ),
         SrvsvcShareEnumUnion::Unsupported { level } => {
             empty_lib_share_enum_union_for_level(*level)?
         }
@@ -566,6 +724,18 @@ fn empty_lib_share_enum_union_for_level(level: u32) -> Result<lib_srvsvc::Srvsvc
         ShareInfoLevel::Level1 => Ok(lib_srvsvc::SrvsvcShareEnumUnion::Level1(
             lib_srvsvc::SrvsvcShareInfo1Container::default(),
         )),
+        ShareInfoLevel::Level2 => Ok(lib_srvsvc::SrvsvcShareEnumUnion::Level2(
+            lib_srvsvc::SrvsvcShareInfo2Container::default(),
+        )),
+        ShareInfoLevel::Level501 => Ok(lib_srvsvc::SrvsvcShareEnumUnion::Level501(
+            lib_srvsvc::SrvsvcShareInfo501Container::default(),
+        )),
+        ShareInfoLevel::Level502 => Ok(lib_srvsvc::SrvsvcShareEnumUnion::Level502(
+            lib_srvsvc::SrvsvcShareInfo502Container::default(),
+        )),
+        ShareInfoLevel::Level503 => Ok(lib_srvsvc::SrvsvcShareEnumUnion::Level503(
+            lib_srvsvc::SrvsvcShareInfo503Container::default(),
+        )),
         ShareInfoLevel::Unknown(level) => Ok(lib_srvsvc::SrvsvcShareEnumUnion::Raw {
             level,
             bytes: Vec::new(),
@@ -578,6 +748,45 @@ fn to_lib_share_info_1(value: &SrvsvcShareInfo1) -> lib_srvsvc::SrvsvcShareInfo1
         netname: non_empty_option(value.netname.clone()),
         share_type: value.share_type,
         remark: non_empty_option(value.remark.clone()),
+    }
+}
+
+fn to_lib_share_info_2(value: &SrvsvcShareInfo2) -> lib_srvsvc::SrvsvcShareInfo2 {
+    lib_srvsvc::SrvsvcShareInfo2 {
+        netname: non_empty_option(value.netname.clone()),
+        share_type: value.share_type,
+        remark: non_empty_option(value.remark.clone()),
+        permissions: value.permissions,
+        max_uses: value.max_uses,
+        current_uses: value.current_uses,
+        path: non_empty_option(value.path.clone()),
+        passwd: non_empty_option(value.passwd.clone()),
+    }
+}
+
+fn to_lib_share_info_501(value: &SrvsvcShareInfo501) -> lib_srvsvc::SrvsvcShareInfo501 {
+    lib_srvsvc::SrvsvcShareInfo501 {
+        netname: non_empty_option(value.netname.clone()),
+        share_type: value.share_type,
+        remark: non_empty_option(value.remark.clone()),
+        flags: value.flags,
+    }
+}
+
+fn to_lib_share_info_502(value: &SrvsvcShareInfo502) -> lib_srvsvc::SrvsvcShareInfo502 {
+    lib_srvsvc::SrvsvcShareInfo502 {
+        info2: to_lib_share_info_2(&value.info2),
+        reserved: value.reserved,
+        security_descriptor: value.security_descriptor.clone(),
+    }
+}
+
+fn to_lib_share_info_503(value: &SrvsvcShareInfo503) -> lib_srvsvc::SrvsvcShareInfo503 {
+    lib_srvsvc::SrvsvcShareInfo503 {
+        info2: to_lib_share_info_2(&value.info2),
+        servername: non_empty_option(value.servername.clone()),
+        reserved: value.reserved,
+        security_descriptor: value.security_descriptor.clone(),
     }
 }
 
@@ -629,6 +838,50 @@ fn from_lib_share_enum_struct(value: lib_srvsvc::SrvsvcShareEnumStruct) -> Srvsv
                     .collect(),
             }),
         },
+        lib_srvsvc::SrvsvcShareEnumUnion::Level2(container) => SrvsvcShareEnumStruct {
+            level: ShareInfoLevel::Level2,
+            share_info: SrvsvcShareEnumUnion::Level2(SrvsvcShareInfo2Container {
+                entries_read: container.entries_read,
+                shares: container
+                    .share_info_2
+                    .into_iter()
+                    .map(from_lib_share_info_2)
+                    .collect(),
+            }),
+        },
+        lib_srvsvc::SrvsvcShareEnumUnion::Level501(container) => SrvsvcShareEnumStruct {
+            level: ShareInfoLevel::Level501,
+            share_info: SrvsvcShareEnumUnion::Level501(SrvsvcShareInfo501Container {
+                entries_read: container.entries_read,
+                shares: container
+                    .share_info_501
+                    .into_iter()
+                    .map(from_lib_share_info_501)
+                    .collect(),
+            }),
+        },
+        lib_srvsvc::SrvsvcShareEnumUnion::Level502(container) => SrvsvcShareEnumStruct {
+            level: ShareInfoLevel::Level502,
+            share_info: SrvsvcShareEnumUnion::Level502(SrvsvcShareInfo502Container {
+                entries_read: container.entries_read,
+                shares: container
+                    .share_info_502
+                    .into_iter()
+                    .map(from_lib_share_info_502)
+                    .collect(),
+            }),
+        },
+        lib_srvsvc::SrvsvcShareEnumUnion::Level503(container) => SrvsvcShareEnumStruct {
+            level: ShareInfoLevel::Level503,
+            share_info: SrvsvcShareEnumUnion::Level503(SrvsvcShareInfo503Container {
+                entries_read: container.entries_read,
+                shares: container
+                    .share_info_503
+                    .into_iter()
+                    .map(from_lib_share_info_503)
+                    .collect(),
+            }),
+        },
         lib_srvsvc::SrvsvcShareEnumUnion::Raw { level, .. } => SrvsvcShareEnumStruct {
             level: ShareInfoLevel::Unknown(level),
             share_info: SrvsvcShareEnumUnion::Unsupported { level },
@@ -650,6 +903,22 @@ fn from_lib_share_info(value: lib_srvsvc::SrvsvcShareInfo) -> SrvsvcShareInfo {
             level: ShareInfoLevel::Level1,
             info: SrvsvcShareInfoUnion::Level1(from_lib_share_info_1(info)),
         },
+        lib_srvsvc::SrvsvcShareInfo::Level2(info) => SrvsvcShareInfo {
+            level: ShareInfoLevel::Level2,
+            info: SrvsvcShareInfoUnion::Level2(from_lib_share_info_2(info)),
+        },
+        lib_srvsvc::SrvsvcShareInfo::Level501(info) => SrvsvcShareInfo {
+            level: ShareInfoLevel::Level501,
+            info: SrvsvcShareInfoUnion::Level501(from_lib_share_info_501(info)),
+        },
+        lib_srvsvc::SrvsvcShareInfo::Level502(info) => SrvsvcShareInfo {
+            level: ShareInfoLevel::Level502,
+            info: SrvsvcShareInfoUnion::Level502(from_lib_share_info_502(info)),
+        },
+        lib_srvsvc::SrvsvcShareInfo::Level503(info) => SrvsvcShareInfo {
+            level: ShareInfoLevel::Level503,
+            info: SrvsvcShareInfoUnion::Level503(from_lib_share_info_503(info)),
+        },
         lib_srvsvc::SrvsvcShareInfo::Raw { level, .. } => SrvsvcShareInfo {
             level: ShareInfoLevel::Unknown(level),
             info: SrvsvcShareInfoUnion::Unsupported { level },
@@ -669,10 +938,65 @@ fn from_lib_share_info_1(value: lib_srvsvc::SrvsvcShareInfo1) -> SrvsvcShareInfo
     }
 }
 
+fn from_lib_share_info_2(value: lib_srvsvc::SrvsvcShareInfo2) -> SrvsvcShareInfo2 {
+    SrvsvcShareInfo2 {
+        netname: value
+            .netname
+            .map_or_else(String::new, core::convert::identity),
+        share_type: value.share_type,
+        remark: value
+            .remark
+            .map_or_else(String::new, core::convert::identity),
+        permissions: value.permissions,
+        max_uses: value.max_uses,
+        current_uses: value.current_uses,
+        path: value.path.map_or_else(String::new, core::convert::identity),
+        passwd: value
+            .passwd
+            .map_or_else(String::new, core::convert::identity),
+    }
+}
+
+fn from_lib_share_info_501(value: lib_srvsvc::SrvsvcShareInfo501) -> SrvsvcShareInfo501 {
+    SrvsvcShareInfo501 {
+        netname: value
+            .netname
+            .map_or_else(String::new, core::convert::identity),
+        share_type: value.share_type,
+        remark: value
+            .remark
+            .map_or_else(String::new, core::convert::identity),
+        flags: value.flags,
+    }
+}
+
+fn from_lib_share_info_502(value: lib_srvsvc::SrvsvcShareInfo502) -> SrvsvcShareInfo502 {
+    SrvsvcShareInfo502 {
+        info2: from_lib_share_info_2(value.info2),
+        reserved: value.reserved,
+        security_descriptor: value.security_descriptor,
+    }
+}
+
+fn from_lib_share_info_503(value: lib_srvsvc::SrvsvcShareInfo503) -> SrvsvcShareInfo503 {
+    SrvsvcShareInfo503 {
+        info2: from_lib_share_info_2(value.info2),
+        servername: value
+            .servername
+            .map_or_else(String::new, core::convert::identity),
+        reserved: value.reserved,
+        security_descriptor: value.security_descriptor,
+    }
+}
+
 fn to_lib_level(level: ShareInfoLevel) -> Result<lib_srvsvc::ShareInfoLevel> {
     match level {
         ShareInfoLevel::Level0 => Ok(lib_srvsvc::ShareInfoLevel::Level0),
         ShareInfoLevel::Level1 => Ok(lib_srvsvc::ShareInfoLevel::Level1),
+        ShareInfoLevel::Level2 => Ok(lib_srvsvc::ShareInfoLevel::Level2),
+        ShareInfoLevel::Level501 => Ok(lib_srvsvc::ShareInfoLevel::Level501),
+        ShareInfoLevel::Level502 => Ok(lib_srvsvc::ShareInfoLevel::Level502),
+        ShareInfoLevel::Level503 => Ok(lib_srvsvc::ShareInfoLevel::Level503),
         ShareInfoLevel::Unknown(level) => Ok(lib_srvsvc::ShareInfoLevel::Unknown(level)),
     }
 }

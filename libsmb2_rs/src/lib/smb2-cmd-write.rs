@@ -222,6 +222,9 @@ pub fn encode_write_request_vectors(
             vectors.push(request.buffer[..data_len].to_vec());
             return Ok(vectors);
         };
+        if info.len() < usize::from(request.write_channel_info_length) {
+            return Err(Smb2WriteError::BufferTooSmall);
+        }
         put_u16(
             &mut fixed,
             40,
@@ -245,7 +248,6 @@ pub fn encode_write_request_vectors(
 }
 
 /// Creates a WRITE PDU skeleton from the C `smb2_cmd_write_async` responsibilities.
-#[must_use]
 pub fn smb2_cmd_write_async<'a>(
     options: WriteEncodeOptions,
     mut request: Smb2WriteRequest<'a>,
@@ -328,7 +330,7 @@ pub fn smb2_process_write_request_fixed<'a>(
     }
 
     let struct_size = get_u16(fixed, 0)?;
-    if struct_size > SMB2_WRITE_REQUEST_SIZE {
+    if struct_size != SMB2_WRITE_REQUEST_SIZE || usize::from(struct_size & 0xfffe) != fixed.len() {
         return Err(Smb2WriteError::InvalidStructureSize {
             expected: SMB2_WRITE_REQUEST_SIZE,
             actual: struct_size,

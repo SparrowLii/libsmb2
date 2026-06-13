@@ -224,11 +224,7 @@ pub fn smb2_encode_change_notify_reply(rep: &ChangeNotifyReply) -> ChangeNotifyR
     let fixed_len = ChangeNotifyReply::fixed_wire_len();
     let mut buf = vec![0; fixed_len + pad_to_32bit(output_len)];
     write_u16(&mut buf, 0, SMB2_CHANGE_NOTIFY_REPLY_SIZE as u16)?;
-    write_u16(
-        &mut buf,
-        2,
-        (SMB2_HEADER_SIZE + SMB2_CHANGE_NOTIFY_REQUEST_SIZE) as u16,
-    )?;
+    write_u16(&mut buf, 2, (SMB2_HEADER_SIZE + fixed_len) as u16)?;
     write_u32(&mut buf, 4, rep.output_buffer_length)?;
     if output_len > 0 {
         write_bytes(&mut buf, fixed_len, slice_at(&rep.output, 0, output_len)?)?;

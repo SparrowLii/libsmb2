@@ -298,7 +298,6 @@ pub enum Smb2CreateCommand {
 }
 
 /// Builds a CREATE request PDU skeleton, mirroring `smb2_cmd_create_async`.
-#[must_use]
 pub fn smb2_cmd_create_async<'a>(
     request: Smb2CreateRequest<'a>,
     callback_data: Option<&'a [u8]>,
@@ -314,7 +313,6 @@ pub fn smb2_cmd_create_async<'a>(
 }
 
 /// Builds a CREATE reply PDU skeleton, mirroring `smb2_cmd_create_reply_async`.
-#[must_use]
 pub fn smb2_cmd_create_reply_async<'a>(
     reply: Smb2CreateReply<'a>,
     callback_data: Option<&'a [u8]>,

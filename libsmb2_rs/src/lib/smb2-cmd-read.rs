@@ -218,7 +218,7 @@ impl Smb2ReadRequest {
     ) -> ReadCommandResult<(Self, usize)> {
         require_len(fixed, READ_REQUEST_FIXED_LEN)?;
         let structure_size = get_u16(fixed, 0);
-        if structure_size > SMB2_READ_REQUEST_SIZE {
+        if structure_size != SMB2_READ_REQUEST_SIZE || fixed.len() != READ_REQUEST_FIXED_LEN {
             return Err(ReadCommandError::UnexpectedStructureSize {
                 expected: SMB2_READ_REQUEST_SIZE,
                 actual: structure_size,
@@ -262,8 +262,10 @@ impl Smb2ReadRequest {
             return Err(ReadCommandError::ChannelInfoOverlapsRequest);
         }
 
-        let variable_len = usize::from(read_channel_info_offset) - minimum_offset
-            + usize::from(read_channel_info_length);
+        let variable_len = usize::from(read_channel_info_offset)
+            .checked_sub(minimum_offset)
+            .and_then(|offset| offset.checked_add(usize::from(read_channel_info_length)))
+            .ok_or(ReadCommandError::ChannelInfoOverlapsRequest)?;
         Ok((
             Self {
                 flags: get_u8(fixed, 3),
@@ -362,7 +364,7 @@ impl Smb2ReadReply {
     pub fn process_reply_fixed(fixed: &[u8]) -> ReadCommandResult<(Self, usize)> {
         require_len(fixed, READ_REPLY_FIXED_LEN)?;
         let structure_size = get_u16(fixed, 0);
-        if structure_size > SMB2_READ_REPLY_SIZE {
+        if structure_size != SMB2_READ_REPLY_SIZE || fixed.len() != READ_REPLY_FIXED_LEN {
             return Err(ReadCommandError::UnexpectedStructureSize {
                 expected: SMB2_READ_REPLY_SIZE,
                 actual: structure_size,

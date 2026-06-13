@@ -3,8 +3,8 @@
 //! The legacy C file owns SMB2/SMB3 signature calculation, signature flagging on
 //! outgoing PDUs, and a currently-empty signature verification hook. This Rust
 //! module mirrors those responsibilities as migration-safe data structures and
-//! method skeletons without implementing the full HMAC-SHA256 or AES-CMAC
-//! protocol logic.
+//! local HMAC-SHA256/AES-CMAC signing helpers. Network I/O remains outside this
+//! module.
 
 use super::aes::{Aes128Key, AesBlock, AesError};
 use super::hmac::{hmac, HmacContext, HmacError, ShaVersion};
@@ -152,6 +152,8 @@ pub enum SigningError {
     TooFewVectors,
     /// A session key is required before signing can proceed.
     MissingSessionKey,
+    /// The supplied signing key material is empty or all zeroes.
+    InvalidSigningKey,
     /// SMB 3.1.1 key derivation requires a preauth integrity hash.
     MissingPreauthHash,
     /// The received PDU signature does not match the recomputed signature.
@@ -186,7 +188,7 @@ pub struct SignatureCalculation {
     pub algorithm: SigningAlgorithm,
     /// Total number of bytes covered by the signature request.
     pub message_len: usize,
-    /// Placeholder signature bytes for the future protocol implementation.
+    /// Signature bytes produced by the selected signing algorithm.
     pub signature: Signature,
 }
 
@@ -201,17 +203,18 @@ pub struct AesCmacSubKeys {
 
 /// Calculates SMB3 AES-CMAC-128 output for a complete message.
 ///
-/// This is a migration skeleton. It preserves the C API shape and validates the
-/// inputs, but it intentionally returns a zero MAC until the AES backend is wired
-/// into the Rust implementation.
+/// This preserves the C API shape while using the migrated AES-128 block helper
+/// to calculate CMAC subkeys and message authentication blocks.
 pub fn smb3_aes_cmac_128(key: &SigningKey, msg: &[u8]) -> SigningResult<AesCmac> {
+    validate_signing_key(key)?;
+
     let sub_keys = aes_cmac_sub_keys(key)?;
     let block_count = if msg.is_empty() {
         1
     } else {
         msg.len().div_ceil(AES_BLOCK_SIZE)
     };
-    let last_complete = !msg.is_empty() && msg.len() % AES_BLOCK_SIZE == 0;
+    let last_complete = !msg.is_empty() && msg.len().is_multiple_of(AES_BLOCK_SIZE);
     let mut mac = [0; AES_BLOCK_SIZE];
 
     for block in msg
@@ -253,6 +256,10 @@ pub fn derive_session_keys(
     session_key: &[u8],
     preauth_hash: Option<&[u8; SMB2_PREAUTH_HASH_SIZE]>,
 ) -> SigningResult<SessionDerivedKeys> {
+    if session_key.is_empty() {
+        return Err(SigningError::MissingSessionKey);
+    }
+
     let mut keys = SessionDerivedKeys {
         signing_key: [0; SMB2_KEY_SIZE],
         serverin_key: [0; SMB2_KEY_SIZE],
@@ -295,6 +302,11 @@ pub fn smb2_calc_signature(
     signing: &Smb2SigningContext,
     iov: &mut [IoVec],
 ) -> SigningResult<SignatureCalculation> {
+    if signing.session_key_size == 0 {
+        return Err(SigningError::MissingSessionKey);
+    }
+    validate_signing_key(&signing.signing_key)?;
+
     let Some(first) = iov.first_mut() else {
         return Err(SigningError::MissingVectors);
     };
@@ -318,8 +330,8 @@ pub fn smb2_calc_signature(
 
 /// Adds a signature to an outgoing PDU skeleton.
 ///
-/// This mirrors the validation and header-flag side effects of
-/// `smb2_pdu_add_signature` while leaving cryptographic bytes as placeholders.
+/// This mirrors the validation, header-flag side effects, and cryptographic
+/// signature calculation of `smb2_pdu_add_signature`.
 ///
 /// # Errors
 ///
@@ -448,6 +460,8 @@ fn aes_cmac_xor_slice(data: &mut AesCmac, value: &[u8]) {
 }
 
 fn hmac_sha256_truncated(iov: &[IoVec], key: &SigningKey) -> SigningResult<Signature> {
+    validate_signing_key(key)?;
+
     let mut ctx = HmacContext::new(ShaVersion::Sha256, key)?;
     for vec in iov {
         ctx.input(&vec.buf)?;
@@ -491,6 +505,14 @@ fn smb2_derive_key(session_key: &[u8], label: &[u8], context: &[u8]) -> SigningR
     Ok(key)
 }
 
+fn validate_signing_key(key: &SigningKey) -> SigningResult<()> {
+    if key.iter().all(|byte| *byte == 0) {
+        Err(SigningError::InvalidSigningKey)
+    } else {
+        Ok(())
+    }
+}
+
 fn clear_signature_field(iov: &mut IoVec) -> SigningResult<()> {
     let Some(signature) = iov
         .buf
@@ -511,4 +533,127 @@ fn write_signature_field(iov: &mut IoVec, signature: &Signature) -> SigningResul
     };
     target.copy_from_slice(signature);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::include::libsmb2_private::{IoVectors, Smb2Header};
+    use crate::include::smb2::smb2::Command;
+
+    fn signing_context() -> Smb2SigningContext {
+        Smb2SigningContext::new(
+            SMB2_VERSION_0210,
+            0x1122_3344,
+            SMB2_KEY_SIZE,
+            [0x42; SMB2_KEY_SIZE],
+        )
+    }
+
+    fn header_with_signature(signature: Signature) -> Vec<u8> {
+        let mut header = vec![0_u8; SMB2_HEADER_SIZE];
+        header[SMB2_SIGNATURE_OFFSET..SMB2_SIGNATURE_OFFSET + SMB2_SIGNATURE_SIZE]
+            .copy_from_slice(&signature);
+        header
+    }
+
+    #[test]
+    fn calc_signature_clears_header_signature_before_hashing() {
+        let signing = signing_context();
+        let mut with_signature = vec![
+            IoVec::new(header_with_signature([0xaa; SMB2_SIGNATURE_SIZE])),
+            IoVec::new(b"payload".to_vec()),
+        ];
+        let mut already_clear = vec![
+            IoVec::new(header_with_signature([0; SMB2_SIGNATURE_SIZE])),
+            IoVec::new(b"payload".to_vec()),
+        ];
+
+        let left = smb2_calc_signature(&signing, &mut with_signature).unwrap();
+        let right = smb2_calc_signature(&signing, &mut already_clear).unwrap();
+
+        assert_eq!(left.signature, right.signature);
+        assert_eq!(
+            &with_signature[0].buf
+                [SMB2_SIGNATURE_OFFSET..SMB2_SIGNATURE_OFFSET + SMB2_SIGNATURE_SIZE],
+            &[0; SMB2_SIGNATURE_SIZE]
+        );
+    }
+
+    #[test]
+    fn pdu_add_signature_sets_flag_and_writes_signature_field() {
+        let signing = signing_context();
+        let mut header = Smb2Header::for_command(Command::Echo);
+        header.session_id = signing.session_id;
+        let mut pdu = Pdu::from_parts(
+            header,
+            IoVectors {
+                done: 0,
+                total_size: 0,
+                vectors: vec![
+                    IoVec::new(vec![0; SMB2_HEADER_SIZE]),
+                    IoVec::new(b"payload".to_vec()),
+                ],
+            },
+            None,
+        );
+
+        smb2_pdu_add_signature(&signing, &mut pdu).unwrap();
+
+        assert_eq!(pdu.header.flags & SMB2_FLAGS_SIGNED, SMB2_FLAGS_SIGNED);
+        assert_ne!(pdu.header.signature, [0; SMB2_SIGNATURE_SIZE]);
+        assert_eq!(
+            &pdu.out.vectors[0].buf
+                [SMB2_SIGNATURE_OFFSET..SMB2_SIGNATURE_OFFSET + SMB2_SIGNATURE_SIZE],
+            &pdu.header.signature
+        );
+    }
+
+    #[test]
+    fn pdu_check_signature_accepts_valid_signature_and_rejects_tamper() {
+        let signing = signing_context();
+        let mut vectors = vec![
+            IoVec::new(header_with_signature([0; SMB2_SIGNATURE_SIZE])),
+            IoVec::new(b"payload".to_vec()),
+        ];
+        let signature = smb2_calc_signature(&signing, &mut vectors)
+            .unwrap()
+            .signature;
+        vectors[0].buf[SMB2_SIGNATURE_OFFSET..SMB2_SIGNATURE_OFFSET + SMB2_SIGNATURE_SIZE]
+            .copy_from_slice(&signature);
+
+        let mut pdu = Pdu::from_parts(
+            Smb2Header::for_command(Command::Echo),
+            IoVectors::new(),
+            None,
+        );
+        pdu.input = IoVectors {
+            done: 0,
+            total_size: vectors.iter().map(IoVec::len).sum(),
+            vectors,
+        };
+        assert_eq!(smb2_pdu_check_signature(&signing, &pdu), Ok(()));
+
+        pdu.input.vectors[1].buf[0] ^= 1;
+        assert_eq!(
+            smb2_pdu_check_signature(&signing, &pdu),
+            Err(SigningError::SignatureMismatch)
+        );
+    }
+
+    #[test]
+    fn signing_rejects_missing_or_zero_key_material() {
+        assert_eq!(
+            derive_session_keys(SMB2_VERSION_0210, &[], None),
+            Err(SigningError::MissingSessionKey)
+        );
+
+        let mut vectors = vec![IoVec::new(vec![0; SMB2_HEADER_SIZE])];
+        let signing =
+            Smb2SigningContext::new(SMB2_VERSION_0210, 1, SMB2_KEY_SIZE, [0; SMB2_KEY_SIZE]);
+        assert_eq!(
+            smb2_calc_signature(&signing, &mut vectors),
+            Err(SigningError::InvalidSigningKey)
+        );
+    }
 }

@@ -56,6 +56,67 @@ pub struct PrivateConstants {
     pub preauth_hash_size: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContextLayout {
+    pub error_string_len: usize,
+    pub header_len: usize,
+    pub tree_id_len: usize,
+    pub signing_key_len: usize,
+    pub serverin_key_len: usize,
+    pub serverout_key_len: usize,
+    pub salt_len: usize,
+    pub has_connect_cb_data: bool,
+    pub has_io_vectors: bool,
+    pub has_owning_server: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PduLayout {
+    pub hdr_len: usize,
+    pub has_header: bool,
+    pub has_out_vectors: bool,
+    pub has_in_vectors: bool,
+    pub has_payload: bool,
+    pub has_free_payload: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IoVectorsLayout {
+    pub iov_len: usize,
+    pub has_num_done: bool,
+    pub has_total_size: bool,
+    pub has_niov: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HeaderLayout {
+    pub protocol_id_len: usize,
+    pub signature_len: usize,
+    pub has_async_id: bool,
+    pub has_process_id: bool,
+    pub has_tree_id: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SyncCallbackDataLayout {
+    pub has_is_finished: bool,
+    pub has_status: bool,
+    pub has_ptr: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DirectoryLayout {
+    pub has_internal_next: bool,
+    pub has_internal_dirent: bool,
+    pub has_entries: bool,
+    pub has_current_entry: bool,
+    pub has_index: bool,
+}
+
+fn ffi_size_to_bool(value: usize) -> bool {
+    value != 0
+}
+
 pub fn private_constants() -> PrivateConstants {
     PrivateConstants {
         max_error_size: unsafe { ffi::libsmb2_private_ffi_max_error_size() },
@@ -70,6 +131,14 @@ pub fn private_constants() -> PrivateConstants {
         max_pdu_size: unsafe { ffi::libsmb2_private_ffi_max_pdu_size() },
         preauth_hash_size: unsafe { ffi::libsmb2_private_ffi_preauth_hash_size() },
     }
+}
+
+pub fn min_i32(a: i32, b: i32) -> i32 {
+    unsafe { ffi::libsmb2_private_ffi_min_i32(a, b) }
+}
+
+pub fn discard_const_addr<T>(ptr: *const T) -> usize {
+    unsafe { ffi::libsmb2_private_ffi_discard_const_ptr(ptr.cast()) as usize }
 }
 
 pub fn pad_to_32bit(len: u32) -> u32 {
@@ -98,4 +167,83 @@ pub fn sizeof_smb2_pdu() -> usize {
 
 pub fn sizeof_smb2dir() -> usize {
     unsafe { ffi::libsmb2_private_ffi_sizeof_smb2dir() }
+}
+
+pub fn context_layout() -> ContextLayout {
+    let layout = unsafe { ffi::libsmb2_private_ffi_context_layout() };
+    ContextLayout {
+        error_string_len: layout.error_string_len,
+        header_len: layout.header_len,
+        tree_id_len: layout.tree_id_len,
+        signing_key_len: layout.signing_key_len,
+        serverin_key_len: layout.serverin_key_len,
+        serverout_key_len: layout.serverout_key_len,
+        salt_len: layout.salt_len,
+        has_connect_cb_data: ffi_size_to_bool(layout.has_connect_cb_data),
+        has_io_vectors: ffi_size_to_bool(layout.has_io_vectors),
+        has_owning_server: ffi_size_to_bool(layout.has_owning_server),
+    }
+}
+
+pub fn pdu_layout() -> PduLayout {
+    let layout = unsafe { ffi::libsmb2_private_ffi_pdu_layout() };
+    PduLayout {
+        hdr_len: layout.hdr_len,
+        has_header: ffi_size_to_bool(layout.has_header),
+        has_out_vectors: ffi_size_to_bool(layout.has_out_vectors),
+        has_in_vectors: ffi_size_to_bool(layout.has_in_vectors),
+        has_payload: ffi_size_to_bool(layout.has_payload),
+        has_free_payload: ffi_size_to_bool(layout.has_free_payload),
+    }
+}
+
+pub fn io_vectors_layout() -> IoVectorsLayout {
+    let layout = unsafe { ffi::libsmb2_private_ffi_io_vectors_layout() };
+    IoVectorsLayout {
+        iov_len: layout.iov_len,
+        has_num_done: ffi_size_to_bool(layout.has_num_done),
+        has_total_size: ffi_size_to_bool(layout.has_total_size),
+        has_niov: ffi_size_to_bool(layout.has_niov),
+    }
+}
+
+pub fn header_layout() -> HeaderLayout {
+    let layout = unsafe { ffi::libsmb2_private_ffi_header_layout() };
+    HeaderLayout {
+        protocol_id_len: layout.protocol_id_len,
+        signature_len: layout.signature_len,
+        has_async_id: ffi_size_to_bool(layout.has_async_id),
+        has_process_id: ffi_size_to_bool(layout.has_process_id),
+        has_tree_id: ffi_size_to_bool(layout.has_tree_id),
+    }
+}
+
+pub fn sync_cb_data_layout() -> SyncCallbackDataLayout {
+    let layout = unsafe { ffi::libsmb2_private_ffi_sync_cb_data_layout() };
+    SyncCallbackDataLayout {
+        has_is_finished: ffi_size_to_bool(layout.has_is_finished),
+        has_status: ffi_size_to_bool(layout.has_status),
+        has_ptr: ffi_size_to_bool(layout.has_ptr),
+    }
+}
+
+pub fn directory_layout() -> DirectoryLayout {
+    let layout = unsafe { ffi::libsmb2_private_ffi_dir_layout() };
+    DirectoryLayout {
+        has_internal_next: ffi_size_to_bool(layout.has_internal_next),
+        has_internal_dirent: ffi_size_to_bool(layout.has_internal_dirent),
+        has_entries: ffi_size_to_bool(layout.has_entries),
+        has_current_entry: ffi_size_to_bool(layout.has_current_entry),
+        has_index: ffi_size_to_bool(layout.has_index),
+    }
+}
+
+pub fn tree_id_for_current_index(tree_id_cur: i32, value: u32) -> u32 {
+    unsafe { ffi::libsmb2_private_ffi_tree_id_for_cur(tree_id_cur, value) }
+}
+
+pub fn is_server_for_owning_server(has_owning_server: bool) -> bool {
+    unsafe {
+        ffi::libsmb2_private_ffi_is_server_for_owning_server(i32::from(has_owning_server)) != 0
+    }
 }

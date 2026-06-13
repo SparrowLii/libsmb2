@@ -1,3 +1,4 @@
+pub mod libsmb2_dcerpc;
 pub mod libsmb2_dcerpc_lsa;
 pub mod libsmb2_dcerpc_srvsvc;
 pub mod libsmb2_raw;

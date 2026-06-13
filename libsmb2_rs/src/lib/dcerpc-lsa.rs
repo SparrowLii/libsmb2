@@ -3,7 +3,7 @@
 //! This module intentionally models the legacy LSA request, reply, and nested
 //! NDR structures without implementing the full DCERPC/NDR protocol encoder.
 
-use super::dcerpc::{DceRpcError, DceRpcResult, DceRpcUtf16, NdrCodec};
+use super::dcerpc::{DceRpcError, DceRpcResult, DceRpcUtf16, Direction, NdrCodec};
 
 /// LSA interface UUID from `LSA_UUID` in the C source.
 pub const LSA_UUID: Uuid = Uuid {
@@ -35,8 +35,17 @@ pub const LSA_LOOKUP_SIDS2_CLIENT_REVISION: u32 = 2;
 /// Default lookup options emitted by the legacy `LookupSids2` request coder.
 pub const LSA_LOOKUP_SIDS2_LOOKUP_OPTIONS: u32 = 0;
 
-/// Maximum count used by LSA SID and translated-name arrays in the IDL comments.
+/// Maximum count used by LSA SID, referenced-domain, and translated-name arrays in the IDL.
 pub const LSA_MAX_ENUM_ENTRIES: u32 = 20_480;
+
+/// NTSTATUS success.
+pub const LSA_STATUS_SUCCESS: u32 = 0x0000_0000;
+
+/// NTSTATUS warning returned when only part of a SID/name lookup mapped.
+pub const LSA_STATUS_SOME_NOT_MAPPED: u32 = 0x0000_0107;
+
+/// NTSTATUS returned when no SID/name lookup entries mapped.
+pub const LSA_STATUS_NONE_MAPPED: u32 = 0xc000_0073;
 
 /// Minimal UUID representation used by DCERPC syntax identifiers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -312,6 +321,12 @@ impl LsaprTranslatedNamesEx {
         len_to_u32_saturating(self.names.len())
     }
 
+    /// Counts names with a concrete mapping, matching LookupSids2 mapped-count semantics.
+    #[must_use]
+    pub fn mapped_count(&self) -> u32 {
+        len_to_u32_saturating(self.names.iter().filter(|name| name.is_mapped()).count())
+    }
+
     /// Returns a side-effect-free coder plan matching `lsa_TRANSLATED_NAMES_EX_coder`.
     #[must_use]
     pub fn coder_plan(&self) -> CoderPlan {
@@ -322,6 +337,17 @@ impl LsaprTranslatedNamesEx {
                 kind: PointerKind::Unique,
                 coder: CoderName::TranslatedNameArray,
             })
+    }
+}
+
+impl LsaprTranslatedNameEx {
+    /// Returns true when this entry represents a successful SID/name mapping.
+    #[must_use]
+    pub fn is_mapped(&self) -> bool {
+        !matches!(
+            self.use_kind,
+            SidNameUse::Unknown | SidNameUse::Invalid | SidNameUse::Other(0)
+        ) && !self.name.value.is_empty()
     }
 }
 
@@ -447,6 +473,12 @@ impl LsaprReferencedDomainList {
         len_to_u32_saturating(self.domains.len())
     }
 
+    /// Returns true when `index` points at a decoded referenced-domain entry.
+    #[must_use]
+    pub fn contains_domain_index(&self, index: u32) -> bool {
+        usize::try_from(index).is_ok_and(|index| index < self.domains.len())
+    }
+
     /// Returns a side-effect-free coder plan matching `lsa_REFERENCED_DOMAIN_LIST_coder`.
     #[must_use]
     pub fn coder_plan(&self) -> CoderPlan {
@@ -558,6 +590,12 @@ pub struct LsaLookupSids2Reply {
 }
 
 impl LsaLookupSids2Reply {
+    /// Normalizes mapped-count and status from translated names using LSA lookup semantics.
+    pub fn normalize_lookup_result(&mut self) {
+        self.mapped_count = self.translated_names.mapped_count();
+        self.status = lookup_status_for_counts(self.mapped_count, self.translated_names.entries());
+    }
+
     /// Returns a side-effect-free coder plan matching `lsa_LookupSids2_rep_coder`.
     #[must_use]
     pub fn coder_plan(&self) -> CoderPlan {
@@ -707,6 +745,21 @@ pub fn encode_lsa_close_request(req: &LsaCloseRequest) -> DceRpcResult<Vec<u8>> 
     Ok(codec.into_bytes())
 }
 
+/// Decodes an LSA `OpenPolicy2` request body.
+pub fn decode_lsa_open_policy2_request(bytes: &[u8]) -> DceRpcResult<LsaOpenPolicy2Request> {
+    let mut req = LsaOpenPolicy2Request::new(0);
+    let mut codec = NdrCodec::decoder(bytes.to_vec());
+    code_open_policy2_request(&mut codec, &mut req)?;
+    Ok(req)
+}
+
+/// Encodes an LSA `OpenPolicy2` response body.
+pub fn encode_lsa_open_policy2_reply(rep: &LsaOpenPolicy2Reply) -> DceRpcResult<Vec<u8>> {
+    let mut codec = NdrCodec::encoder();
+    code_open_policy2_reply(&mut codec, &mut rep.clone())?;
+    Ok(codec.into_bytes())
+}
+
 /// Decodes an LSA `Close` request body.
 pub fn decode_lsa_close_request(bytes: &[u8]) -> DceRpcResult<LsaCloseRequest> {
     let mut req = LsaCloseRequest::default();
@@ -752,6 +805,21 @@ pub fn encode_lsa_lookup_sids2_request(req: &LsaLookupSids2Request) -> DceRpcRes
     Ok(codec.into_bytes())
 }
 
+/// Decodes an LSA `LookupSids2` request body.
+pub fn decode_lsa_lookup_sids2_request(bytes: &[u8]) -> DceRpcResult<LsaLookupSids2Request> {
+    let mut req = LsaLookupSids2Request::default();
+    let mut codec = NdrCodec::decoder(bytes.to_vec());
+    code_lookup_sids2_request(&mut codec, &mut req)?;
+    Ok(req)
+}
+
+/// Encodes an LSA `LookupSids2` response body.
+pub fn encode_lsa_lookup_sids2_reply(rep: &LsaLookupSids2Reply) -> DceRpcResult<Vec<u8>> {
+    let mut codec = NdrCodec::encoder();
+    code_lookup_sids2_reply(&mut codec, &mut rep.clone())?;
+    Ok(codec.into_bytes())
+}
+
 /// Decodes an LSA `LookupSids2` response body.
 pub fn decode_lsa_lookup_sids2_reply(bytes: &[u8]) -> DceRpcResult<LsaLookupSids2Reply> {
     let mut rep = LsaLookupSids2Reply::default();
@@ -760,7 +828,23 @@ pub fn decode_lsa_lookup_sids2_reply(bytes: &[u8]) -> DceRpcResult<LsaLookupSids
     Ok(rep)
 }
 
+/// Encodes a standalone LSA `RPC_SID` value.
+pub fn encode_rpc_sid(sid: &RpcSid) -> DceRpcResult<Vec<u8>> {
+    let mut codec = NdrCodec::encoder();
+    code_rpc_sid(&mut codec, &mut sid.clone())?;
+    Ok(codec.into_bytes())
+}
+
+/// Decodes a standalone LSA `RPC_SID` value.
+pub fn decode_rpc_sid(bytes: &[u8]) -> DceRpcResult<RpcSid> {
+    let mut sid = RpcSid::nt_authority(1, Vec::new());
+    let mut codec = NdrCodec::decoder(bytes.to_vec());
+    code_rpc_sid(&mut codec, &mut sid)?;
+    Ok(sid)
+}
+
 fn code_lsa_close_request(codec: &mut NdrCodec, req: &mut LsaCloseRequest) -> DceRpcResult<()> {
+    codec.code_ref_pointer()?;
     let mut h = to_ndr_handle(&req.policy_handle);
     codec.code_context_handle(&mut h)?;
     req.policy_handle = from_ndr_handle(h);
@@ -768,6 +852,7 @@ fn code_lsa_close_request(codec: &mut NdrCodec, req: &mut LsaCloseRequest) -> Dc
 }
 
 fn code_lsa_close_reply(codec: &mut NdrCodec, rep: &mut LsaCloseReply) -> DceRpcResult<()> {
+    codec.code_ref_pointer()?;
     let mut h = to_ndr_handle(&rep.policy_handle);
     codec.code_context_handle(&mut h)?;
     rep.policy_handle = from_ndr_handle(h);
@@ -779,6 +864,7 @@ fn code_open_policy2_request(
     req: &mut LsaOpenPolicy2Request,
 ) -> DceRpcResult<()> {
     code_optional_utf16(codec, &mut req.system_name, true)?;
+    codec.code_ref_pointer()?;
     code_object_attributes(codec, &mut req.object_attributes)?;
     codec.code_u32(&mut req.desired_access)
 }
@@ -787,6 +873,7 @@ fn code_open_policy2_reply(
     codec: &mut NdrCodec,
     rep: &mut LsaOpenPolicy2Reply,
 ) -> DceRpcResult<()> {
+    codec.code_ref_pointer()?;
     let mut h = to_ndr_handle(&rep.policy_handle);
     codec.code_context_handle(&mut h)?;
     rep.policy_handle = from_ndr_handle(h);
@@ -797,10 +884,13 @@ fn code_lookup_sids2_request(
     codec: &mut NdrCodec,
     req: &mut LsaLookupSids2Request,
 ) -> DceRpcResult<()> {
+    codec.code_ref_pointer()?;
     let mut h = to_ndr_handle(&req.policy_handle);
     codec.code_context_handle(&mut h)?;
     req.policy_handle = from_ndr_handle(h);
+    codec.code_ref_pointer()?;
     code_sid_enum_buffer(codec, &mut req.sid_enum_buffer)?;
+    codec.code_ref_pointer()?;
     code_translated_names(codec, &mut req.translated_names)?;
     let mut level = req.lookup_level as u32;
     codec.code_u32(&mut level)?;
@@ -825,6 +915,7 @@ fn code_lookup_sids2_reply(
     } else {
         rep.referenced_domains = None;
     }
+    codec.code_ref_pointer()?;
     code_translated_names(codec, &mut rep.translated_names)?;
     codec.code_u32(&mut rep.mapped_count)?;
     codec.code_u32(&mut rep.status)
@@ -844,14 +935,16 @@ fn code_object_attributes(
 }
 
 fn code_sid_enum_buffer(codec: &mut NdrCodec, buffer: &mut LsaprSidEnumBuffer) -> DceRpcResult<()> {
+    validate_encode_count(codec.direction(), buffer.sid_info.len())?;
     let mut entries = buffer.entries();
     codec.code_u32(&mut entries)?;
+    validate_wire_count(entries)?;
     let present = codec.code_unique_pointer_present(entries != 0)?;
     if !present {
         buffer.sid_info.clear();
         return Ok(());
     }
-    let count = u32_to_usize(entries);
+    let count = checked_u32_to_usize(entries)?;
     resize_sids(&mut buffer.sid_info, count);
     let mut conformant = u64::from(entries);
     codec.code_u3264(&mut conformant)?;
@@ -866,15 +959,20 @@ fn code_sid_enum_buffer(codec: &mut NdrCodec, buffer: &mut LsaprSidEnumBuffer) -
 }
 
 fn code_rpc_sid(codec: &mut NdrCodec, sid: &mut RpcSid) -> DceRpcResult<()> {
+    if matches!(codec.direction(), Direction::Encode | Direction::Request) {
+        u8::try_from(sid.sub_authority.len()).map_err(|_| DceRpcError::CountOutOfRange {
+            count: sid.sub_authority.len(),
+        })?;
+    }
     let mut count = u64::from(sid.sub_authority_count());
     codec.code_u3264(&mut count)?;
+    if count > u64::from(u8::MAX) {
+        return Err(DceRpcError::CountOutOfRange { count: usize::MAX });
+    }
     codec.code_u8(&mut sid.revision)?;
     let mut sub_count = sid.sub_authority_count();
     codec.code_u8(&mut sub_count)?;
-    if matches!(
-        codec.direction(),
-        super::dcerpc::Direction::Decode | super::dcerpc::Direction::Response
-    ) {
+    if matches!(codec.direction(), Direction::Decode | Direction::Response) {
         sid.sub_authority.resize(usize::from(sub_count), 0);
     }
     for byte in &mut sid.identifier_authority {
@@ -890,14 +988,16 @@ fn code_translated_names(
     codec: &mut NdrCodec,
     names: &mut LsaprTranslatedNamesEx,
 ) -> DceRpcResult<()> {
+    validate_encode_count(codec.direction(), names.names.len())?;
     let mut entries = names.entries();
     codec.code_u32(&mut entries)?;
+    validate_wire_count(entries)?;
     let present = codec.code_unique_pointer_present(entries != 0)?;
     if !present {
         names.names.clear();
         return Ok(());
     }
-    let count = u32_to_usize(entries);
+    let count = checked_u32_to_usize(entries)?;
     names
         .names
         .resize_with(count, LsaprTranslatedNameEx::default);
@@ -918,11 +1018,13 @@ fn code_referenced_domain_list(
     codec: &mut NdrCodec,
     rdl: &mut LsaprReferencedDomainList,
 ) -> DceRpcResult<()> {
+    validate_encode_count(codec.direction(), rdl.domains.len())?;
     let mut entries = rdl.entries();
     codec.code_u32(&mut entries)?;
+    validate_wire_count(entries)?;
     let present = codec.code_unique_pointer_present(entries != 0)?;
     if present {
-        let count = u32_to_usize(entries);
+        let count = checked_u32_to_usize(entries)?;
         rdl.domains
             .resize_with(count, LsaprTrustInformation::default);
         let mut conformant = u64::from(entries);
@@ -937,6 +1039,8 @@ fn code_referenced_domain_list(
                 };
                 code_rpc_sid(codec, &mut sid)?;
                 domain.sid = Some(sid);
+            } else {
+                domain.sid = None;
             }
         }
     } else {
@@ -961,10 +1065,7 @@ fn code_unicode_string(codec: &mut NdrCodec, value: &mut RpcUnicodeString) -> Dc
         if let Some(decoded) = utf.utf8 {
             value.value = decoded;
         }
-    } else if matches!(
-        codec.direction(),
-        super::dcerpc::Direction::Decode | super::dcerpc::Direction::Response
-    ) {
+    } else if matches!(codec.direction(), Direction::Decode | Direction::Response) {
         value.value.clear();
     }
     Ok(())
@@ -1023,10 +1124,37 @@ fn resize_sids(sids: &mut Vec<RpcSid>, count: usize) {
     sids.resize_with(count, || RpcSid::nt_authority(1, Vec::new()));
 }
 
-fn u32_to_usize(value: u32) -> usize {
-    match usize::try_from(value) {
-        Ok(value) => value,
-        Err(_) => usize::MAX,
+fn checked_u32_to_usize(value: u32) -> DceRpcResult<usize> {
+    usize::try_from(value).map_err(|_| DceRpcError::CountOutOfRange { count: usize::MAX })
+}
+
+fn validate_encode_count(direction: Direction, len: usize) -> DceRpcResult<()> {
+    if matches!(direction, Direction::Encode | Direction::Request) {
+        let max = usize::try_from(LSA_MAX_ENUM_ENTRIES)
+            .map_err(|_| DceRpcError::CountOutOfRange { count: usize::MAX })?;
+        if len > max {
+            return Err(DceRpcError::CountOutOfRange { count: len });
+        }
+    }
+    Ok(())
+}
+
+fn validate_wire_count(entries: u32) -> DceRpcResult<()> {
+    if entries > LSA_MAX_ENUM_ENTRIES {
+        Err(DceRpcError::CountOutOfRange {
+            count: usize::try_from(entries).unwrap_or(usize::MAX),
+        })
+    } else {
+        Ok(())
+    }
+}
+
+fn lookup_status_for_counts(mapped_count: u32, total_count: u32) -> u32 {
+    match (mapped_count, total_count) {
+        (0, 0) => LSA_STATUS_SUCCESS,
+        (0, _) => LSA_STATUS_NONE_MAPPED,
+        (mapped, total) if mapped < total => LSA_STATUS_SOME_NOT_MAPPED,
+        _ => LSA_STATUS_SUCCESS,
     }
 }
 

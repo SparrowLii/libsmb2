@@ -448,6 +448,9 @@ impl<'src, 'dst> Asn1BerContext<'src, 'dst> {
         }
 
         let mut count = first & 0x7f;
+        if count == 0 {
+            return self.record_error(BerError::InvalidValue);
+        }
         if count > 4 {
             return self.record_error(BerError::TooLarge);
         }

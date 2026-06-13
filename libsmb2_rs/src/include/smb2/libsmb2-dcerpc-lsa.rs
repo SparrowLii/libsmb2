@@ -56,6 +56,9 @@ pub const NT_SID_AUTHORITY: [u8; 6] = [0, 0, 0, 0, 0, 5];
 /// LSA status value used when a staged encoder or decoder has no protocol logic yet.
 pub const LSA_STATUS_NOT_IMPLEMENTED: u32 = 0xc000_0002;
 
+/// NTSTATUS value used for malformed local coder input or truncated wire data.
+pub const LSA_STATUS_INVALID_PARAMETER: u32 = 0xc000_000d;
+
 /// Opaque NDR context handle used by LSA policy operations.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct NdrContextHandle {
@@ -256,6 +259,13 @@ impl LsaCoderError {
             status: LSA_STATUS_NOT_IMPLEMENTED,
         }
     }
+
+    /// Creates an error indicating invalid input or malformed/truncated NDR data.
+    pub const fn invalid_parameter() -> Self {
+        Self {
+            status: LSA_STATUS_INVALID_PARAMETER,
+        }
+    }
 }
 
 /// Result type returned by LSA coder skeletons.
@@ -270,7 +280,7 @@ pub fn lsa_close_rep_coder(
     rep: &mut LsaCloseRep,
 ) -> LsaCoderResult {
     let decoded = lib_lsa::decode_lsa_close_reply(decode_bytes(pdu, iov, *offset))
-        .map_err(|_| LsaCoderError::not_implemented())?;
+        .map_err(map_dcerpc_error)?;
     *rep = from_lib_close_reply(decoded);
     *offset = input_len(pdu, iov);
     Ok(())
@@ -284,8 +294,8 @@ pub fn lsa_close_req_coder(
     offset: &mut usize,
     req: &LsaCloseReq,
 ) -> LsaCoderResult {
-    let bytes = lib_lsa::encode_lsa_close_request(&to_lib_close_request(req))
-        .map_err(|_| LsaCoderError::not_implemented())?;
+    let bytes =
+        lib_lsa::encode_lsa_close_request(&to_lib_close_request(req)).map_err(map_dcerpc_error)?;
     store_bytes(pdu, iov, offset, bytes);
     Ok(())
 }
@@ -299,7 +309,7 @@ pub fn lsa_lookup_sids2_rep_coder(
     rep: &mut LsaLookupSids2Rep,
 ) -> LsaCoderResult {
     let decoded = lib_lsa::decode_lsa_lookup_sids2_reply(decode_bytes(pdu, iov, *offset))
-        .map_err(|_| LsaCoderError::not_implemented())?;
+        .map_err(map_dcerpc_error)?;
     *rep = from_lib_lookup_sids2_reply(decoded);
     *offset = input_len(pdu, iov);
     Ok(())
@@ -314,7 +324,7 @@ pub fn lsa_lookup_sids2_req_coder(
     req: &LsaLookupSids2Req,
 ) -> LsaCoderResult {
     let bytes = lib_lsa::encode_lsa_lookup_sids2_request(&to_lib_lookup_sids2_request(req))
-        .map_err(|_| LsaCoderError::not_implemented())?;
+        .map_err(map_dcerpc_error)?;
     store_bytes(pdu, iov, offset, bytes);
     Ok(())
 }
@@ -328,7 +338,7 @@ pub fn lsa_open_policy2_rep_coder(
     rep: &mut LsaOpenPolicy2Rep,
 ) -> LsaCoderResult {
     let decoded = lib_lsa::decode_lsa_open_policy2_reply(decode_bytes(pdu, iov, *offset))
-        .map_err(|_| LsaCoderError::not_implemented())?;
+        .map_err(map_dcerpc_error)?;
     *rep = from_lib_open_policy2_reply(decoded);
     *offset = input_len(pdu, iov);
     Ok(())
@@ -343,7 +353,7 @@ pub fn lsa_open_policy2_req_coder(
     req: &LsaOpenPolicy2Req,
 ) -> LsaCoderResult {
     let bytes = lib_lsa::encode_lsa_open_policy2_request(&to_lib_open_policy2_request(req))
-        .map_err(|_| LsaCoderError::not_implemented())?;
+        .map_err(map_dcerpc_error)?;
     store_bytes(pdu, iov, offset, bytes);
     Ok(())
 }
@@ -356,14 +366,15 @@ pub fn lsa_rpc_sid_coder(
     offset: &mut usize,
     sid: &mut RpcSid,
 ) -> LsaCoderResult {
-    let req = lib_lsa::LsaLookupSids2Request::new(
-        lib_lsa::ContextHandle::default(),
-        lib_lsa::LsaprSidEnumBuffer::new(vec![to_lib_sid(sid)]),
-        lib_lsa::LsapLookupLevel::Wksta,
-    );
-    let bytes = lib_lsa::encode_lsa_lookup_sids2_request(&req)
-        .map_err(|_| LsaCoderError::not_implemented())?;
-    store_bytes(pdu, iov, offset, bytes);
+    if pdu.direction == 0 {
+        let decoded =
+            lib_lsa::decode_rpc_sid(decode_bytes(pdu, iov, *offset)).map_err(map_dcerpc_error)?;
+        *sid = from_lib_sid(decoded);
+        *offset = input_len(pdu, iov);
+    } else {
+        let bytes = lib_lsa::encode_rpc_sid(&to_lib_sid(sid)).map_err(map_dcerpc_error)?;
+        store_bytes(pdu, iov, offset, bytes);
+    }
     Ok(())
 }
 
@@ -463,7 +474,7 @@ fn from_lib_open_policy2_reply(rep: lib_lsa::LsaOpenPolicy2Reply) -> LsaOpenPoli
 }
 
 fn to_lib_lookup_sids2_request(req: &LsaLookupSids2Req) -> lib_lsa::LsaLookupSids2Request {
-    lib_lsa::LsaLookupSids2Request::new(
+    let mut request = lib_lsa::LsaLookupSids2Request::new(
         to_lib_handle(&req.policy_handle),
         lib_lsa::LsaprSidEnumBuffer::new(
             req.sid_enum_buffer
@@ -473,7 +484,9 @@ fn to_lib_lookup_sids2_request(req: &LsaLookupSids2Req) -> lib_lsa::LsaLookupSid
                 .collect(),
         ),
         to_lib_lookup_level(req.lookup_level),
-    )
+    );
+    request.translated_names = to_lib_translated_names(&req.translated_names);
+    request
 }
 
 fn from_lib_lookup_sids2_reply(rep: lib_lsa::LsaLookupSids2Reply) -> LsaLookupSids2Rep {
@@ -511,6 +524,21 @@ fn from_lib_referenced_domains(
     }
 }
 
+fn to_lib_translated_names(value: &LsaprTranslatedNamesEx) -> lib_lsa::LsaprTranslatedNamesEx {
+    lib_lsa::LsaprTranslatedNamesEx::new(
+        value
+            .names
+            .iter()
+            .map(|name| lib_lsa::LsaprTranslatedNameEx {
+                use_kind: lib_lsa::SidNameUse::from_raw(name.use_),
+                name: lib_lsa::RpcUnicodeString::new(name.name.clone().unwrap_or_default()),
+                domain_index: name.domain_index,
+                flags: name.flags,
+            })
+            .collect(),
+    )
+}
+
 fn from_lib_translated_names(value: lib_lsa::LsaprTranslatedNamesEx) -> LsaprTranslatedNamesEx {
     LsaprTranslatedNamesEx {
         names: value
@@ -539,5 +567,22 @@ fn to_lib_lookup_level(level: LsapLookupLevel) -> lib_lsa::LsapLookupLevel {
         LsapLookupLevel::XForestResolve => lib_lsa::LsapLookupLevel::XForestResolve,
         LsapLookupLevel::RodcReferralToFullDc => lib_lsa::LsapLookupLevel::RodcReferral,
         LsapLookupLevel::Wksta => lib_lsa::LsapLookupLevel::Wksta,
+    }
+}
+
+fn map_dcerpc_error(error: crate::lib::dcerpc::DceRpcError) -> LsaCoderError {
+    match error {
+        crate::lib::dcerpc::DceRpcError::ProtocolNotImplemented(_)
+        | crate::lib::dcerpc::DceRpcError::UnsupportedPduBody { .. } => {
+            LsaCoderError::not_implemented()
+        }
+        crate::lib::dcerpc::DceRpcError::InvalidPduType { .. }
+        | crate::lib::dcerpc::DceRpcError::InvalidAuthVerifier { .. }
+        | crate::lib::dcerpc::DceRpcError::BufferTooSmall { .. }
+        | crate::lib::dcerpc::DceRpcError::TooManyDeferredPointers { .. }
+        | crate::lib::dcerpc::DceRpcError::AllocHintOutOfRange { .. }
+        | crate::lib::dcerpc::DceRpcError::CountOutOfRange { .. }
+        | crate::lib::dcerpc::DceRpcError::InvalidUtf16
+        | crate::lib::dcerpc::DceRpcError::NullPointer => LsaCoderError::invalid_parameter(),
     }
 }

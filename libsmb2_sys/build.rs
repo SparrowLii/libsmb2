@@ -6,13 +6,16 @@ fn main() {
         PathBuf::from("shim/include/libsmb2_private_ffi.c"),
         PathBuf::from("shim/include/portable-endian_ffi.c"),
         PathBuf::from("shim/include/slist_ffi.c"),
+        PathBuf::from("shim/lib/alloc_ffi.c"),
         PathBuf::from("shim/lib/unicode_ffi.c"),
     ];
     let sources = [
+        PathBuf::from("../lib/alloc.c"),
         PathBuf::from("../lib/aes.c"),
         PathBuf::from("../lib/aes128ccm.c"),
         PathBuf::from("../lib/aes_apple.c"),
         PathBuf::from("../lib/aes_reference.c"),
+        PathBuf::from("../lib/asn1-ber.c"),
         PathBuf::from("../lib/errors.c"),
         PathBuf::from("../lib/hmac-md5.c"),
         PathBuf::from("../lib/hmac.c"),
@@ -44,11 +47,16 @@ fn main() {
     build.include(legacy_root.join("include/smb2"));
     build.include(legacy_root.join("lib"));
     build.define("HAVE_STDINT_H", Some("1"));
+    build.define("HAVE_STRING_H", Some("1"));
     build.define("HAVE_STDLIB_H", Some("1"));
+    build.define("HAVE_SYS_TYPES_H", Some("1"));
     build.define("HAVE_TIME_H", Some("1"));
+    build.define("HAVE_UNISTD_H", Some("1"));
+    build.define("STDC_HEADERS", Some("1"));
     build.define("USE_SHA1", Some("1"));
     build.define("USE_SHA224", Some("1"));
     build.define("USE_SHA384_SHA512", Some("1"));
+    build.define("CBC", Some("1"));
     build.define("_U_", Some("__attribute__((unused))"));
     build.flag_if_supported("-std=c99");
     build.flag("-include");
@@ -62,6 +70,10 @@ fn main() {
     build.compile("libsmb2_sys_ffi");
 
     let bindings = bindgen::Builder::default()
+        .header("../include/smb2/smb2.h")
+        .header("../include/smb2/libsmb2.h")
+        .header("../include/smb2/libsmb2-raw.h")
+        .header("../include/smb2/libsmb2-raw.h")
         .header(headers[0].to_string_lossy())
         .header(headers[1].to_string_lossy())
         .header(headers[2].to_string_lossy())
@@ -69,8 +81,8 @@ fn main() {
         .header("../lib/aes.h")
         .header("../lib/aes128ccm.h")
         .header("../lib/aes_reference.h")
-        .header("../include/smb2/smb2.h")
-        .header("../include/smb2/libsmb2.h")
+        .header("../lib/asn1-ber.h")
+        .header("../include/libsmb2-private.h")
         .header("../lib/hmac-md5.h")
         .header("../lib/md4.h")
         .header("../lib/md5.h")
@@ -80,22 +92,40 @@ fn main() {
         .clang_arg(format!("-I{}", legacy_root.join("include/smb2").display()))
         .clang_arg(format!("-I{}", legacy_root.join("lib").display()))
         .clang_arg("-DHAVE_STDINT_H=1")
+        .clang_arg("-DHAVE_STRING_H=1")
         .clang_arg("-DHAVE_STDLIB_H=1")
+        .clang_arg("-DHAVE_SYS_TYPES_H=1")
         .clang_arg("-DHAVE_TIME_H=1")
+        .clang_arg("-DHAVE_UNISTD_H=1")
+        .clang_arg("-DSTDC_HEADERS=1")
         .clang_arg("-DUSE_SHA1=1")
         .clang_arg("-DUSE_SHA224=1")
         .clang_arg("-DUSE_SHA384_SHA512=1")
+        .clang_arg("-DCBC=1")
         .clang_arg("-D_U_=__attribute__((unused))")
         .clang_arg("-include")
         .clang_arg("stddef.h")
         .clang_arg("-include")
         .clang_arg("stdint.h")
+        .clang_arg("-include")
+        .clang_arg("time.h")
+        .clang_arg("-include")
+        .clang_arg("../include/smb2/smb2.h")
+        .clang_arg("-include")
+        .clang_arg("../include/smb2/libsmb2.h")
+        .clang_arg("-include")
+        .clang_arg("../include/smb2/libsmb2-raw.h")
         .allowlist_function("libsmb2_private_ffi_.*")
         .allowlist_function("portable_endian_ffi_.*")
         .allowlist_function("slist_ffi_.*")
         .allowlist_function("AES128_ECB_encrypt")
         .allowlist_function("AES128_ECB_.*_reference")
+        .allowlist_function("AES128_CBC_.*_reference")
         .allowlist_function("aes128ccm_.*")
+        .allowlist_function("asn1ber_.*")
+        .allowlist_function("ber_.*")
+        .allowlist_function("smb2_alloc_.*")
+        .allowlist_function("smb2_free_data")
         .allowlist_function("nterror_to_.*")
         .allowlist_function("smb2_hmac_md5")
         .allowlist_function("MD4.*")
@@ -115,6 +145,8 @@ fn main() {
         .allowlist_type("SHA.*")
         .allowlist_type("USHA.*")
         .allowlist_type("HMACContext")
+        .allowlist_type("asn1ber_.*")
+        .allowlist_type("ber_type_t")
         .allowlist_type("smb2_timeval")
         .allowlist_type("smb2_utf16")
         .allowlist_var("sha.*")
@@ -143,6 +175,9 @@ fn main() {
     println!("cargo:rerun-if-changed=../lib/aes.h");
     println!("cargo:rerun-if-changed=../lib/aes128ccm.h");
     println!("cargo:rerun-if-changed=../lib/aes_reference.h");
+    println!("cargo:rerun-if-changed=../lib/alloc.c");
+    println!("cargo:rerun-if-changed=../lib/asn1-ber.c");
+    println!("cargo:rerun-if-changed=../lib/asn1-ber.h");
     println!("cargo:rerun-if-changed=../include/smb2/smb2.h");
     println!("cargo:rerun-if-changed=../include/smb2/libsmb2.h");
     println!("cargo:rerun-if-changed=../lib/errors.c");

@@ -280,24 +280,6 @@ impl Sha1Context {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sha1_known_vector() {
-        let mut ctx = Sha1Context::new();
-        assert_eq!(ctx.input(b"abc"), Ok(()));
-        assert_eq!(
-            ctx.result(),
-            Ok([
-                0xa9, 0x99, 0x3e, 0x36, 0x47, 0x06, 0x81, 0x6a, 0xba, 0x3e, 0x25, 0x71, 0x78, 0x50,
-                0xc2, 0x6c, 0x9c, 0xd0, 0xd8, 0x9d,
-            ])
-        );
-    }
-}
-
 impl Default for Sha1Context {
     fn default() -> Self {
         Self::new()
@@ -338,4 +320,22 @@ pub fn sha1_final_bits(
 /// Returns the same errors as [`Sha1Context::result`].
 pub fn sha1_result(context: &mut Sha1Context) -> Sha1Result<[u8; SHA1_HASH_SIZE]> {
     context.result()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sha1_known_vector() {
+        let mut ctx = Sha1Context::new();
+        assert_eq!(ctx.input(b"abc"), Ok(()));
+        assert_eq!(
+            ctx.result(),
+            Ok([
+                0xa9, 0x99, 0x3e, 0x36, 0x47, 0x06, 0x81, 0x6a, 0xba, 0x3e, 0x25, 0x71, 0x78, 0x50,
+                0xc2, 0x6c, 0x9c, 0xd0, 0xd8, 0x9d,
+            ])
+        );
+    }
 }

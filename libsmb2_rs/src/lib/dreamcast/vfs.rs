@@ -15,6 +15,7 @@ use crate::legacy_lib::sync::{self, SyncPayload, SyncRequest};
 const EINVAL: i32 = -22;
 const EIO: i32 = -5;
 const ENOENT: i32 = -2;
+const ENOSYS: i32 = -38;
 
 /// Mount point used by the legacy Dreamcast VFS handler.
 pub const SMB_VFS_MOUNT: &str = "/smb";
@@ -36,6 +37,10 @@ pub enum SmbFdKind {
     /// Descriptor wraps an SMB2 directory handle and cached directory entry.
     Directory,
 }
+
+/// Opaque identifier for a Dreamcast VFS descriptor tracked by the Rust model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DreamcastHandleId(pub usize);
 
 /// Lifecycle state for a VFS descriptor shell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +74,7 @@ impl SmbFdKind {
 /// Handle storage corresponding to `struct smb_fd` in the C VFS adapter.
 #[derive(Debug)]
 pub struct SmbFd {
+    handle_id: Option<DreamcastHandleId>,
     kind: SmbFdKind,
     state: SmbFdState,
     file: Option<FileHandle>,
@@ -84,6 +90,7 @@ impl SmbFd {
     #[must_use]
     pub fn file(handle: FileHandle) -> Self {
         Self {
+            handle_id: None,
             kind: SmbFdKind::File,
             state: SmbFdState::Open,
             file: Some(handle),
@@ -99,6 +106,7 @@ impl SmbFd {
     #[must_use]
     pub fn directory(handle: DirectoryHandle) -> Self {
         Self {
+            handle_id: None,
             kind: SmbFdKind::Directory,
             state: SmbFdState::Open,
             file: None,
@@ -114,6 +122,7 @@ impl SmbFd {
     #[must_use]
     pub const fn pending(kind: SmbFdKind) -> Self {
         Self {
+            handle_id: None,
             kind,
             state: SmbFdState::Pending,
             file: None,
@@ -129,6 +138,12 @@ impl SmbFd {
     #[must_use]
     pub const fn kind(&self) -> SmbFdKind {
         self.kind
+    }
+
+    /// Returns the handle-table id assigned by [`DreamcastVfs::smb_open`].
+    #[must_use]
+    pub const fn handle_id(&self) -> Option<DreamcastHandleId> {
+        self.handle_id
     }
 
     /// Returns the descriptor lifecycle state.
@@ -201,6 +216,7 @@ impl SmbFd {
 
     /// Marks the descriptor closed and drops any cached handle placeholder.
     pub fn mark_closed(&mut self) {
+        self.handle_id = None;
         self.state = SmbFdState::Closed;
         self.file = None;
         self.directory = None;
@@ -231,6 +247,10 @@ impl SmbFd {
 
     fn cache_write(&mut self, data: &[u8]) {
         self.written.extend_from_slice(data);
+    }
+
+    fn assign_handle_id(&mut self, handle_id: DreamcastHandleId) {
+        self.handle_id = Some(handle_id);
     }
 }
 
@@ -327,6 +347,72 @@ pub struct VfsHandlerInfo {
     pub cache: bool,
 }
 
+/// Result of asking a Dreamcast platform backend to install the VFS handler.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VfsRegistration {
+    /// A real KallistiOS VFS handler was registered by the backend.
+    Platform,
+    /// No platform SDK registration was attempted; operations use local fallback state.
+    LocalFallback,
+}
+
+/// Platform adapter boundary for Dreamcast VFS registration.
+pub trait DreamcastPlatformBackend {
+    /// Registers or prepares the `/smb` VFS handler.
+    ///
+    /// # Errors
+    ///
+    /// Returns a platform error when the backend cannot install or prepare the handler.
+    fn register_vfs(
+        &mut self,
+        handler: &VfsHandlerInfo,
+        mount: &SmbMount,
+    ) -> Result<VfsRegistration>;
+
+    /// Unregisters or tears down backend-owned VFS state.
+    ///
+    /// # Errors
+    ///
+    /// Returns a platform error when teardown fails.
+    fn unregister_vfs(&mut self, handler: &VfsHandlerInfo) -> Result<()>;
+}
+
+/// Native Rust fallback backend used when the Dreamcast SDK is not linked.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct LocalDreamcastBackend;
+
+impl DreamcastPlatformBackend for LocalDreamcastBackend {
+    fn register_vfs(
+        &mut self,
+        _handler: &VfsHandlerInfo,
+        _mount: &SmbMount,
+    ) -> Result<VfsRegistration> {
+        Ok(VfsRegistration::LocalFallback)
+    }
+
+    fn unregister_vfs(&mut self, _handler: &VfsHandlerInfo) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// Backend that reports the absence of KallistiOS VFS support explicitly.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct UnavailableDreamcastBackend;
+
+impl DreamcastPlatformBackend for UnavailableDreamcastBackend {
+    fn register_vfs(
+        &mut self,
+        _handler: &VfsHandlerInfo,
+        _mount: &SmbMount,
+    ) -> Result<VfsRegistration> {
+        Err(ErrorCode(ENOSYS))
+    }
+
+    fn unregister_vfs(&mut self, _handler: &VfsHandlerInfo) -> Result<()> {
+        Err(ErrorCode(ENOSYS))
+    }
+}
+
 impl Default for VfsHandlerInfo {
     fn default() -> Self {
         Self {
@@ -384,7 +470,7 @@ pub struct SmbOpenRequest {
 #[derive(Debug)]
 pub enum SmbCloseRequest {
     /// Close request for a file handle.
-    File(SyncRequest),
+    File(Box<SyncRequest>),
     /// Close request for a directory handle.
     Directory(DirectoryRequest),
 }
@@ -395,26 +481,51 @@ pub enum DreamcastVfsState {
     /// No SMB context or mount URL is modeled.
     #[default]
     Uninitialized,
-    /// Mount state exists and the handler is considered registered.
-    Registered,
+    /// Mount state exists and operations use the Rust local fallback backend.
+    LocalFallback,
+    /// Mount state exists and a platform backend registered the handler.
+    PlatformRegistered,
     /// Shutdown has been called and owned state has been released.
     Shutdown,
 }
 
 /// Dreamcast SMB VFS state corresponding to the C file's global context, URL, and handler.
-#[derive(Debug, Default)]
-pub struct DreamcastVfs {
+#[derive(Debug)]
+pub struct DreamcastVfs<B = LocalDreamcastBackend> {
     client: Option<Smb2Client>,
     mount: Option<SmbMount>,
+    handles: Vec<Option<SmbFdKind>>,
     handler: VfsHandlerInfo,
     state: DreamcastVfsState,
+    backend: B,
 }
 
-impl DreamcastVfs {
-    /// Creates an uninitialized Dreamcast VFS adapter skeleton.
+impl Default for DreamcastVfs<LocalDreamcastBackend> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DreamcastVfs<LocalDreamcastBackend> {
+    /// Creates an uninitialized Dreamcast VFS adapter using the local fallback backend.
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        Self::with_backend(LocalDreamcastBackend)
+    }
+}
+
+impl<B> DreamcastVfs<B> {
+    /// Creates an uninitialized Dreamcast VFS adapter with a platform backend.
+    #[must_use]
+    pub fn with_backend(backend: B) -> Self {
+        Self {
+            client: None,
+            mount: None,
+            handles: Vec::new(),
+            handler: VfsHandlerInfo::default(),
+            state: DreamcastVfsState::Uninitialized,
+            backend,
+        }
     }
 
     /// Returns the static VFS handler metadata.
@@ -423,10 +534,30 @@ impl DreamcastVfs {
         &self.handler
     }
 
-    /// Returns whether `kos_smb_init` has registered the handler skeleton.
+    /// Returns shared access to the configured platform backend.
+    #[must_use]
+    pub const fn backend(&self) -> &B {
+        &self.backend
+    }
+
+    /// Returns mutable access to the configured platform backend.
+    pub fn backend_mut(&mut self) -> &mut B {
+        &mut self.backend
+    }
+
+    /// Returns whether a real platform backend registered the VFS handler.
     #[must_use]
     pub const fn is_registered(&self) -> bool {
-        matches!(self.state, DreamcastVfsState::Registered)
+        matches!(self.state, DreamcastVfsState::PlatformRegistered)
+    }
+
+    /// Returns whether the VFS has usable mounted state through any backend.
+    #[must_use]
+    pub const fn is_active(&self) -> bool {
+        matches!(
+            self.state,
+            DreamcastVfsState::LocalFallback | DreamcastVfsState::PlatformRegistered
+        )
     }
 
     /// Returns the modeled VFS lifecycle state.
@@ -447,25 +578,49 @@ impl DreamcastVfs {
         self.client.as_ref()
     }
 
+    /// Returns the number of active Dreamcast VFS handles tracked by the model.
+    #[must_use]
+    pub fn handle_count(&self) -> usize {
+        self.handles.iter().flatten().count()
+    }
+
     /// Mirrors `kos_smb_init` by creating client and mount state for a URL.
     ///
     /// # Errors
     ///
     /// Returns `ErrorCode(-22)` if `url` is empty. Future platform code may also
     /// return SMB2 connection or KallistiOS registration errors.
-    pub fn kos_smb_init(&mut self, url: &str) -> Result<()> {
+    pub fn kos_smb_init(&mut self, url: &str) -> Result<()>
+    where
+        B: DreamcastPlatformBackend,
+    {
         let mount = SmbMount::new(url)?;
-        self.client = Some(Smb2Client::new());
-        self.mount = Some(mount);
-        self.state = DreamcastVfsState::Registered;
+        let mut client = Smb2Client::new();
+        let parsed_url = client.set_url(url)?;
+        let registration = self.backend.register_vfs(&self.handler, &mount)?;
+        client.connect_share_local(&parsed_url.server, &parsed_url.share)?;
+        self.client = Some(client);
+        self.mount = Some(mount.with_smb_url(parsed_url));
+        self.state = match registration {
+            VfsRegistration::Platform => DreamcastVfsState::PlatformRegistered,
+            VfsRegistration::LocalFallback => DreamcastVfsState::LocalFallback,
+        };
         Ok(())
     }
 
     /// Mirrors `kos_smb_shutdown` by clearing handler, mount, and client state.
-    pub fn kos_smb_shutdown(&mut self) {
+    pub fn kos_smb_shutdown(&mut self) -> Result<()>
+    where
+        B: DreamcastPlatformBackend,
+    {
+        if self.is_active() {
+            self.backend.unregister_vfs(&self.handler)?;
+        }
         self.state = DreamcastVfsState::Shutdown;
         self.mount = None;
         self.client = None;
+        self.handles.clear();
+        Ok(())
     }
 
     /// Builds the `smb_open` operation skeleton for files or directories.
@@ -490,6 +645,9 @@ impl DreamcastVfs {
             _ => return Err(ErrorCode(EIO)),
         }
 
+        let handle_id = self.insert_handle(fd.kind());
+        fd.assign_handle_id(handle_id);
+
         Ok(SmbOpenRequest { fd, request })
     }
 
@@ -501,19 +659,25 @@ impl DreamcastVfs {
     /// no file handle available for the current skeleton.
     pub fn smb_close(&mut self, fd: &mut SmbFd) -> Result<SmbCloseRequest> {
         if fd.is_dir() {
+            let _client = self.required_client()?;
+            self.ensure_handle(fd, SmbFdKind::Directory)?;
             let handle = fd.directory_handle().ok_or(ErrorCode(EIO))?;
+            let file_id = handle.id();
+            self.remove_handle(fd.handle_id(), SmbFdKind::Directory)?;
             let request = SmbCloseRequest::Directory(DirectoryRequest {
-                file_id: handle.id(),
+                file_id,
                 operation: DirectoryOperation::Close,
             });
             fd.mark_closed();
             return Ok(request);
         }
 
+        self.ensure_handle(fd, SmbFdKind::File)?;
         let handle = fd.file_handle().ok_or(ErrorCode(EIO))?;
         let request = sync::smb2_close(self.required_client_mut()?, handle)?;
+        self.remove_handle(fd.handle_id(), SmbFdKind::File)?;
         fd.mark_closed();
-        Ok(SmbCloseRequest::File(request))
+        Ok(SmbCloseRequest::File(Box::new(request)))
     }
 
     /// Builds the `smb_read` operation skeleton.
@@ -528,6 +692,7 @@ impl DreamcastVfs {
         buffer: &mut [u8],
         count: usize,
     ) -> Result<SyncRequest> {
+        self.ensure_handle(fd, SmbFdKind::File)?;
         let handle = fd.file_handle().ok_or(ErrorCode(EIO))?;
         let request = sync::smb2_read(self.required_client_mut()?, handle, buffer, count)?;
         let SyncPayload::Read { data, .. } = request.payload() else {
@@ -551,6 +716,7 @@ impl DreamcastVfs {
         buffer: &[u8],
         count: usize,
     ) -> Result<SyncRequest> {
+        self.ensure_handle(fd, SmbFdKind::File)?;
         let handle = fd.file_handle().ok_or(ErrorCode(EIO))?;
         let request = sync::smb2_write(self.required_client_mut()?, handle, buffer, count)?;
         let SyncPayload::Write { count: written, .. } = request.payload() else {
@@ -571,6 +737,7 @@ impl DreamcastVfs {
         entry: &DirectoryEntry,
     ) -> Result<&'a DreamcastDirent> {
         let _client = self.required_client()?;
+        self.ensure_handle(fd, SmbFdKind::Directory)?;
         fd.cache_dirent(entry)
     }
 
@@ -642,6 +809,7 @@ impl DreamcastVfs {
     /// Returns `ErrorCode(-5)` because platform seek execution has not been migrated.
     pub fn smb_seek64(&self, fd: &SmbFd, offset: i64, whence: SeekWhence) -> Result<Seek64Request> {
         let _client = self.required_client()?;
+        self.ensure_handle(fd, SmbFdKind::File)?;
         let _handle = fd.file_handle().ok_or(ErrorCode(EIO))?;
         Ok(Seek64Request { offset, whence })
     }
@@ -653,6 +821,7 @@ impl DreamcastVfs {
     /// Returns `ErrorCode(-5)` if uninitialized or `fd` has no file handle.
     pub fn smb_tell64(&self, fd: &SmbFd) -> Result<Seek64Request> {
         let _client = self.required_client()?;
+        self.ensure_handle(fd, SmbFdKind::File)?;
         let _handle = fd.file_handle().ok_or(ErrorCode(EIO))?;
         Ok(Seek64Request {
             offset: 0,
@@ -679,6 +848,7 @@ impl DreamcastVfs {
     /// a directory descriptor.
     pub fn smb_rewinddir(&self, fd: &SmbFd) -> Result<DirectoryRequest> {
         let _client = self.required_client()?;
+        self.ensure_handle(fd, SmbFdKind::Directory)?;
         let handle = fd.directory_handle().ok_or(ErrorCode(EINVAL))?;
         Ok(DirectoryRequest {
             file_id: handle.id(),
@@ -692,6 +862,7 @@ impl DreamcastVfs {
     ///
     /// Returns `ErrorCode(-5)` if uninitialized or `fd` has no file handle.
     pub fn smb_fstat(&mut self, fd: &mut SmbFd) -> Result<SyncRequest> {
+        self.ensure_handle(fd, SmbFdKind::File)?;
         let handle = fd.file_handle().ok_or(ErrorCode(EIO))?;
         let request = sync::smb2_fstat(self.required_client_mut()?, handle)?;
         let SyncPayload::Stat(stat) = request.payload() else {
@@ -707,6 +878,50 @@ impl DreamcastVfs {
 
     fn required_client_mut(&mut self) -> Result<&mut Smb2Client> {
         self.client.as_mut().ok_or(ErrorCode(EIO))
+    }
+
+    fn insert_handle(&mut self, kind: SmbFdKind) -> DreamcastHandleId {
+        if let Some((index, slot)) = self
+            .handles
+            .iter_mut()
+            .enumerate()
+            .find(|(_index, slot)| slot.is_none())
+        {
+            *slot = Some(kind);
+            return DreamcastHandleId(index);
+        }
+
+        self.handles.push(Some(kind));
+        DreamcastHandleId(self.handles.len() - 1)
+    }
+
+    fn remove_handle(
+        &mut self,
+        handle_id: Option<DreamcastHandleId>,
+        expected: SmbFdKind,
+    ) -> Result<()> {
+        let handle_id = handle_id.ok_or(ErrorCode(EIO))?;
+        let Some(slot) = self.handles.get_mut(handle_id.0) else {
+            return Err(ErrorCode(EIO));
+        };
+        let Some(kind) = slot.take() else {
+            return Err(ErrorCode(EIO));
+        };
+        if kind == expected {
+            Ok(())
+        } else {
+            *slot = Some(kind);
+            Err(ErrorCode(EINVAL))
+        }
+    }
+
+    fn ensure_handle(&self, fd: &SmbFd, expected: SmbFdKind) -> Result<()> {
+        let handle_id = fd.handle_id().ok_or(ErrorCode(EIO))?;
+        match self.handles.get(handle_id.0).and_then(Option::as_ref) {
+            Some(kind) if *kind == expected && fd.state() == SmbFdState::Open => Ok(()),
+            Some(_) => Err(ErrorCode(EINVAL)),
+            None => Err(ErrorCode(EIO)),
+        }
     }
 }
 
@@ -796,5 +1011,44 @@ pub fn prepare_vfs_path(path: &str) -> Result<String> {
         Ok("/".to_owned())
     } else {
         Ok(components.join("/"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn smb_open_and_close_track_handle_table() {
+        let mut vfs = DreamcastVfs::new();
+        vfs.kos_smb_init("smb://server/share").unwrap();
+
+        let mut open = vfs.smb_open("/file.txt", 0).unwrap();
+        assert_eq!(vfs.handle_count(), 1);
+        assert_eq!(open.fd.handle_id(), Some(DreamcastHandleId(0)));
+
+        vfs.smb_close(&mut open.fd).unwrap();
+        assert_eq!(vfs.handle_count(), 0);
+        assert_eq!(open.fd.state(), SmbFdState::Closed);
+    }
+
+    #[test]
+    fn closed_handle_is_rejected() {
+        let mut vfs = DreamcastVfs::new();
+        vfs.kos_smb_init("smb://server/share").unwrap();
+
+        let mut open = vfs.smb_open("/file.txt", 0).unwrap();
+        vfs.smb_close(&mut open.fd).unwrap();
+
+        let err = vfs.smb_tell64(&open.fd).unwrap_err();
+        assert_eq!(err, ErrorCode(EIO));
+    }
+
+    #[test]
+    fn unavailable_backend_returns_unsupported() {
+        let mut vfs = DreamcastVfs::with_backend(UnavailableDreamcastBackend);
+
+        let err = vfs.kos_smb_init("smb://server/share").unwrap_err();
+        assert_eq!(err, ErrorCode(ENOSYS));
     }
 }

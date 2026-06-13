@@ -179,7 +179,7 @@ impl HmacContext {
     ///
     /// # Errors
     ///
-    /// Returns an error if the placeholder inner SHA pass rejects the derived pad.
+    /// Returns an error if the inner SHA pass rejects the derived pad.
     pub fn new(which_sha: ShaVersion, key: &[u8]) -> HmacResult<Self> {
         let mut ctx = Self {
             which_sha,
@@ -198,7 +198,7 @@ impl HmacContext {
     ///
     /// # Errors
     ///
-    /// Returns an error if the placeholder inner SHA pass rejects the derived pad.
+    /// Returns an error if the inner SHA pass rejects the derived pad.
     pub fn reset(&mut self, which_sha: ShaVersion, key: &[u8]) -> HmacResult<()> {
         let block_size = which_sha.block_size();
         let hash_size = which_sha.hash_size();
@@ -272,7 +272,7 @@ impl HmacContext {
     }
 }
 
-/// Computes a placeholder HMAC digest for a complete message buffer.
+/// Computes an HMAC digest for a complete message buffer.
 ///
 /// # Errors
 ///

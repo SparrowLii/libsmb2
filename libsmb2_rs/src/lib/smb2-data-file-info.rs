@@ -52,6 +52,8 @@ pub enum FileInfoError {
     IntegerOverflow,
     /// UTF-8 input could not be converted to UTF-16 for wire encoding.
     InvalidUtf8(Utf8ValidationError),
+    /// A declared UTF-16LE name length is not divisible by two bytes.
+    InvalidUtf16NameLength { length: usize },
 }
 
 impl fmt::Display for FileInfoError {
@@ -66,6 +68,9 @@ impl fmt::Display for FileInfoError {
             Self::IntegerOverflow => write!(f, "integer overflow while sizing file info buffer"),
             Self::InvalidUtf8(error) => {
                 write!(f, "invalid UTF-8 while encoding file info: {error}")
+            }
+            Self::InvalidUtf16NameLength { length } => {
+                write!(f, "invalid UTF-16LE name byte length {length}")
             }
         }
     }
@@ -474,16 +479,26 @@ pub fn smb2_decode_file_stream_info(buf: &[u8]) -> Result<Vec<Smb2FileStreamInfo
         let name_len = read_u32_le(buf, offset + 4)? as usize;
         let stream_size = read_u64_le(buf, offset + 8)?;
         let stream_allocation_size = read_u64_le(buf, offset + 16)?;
-        let available_name_len =
-            available_name_len(buf, offset + FILE_STREAM_INFO_HEADER_SIZE, name_len);
-        let stream_name = decode_optional_utf16_name(
-            buf,
-            offset + FILE_STREAM_INFO_HEADER_SIZE,
-            available_name_len,
-        )?;
+        validate_utf16_name_len(name_len)?;
+        let entry_len = FILE_STREAM_INFO_HEADER_SIZE
+            .checked_add(name_len)
+            .ok_or(FileInfoError::IntegerOverflow)?;
+        let entry_bound = if next_offset == 0 {
+            entry_len
+        } else if next_offset < entry_len {
+            return Err(FileInfoError::BufferTooShort {
+                required: offset + entry_len,
+                actual: offset + next_offset,
+            });
+        } else {
+            next_offset
+        };
+        require_len_at(buf, offset, entry_bound)?;
+        let stream_name =
+            decode_optional_utf16_name(buf, offset + FILE_STREAM_INFO_HEADER_SIZE, name_len)?;
 
         entries.push(Smb2FileStreamInfo {
-            stream_name_length: stream_name.as_ref().map_or(0, |name| name.len() as u32),
+            stream_name_length: read_u32_le(buf, offset + 4)?,
             stream_size,
             stream_allocation_size,
             stream_name,
@@ -495,9 +510,6 @@ pub fn smb2_decode_file_stream_info(buf: &[u8]) -> Result<Vec<Smb2FileStreamInfo
         offset = offset
             .checked_add(next_offset)
             .ok_or(FileInfoError::IntegerOverflow)?;
-        if offset + FILE_STREAM_INFO_HEADER_SIZE > buf.len() {
-            break;
-        }
     }
 
     Ok(entries)
@@ -640,6 +652,7 @@ pub fn smb2_encode_file_disposition_info(
 pub fn smb2_decode_file_rename_info(buf: &[u8]) -> Result<Smb2FileRenameInfo> {
     require_len(buf, FILE_RENAME_INFO_PREFIX_SIZE)?;
     let name_len = read_u32_le(buf, 16)? as usize;
+    validate_utf16_name_len(name_len)?;
     require_len_at(buf, FILE_RENAME_INFO_PREFIX_SIZE, name_len)?;
     let mut units = Vec::with_capacity(name_len / 2);
     for chunk in
@@ -694,7 +707,8 @@ pub fn smb2_encode_file_rename_info(info: &Smb2FileRenameInfo, buf: &mut [u8]) -
 pub fn smb2_decode_file_all_info(buf: &[u8]) -> Result<Smb2FileAllInfo> {
     require_len(buf, FILE_ALL_INFO_PREFIX_SIZE)?;
     let name_len = read_u32_le(buf, 96)? as usize;
-    let available = available_name_len(buf, FILE_ALL_INFO_PREFIX_SIZE, name_len);
+    validate_utf16_name_len(name_len)?;
+    require_len_at(buf, FILE_ALL_INFO_PREFIX_SIZE, name_len)?;
 
     Ok(Smb2FileAllInfo {
         basic: smb2_decode_file_basic_info(&buf[0..FILE_BASIC_INFO_SIZE])?,
@@ -705,7 +719,7 @@ pub fn smb2_decode_file_all_info(buf: &[u8]) -> Result<Smb2FileAllInfo> {
         current_byte_offset: read_u64_le(buf, 80)?,
         mode: read_u32_le(buf, 88)?,
         alignment_requirement: read_u32_le(buf, 92)?,
-        name: decode_optional_utf16_name(buf, FILE_ALL_INFO_PREFIX_SIZE, available)?,
+        name: decode_optional_utf16_name(buf, FILE_ALL_INFO_PREFIX_SIZE, name_len)?,
     })
 }
 
@@ -786,10 +800,12 @@ pub fn smb2_encode_file_network_open_info(
 pub fn smb2_decode_file_normalized_name_info(buf: &[u8]) -> Result<Smb2FileNameInfo> {
     require_len(buf, FILE_NAME_INFO_PREFIX_SIZE)?;
     let file_name_length = read_u32_le(buf, 0)?;
-    let available = available_name_len(buf, FILE_NAME_INFO_PREFIX_SIZE, file_name_length as usize);
+    let name_len = file_name_length as usize;
+    validate_utf16_name_len(name_len)?;
+    require_len_at(buf, FILE_NAME_INFO_PREFIX_SIZE, name_len)?;
     Ok(Smb2FileNameInfo {
         file_name_length,
-        name: decode_optional_utf16_name(buf, FILE_NAME_INFO_PREFIX_SIZE, available)?,
+        name: decode_optional_utf16_name(buf, FILE_NAME_INFO_PREFIX_SIZE, name_len)?,
     })
 }
 
@@ -808,7 +824,7 @@ pub fn smb2_encode_file_normalized_name_info(
         .len()
         .checked_mul(2)
         .ok_or(FileInfoError::IntegerOverflow)?;
-    let name_len = usize::max(info.file_name_length as usize, encoded_len);
+    let name_len = encoded_len;
     let total_len = FILE_NAME_INFO_PREFIX_SIZE
         .checked_add(name_len)
         .ok_or(FileInfoError::IntegerOverflow)?;
@@ -816,8 +832,6 @@ pub fn smb2_encode_file_normalized_name_info(
 
     write_u32_le(buf, 0, usize_to_u32(name_len)?)?;
     write_utf16_units(buf, FILE_NAME_INFO_PREFIX_SIZE, &encoded_name)?;
-    let padding_start = FILE_NAME_INFO_PREFIX_SIZE + encoded_len;
-    buf[padding_start..total_len].fill(0);
     Ok(total_len)
 }
 
@@ -839,11 +853,11 @@ fn decode_optional_utf16_name(
     if byte_len == 0 {
         return Ok(None);
     }
+    validate_utf16_name_len(byte_len)?;
     require_len_at(buf, offset, byte_len)?;
 
-    let even_len = byte_len - (byte_len % 2);
-    let mut units = Vec::with_capacity(even_len / 2);
-    for chunk in buf[offset..offset + even_len].chunks_exact(2) {
+    let mut units = Vec::with_capacity(byte_len / 2);
+    for chunk in buf[offset..offset + byte_len].chunks_exact(2) {
         units.push(u16::from_le_bytes([chunk[0], chunk[1]]));
     }
 
@@ -857,8 +871,11 @@ fn encode_optional_utf16_name(name: Option<&str>) -> Result<Vec<u16>> {
     }
 }
 
-fn available_name_len(buf: &[u8], offset: usize, requested: usize) -> usize {
-    buf.len().saturating_sub(offset).min(requested)
+fn validate_utf16_name_len(byte_len: usize) -> Result<()> {
+    if byte_len % 2 != 0 {
+        return Err(FileInfoError::InvalidUtf16NameLength { length: byte_len });
+    }
+    Ok(())
 }
 
 fn pad_to_64bit(value: usize) -> Result<usize> {
@@ -942,4 +959,66 @@ fn write_utf16_units(buf: &mut [u8], offset: usize, units: &[u16]) -> Result<()>
         buf[byte_offset..byte_offset + 2].copy_from_slice(&unit.to_le_bytes());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_all_info_rejects_truncated_declared_name() {
+        let mut buf = vec![0; FILE_ALL_INFO_PREFIX_SIZE + 2];
+        buf[96..100].copy_from_slice(&4u32.to_le_bytes());
+
+        assert_eq!(
+            smb2_decode_file_all_info(&buf),
+            Err(FileInfoError::BufferTooShort {
+                required: FILE_ALL_INFO_PREFIX_SIZE + 4,
+                actual: FILE_ALL_INFO_PREFIX_SIZE + 2,
+            })
+        );
+    }
+
+    #[test]
+    fn normalized_name_uses_actual_utf16_wire_length() {
+        let info = Smb2FileNameInfo {
+            file_name_length: 64,
+            name: Some("a/名".to_string()),
+        };
+        let mut buf = vec![0; 64];
+
+        let written = smb2_encode_file_normalized_name_info(&info, &mut buf).unwrap();
+        let decoded = smb2_decode_file_normalized_name_info(&buf[..written]).unwrap();
+
+        assert_eq!(written, FILE_NAME_INFO_PREFIX_SIZE + 6);
+        assert_eq!(decoded.file_name_length, 6);
+        assert_eq!(decoded.name.as_deref(), Some("a/名"));
+    }
+
+    #[test]
+    fn stream_info_roundtrips_utf16_name_and_padding() {
+        let entries = vec![
+            Smb2FileStreamInfo {
+                stream_size: 7,
+                stream_allocation_size: 8,
+                stream_name: Some(":数据:$DATA".to_string()),
+                ..Smb2FileStreamInfo::default()
+            },
+            Smb2FileStreamInfo {
+                stream_size: 9,
+                stream_allocation_size: 16,
+                stream_name: Some(":alt:$DATA".to_string()),
+                ..Smb2FileStreamInfo::default()
+            },
+        ];
+        let mut buf = vec![0; 128];
+
+        let written = smb2_encode_file_stream_info(&entries, &mut buf).unwrap();
+        let decoded = smb2_decode_file_stream_info(&buf[..written]).unwrap();
+
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded[0].stream_name.as_deref(), Some(":数据:$DATA"));
+        assert_eq!(decoded[0].stream_name_length, 18);
+        assert_eq!(decoded[1].stream_name.as_deref(), Some(":alt:$DATA"));
+    }
 }

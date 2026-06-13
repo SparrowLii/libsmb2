@@ -1,9 +1,14 @@
 //! Reparse point encoders/decoders migrated from `lib/smb2-data-reparse-point.c`.
 
+use core::fmt;
+
 use super::unicode::smb2_utf16_to_utf8;
 
 /// SMB2 symlink reparse tag value used by `SMB2_REPARSE_TAG_SYMLINK`.
 pub const SMB2_REPARSE_TAG_SYMLINK: u32 = 0xa000_000c;
+
+/// SMB2 mount-point reparse tag value used by `IO_REPARSE_TAG_MOUNT_POINT`.
+pub const SMB2_REPARSE_TAG_MOUNT_POINT: u32 = 0xa000_0003;
 
 /// Symlink reparse flag indicating that the substitute name is relative.
 pub const SMB2_SYMLINK_FLAG_RELATIVE: u32 = 0x0000_0001;
@@ -14,6 +19,9 @@ pub const SMB2_REPARSE_DATA_HEADER_SIZE: usize = 8;
 /// Minimum wire size of a symlink reparse data buffer including the common header.
 pub const SMB2_SYMLINK_REPARSE_MIN_SIZE: usize = 20;
 
+/// Minimum wire size of a mount-point reparse data buffer including the common header.
+pub const SMB2_MOUNT_POINT_REPARSE_MIN_SIZE: usize = 16;
+
 const SYMLINK_SUBSTITUTE_NAME_OFFSET_FIELD: usize = 8;
 const SYMLINK_SUBSTITUTE_NAME_LENGTH_FIELD: usize = 10;
 const SYMLINK_PRINT_NAME_OFFSET_FIELD: usize = 12;
@@ -21,6 +29,12 @@ const SYMLINK_PRINT_NAME_LENGTH_FIELD: usize = 14;
 const SYMLINK_FLAGS_FIELD: usize = 16;
 const SYMLINK_PATH_BUFFER_OFFSET: usize = 20;
 const SYMLINK_REPARSE_DATA_PREFIX: usize = 12;
+const MOUNT_POINT_SUBSTITUTE_NAME_OFFSET_FIELD: usize = 8;
+const MOUNT_POINT_SUBSTITUTE_NAME_LENGTH_FIELD: usize = 10;
+const MOUNT_POINT_PRINT_NAME_OFFSET_FIELD: usize = 12;
+const MOUNT_POINT_PRINT_NAME_LENGTH_FIELD: usize = 14;
+const MOUNT_POINT_PATH_BUFFER_OFFSET: usize = 16;
+const MOUNT_POINT_REPARSE_DATA_PREFIX: usize = 8;
 
 /// Result type used by reparse point decoding helpers.
 pub type ReparseDataResult<T> = Result<T, ReparseDataError>;
@@ -41,6 +55,21 @@ pub enum ReparseDataError {
     /// The payload cannot be encoded from the available Rust-owned fields.
     UnsupportedPayload,
 }
+
+impl fmt::Display for ReparseDataError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::BufferTooShort => f.write_str("reparse data buffer is too short"),
+            Self::LengthOverflow => f.write_str("reparse data length calculation overflowed"),
+            Self::InvalidReparseDataLength => f.write_str("invalid reparse data length"),
+            Self::InvalidSymlinkNameRange => f.write_str("invalid reparse point name range"),
+            Self::OddUtf16NameLength => f.write_str("reparse point UTF-16LE name length is odd"),
+            Self::UnsupportedPayload => f.write_str("unsupported reparse data payload"),
+        }
+    }
+}
+
+impl std::error::Error for ReparseDataError {}
 
 /// Byte range for a UTF-16LE symlink name inside a reparse point buffer.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -80,6 +109,50 @@ pub struct Smb2SymlinkReparseBuffer {
     pub printname_range: Option<ReparseNameRange>,
 }
 
+/// Rust counterpart of a mount-point reparse buffer.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct Smb2MountPointReparseBuffer {
+    /// Decoded substitute name.
+    pub subname: Option<String>,
+    /// Decoded print name.
+    pub printname: Option<String>,
+    /// Raw UTF-16LE substitute-name range in the full reparse data buffer.
+    pub subname_range: Option<ReparseNameRange>,
+    /// Raw UTF-16LE print-name range in the full reparse data buffer.
+    pub printname_range: Option<ReparseNameRange>,
+}
+
+impl Smb2MountPointReparseBuffer {
+    /// Creates an empty mount-point reparse buffer.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            subname: None,
+            printname: None,
+            subname_range: None,
+            printname_range: None,
+        }
+    }
+
+    /// Records the raw UTF-16LE name ranges found in the wire buffer.
+    #[must_use]
+    pub const fn with_name_ranges(
+        mut self,
+        subname_range: ReparseNameRange,
+        printname_range: ReparseNameRange,
+    ) -> Self {
+        self.subname_range = Some(subname_range);
+        self.printname_range = Some(printname_range);
+        self
+    }
+}
+
+impl Default for Smb2MountPointReparseBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Smb2SymlinkReparseBuffer {
     /// Creates an empty symlink reparse buffer with the supplied flags.
     #[must_use]
@@ -117,6 +190,8 @@ impl Smb2SymlinkReparseBuffer {
 pub enum Smb2ReparseDataPayload {
     /// Symlink payload corresponding to `SMB2_REPARSE_TAG_SYMLINK`.
     Symlink(Smb2SymlinkReparseBuffer),
+    /// Mount-point payload corresponding to `SMB2_REPARSE_TAG_MOUNT_POINT`.
+    MountPoint(Smb2MountPointReparseBuffer),
     /// Raw payload for reparse tags not decoded by this module.
     Raw(Vec<u8>),
     /// Placeholder for buffers where protocol-specific raw bytes are not available.
@@ -180,6 +255,7 @@ impl Smb2ReparseDataBuffer {
     pub const fn as_symlink(&self) -> Option<&Smb2SymlinkReparseBuffer> {
         match &self.payload {
             Smb2ReparseDataPayload::Symlink(symlink) => Some(symlink),
+            Smb2ReparseDataPayload::MountPoint(_) => None,
             Smb2ReparseDataPayload::Raw(_) => None,
             Smb2ReparseDataPayload::Unknown => None,
         }
@@ -232,31 +308,70 @@ pub fn smb2_decode_reparse_data_buffer(input: &[u8]) -> ReparseDataResult<Smb2Re
         return Err(ReparseDataError::InvalidReparseDataLength);
     }
 
-    if reparse_tag != SMB2_REPARSE_TAG_SYMLINK {
-        let payload = input[SMB2_REPARSE_DATA_HEADER_SIZE..declared_len].to_vec();
-        return Ok(Smb2ReparseDataBuffer {
-            reparse_tag,
-            reparse_data_length,
-            payload: Smb2ReparseDataPayload::Raw(payload),
-        });
+    match reparse_tag {
+        SMB2_REPARSE_TAG_SYMLINK => decode_symlink_reparse_data_buffer(input, reparse_data_length),
+        SMB2_REPARSE_TAG_MOUNT_POINT => {
+            decode_mount_point_reparse_data_buffer(input, reparse_data_length)
+        }
+        _ => {
+            let payload = input[SMB2_REPARSE_DATA_HEADER_SIZE..declared_len].to_vec();
+            Ok(Smb2ReparseDataBuffer {
+                reparse_tag,
+                reparse_data_length,
+                payload: Smb2ReparseDataPayload::Raw(payload),
+            })
+        }
     }
+}
 
+/// Encodes an SMB2 reparse data buffer.
+///
+/// # Errors
+///
+/// Returns [`ReparseDataError`] if lengths overflow or a payload cannot be written.
+pub fn smb2_encode_reparse_data_buffer(data: &Smb2ReparseDataBuffer) -> ReparseDataResult<Vec<u8>> {
+    match &data.payload {
+        Smb2ReparseDataPayload::Symlink(symlink) => encode_symlink_reparse_data_buffer(symlink),
+        Smb2ReparseDataPayload::MountPoint(mount_point) => {
+            encode_mount_point_reparse_data_buffer(mount_point)
+        }
+        Smb2ReparseDataPayload::Raw(payload) => {
+            encode_raw_reparse_data_buffer(data.reparse_tag, payload)
+        }
+        Smb2ReparseDataPayload::Unknown => {
+            let payload = vec![0; usize::from(data.reparse_data_length)];
+            encode_raw_reparse_data_buffer(data.reparse_tag, &payload)
+        }
+    }
+}
+
+fn decode_symlink_reparse_data_buffer(
+    input: &[u8],
+    reparse_data_length: u16,
+) -> ReparseDataResult<Smb2ReparseDataBuffer> {
     if input.len() < SMB2_SYMLINK_REPARSE_MIN_SIZE {
         return Err(ReparseDataError::BufferTooShort);
     }
+    if usize::from(reparse_data_length) < SYMLINK_REPARSE_DATA_PREFIX {
+        return Err(ReparseDataError::InvalidReparseDataLength);
+    }
 
     let flags = read_u32(input, SYMLINK_FLAGS_FIELD)?;
-    let subname_range = read_symlink_name_range(
+    let subname_range = read_reparse_name_range(
         input,
         reparse_data_length,
         SYMLINK_SUBSTITUTE_NAME_OFFSET_FIELD,
         SYMLINK_SUBSTITUTE_NAME_LENGTH_FIELD,
+        SYMLINK_REPARSE_DATA_PREFIX,
+        SYMLINK_PATH_BUFFER_OFFSET,
     )?;
-    let printname_range = read_symlink_name_range(
+    let printname_range = read_reparse_name_range(
         input,
         reparse_data_length,
         SYMLINK_PRINT_NAME_OFFSET_FIELD,
         SYMLINK_PRINT_NAME_LENGTH_FIELD,
+        SYMLINK_REPARSE_DATA_PREFIX,
+        SYMLINK_PATH_BUFFER_OFFSET,
     )?;
     let symlink =
         Smb2SymlinkReparseBuffer::new(flags).with_name_ranges(subname_range, printname_range);
@@ -269,35 +384,53 @@ pub fn smb2_decode_reparse_data_buffer(input: &[u8]) -> ReparseDataResult<Smb2Re
     Ok(Smb2ReparseDataBuffer::symlink(reparse_data_length, symlink))
 }
 
-/// Encodes an SMB2 reparse data buffer.
-///
-/// # Errors
-///
-/// Returns [`ReparseDataError`] if lengths overflow or a payload cannot be written.
-pub fn smb2_encode_reparse_data_buffer(data: &Smb2ReparseDataBuffer) -> ReparseDataResult<Vec<u8>> {
-    match &data.payload {
-        Smb2ReparseDataPayload::Symlink(symlink) => encode_symlink_reparse_data_buffer(symlink),
-        Smb2ReparseDataPayload::Raw(payload) => {
-            encode_raw_reparse_data_buffer(data.reparse_tag, payload)
-        }
-        Smb2ReparseDataPayload::Unknown => {
-            let payload = vec![0; usize::from(data.reparse_data_length)];
-            encode_raw_reparse_data_buffer(data.reparse_tag, &payload)
-        }
+fn decode_mount_point_reparse_data_buffer(
+    input: &[u8],
+    reparse_data_length: u16,
+) -> ReparseDataResult<Smb2ReparseDataBuffer> {
+    if input.len() < SMB2_MOUNT_POINT_REPARSE_MIN_SIZE {
+        return Err(ReparseDataError::BufferTooShort);
     }
+    if usize::from(reparse_data_length) < MOUNT_POINT_REPARSE_DATA_PREFIX {
+        return Err(ReparseDataError::InvalidReparseDataLength);
+    }
+
+    let subname_range = read_reparse_name_range(
+        input,
+        reparse_data_length,
+        MOUNT_POINT_SUBSTITUTE_NAME_OFFSET_FIELD,
+        MOUNT_POINT_SUBSTITUTE_NAME_LENGTH_FIELD,
+        MOUNT_POINT_REPARSE_DATA_PREFIX,
+        MOUNT_POINT_PATH_BUFFER_OFFSET,
+    )?;
+    let printname_range = read_reparse_name_range(
+        input,
+        reparse_data_length,
+        MOUNT_POINT_PRINT_NAME_OFFSET_FIELD,
+        MOUNT_POINT_PRINT_NAME_LENGTH_FIELD,
+        MOUNT_POINT_REPARSE_DATA_PREFIX,
+        MOUNT_POINT_PATH_BUFFER_OFFSET,
+    )?;
+    let mount_point =
+        Smb2MountPointReparseBuffer::new().with_name_ranges(subname_range, printname_range);
+    let mount_point = Smb2MountPointReparseBuffer {
+        subname: decode_utf16le_name(input, subname_range)?,
+        printname: decode_utf16le_name(input, printname_range)?,
+        ..mount_point
+    };
+
+    Ok(Smb2ReparseDataBuffer {
+        reparse_tag: SMB2_REPARSE_TAG_MOUNT_POINT,
+        reparse_data_length,
+        payload: Smb2ReparseDataPayload::MountPoint(mount_point),
+    })
 }
 
 fn encode_symlink_reparse_data_buffer(
     symlink: &Smb2SymlinkReparseBuffer,
 ) -> ReparseDataResult<Vec<u8>> {
-    let subname = match symlink.subname.as_deref() {
-        Some(value) => value,
-        None => "",
-    };
-    let printname = match symlink.printname.as_deref() {
-        Some(value) => value,
-        None => "",
-    };
+    let subname = symlink.subname.as_deref().unwrap_or_default();
+    let printname = symlink.printname.as_deref().unwrap_or_default();
     let subname_bytes = encode_utf16le(subname);
     let printname_bytes = encode_utf16le(printname);
     let subname_len = len_to_u16(subname_bytes.len())?;
@@ -323,6 +456,48 @@ fn encode_symlink_reparse_data_buffer(
     write_bytes(
         &mut out,
         SYMLINK_PATH_BUFFER_OFFSET + subname_bytes.len(),
+        &printname_bytes,
+    )?;
+    Ok(out)
+}
+
+fn encode_mount_point_reparse_data_buffer(
+    mount_point: &Smb2MountPointReparseBuffer,
+) -> ReparseDataResult<Vec<u8>> {
+    let subname = mount_point.subname.as_deref().unwrap_or_default();
+    let printname = mount_point.printname.as_deref().unwrap_or_default();
+    let subname_bytes = encode_utf16le(subname);
+    let printname_bytes = encode_utf16le(printname);
+    let subname_len = len_to_u16(subname_bytes.len())?;
+    let printname_offset = len_to_u16(subname_bytes.len())?;
+    let printname_len = len_to_u16(printname_bytes.len())?;
+    let reparse_data_length = MOUNT_POINT_REPARSE_DATA_PREFIX
+        .checked_add(subname_bytes.len())
+        .and_then(|len| len.checked_add(printname_bytes.len()))
+        .ok_or(ReparseDataError::LengthOverflow)?;
+    let reparse_data_length_u16 = len_to_u16(reparse_data_length)?;
+    let total_len = SMB2_REPARSE_DATA_HEADER_SIZE
+        .checked_add(reparse_data_length)
+        .ok_or(ReparseDataError::LengthOverflow)?;
+    let mut out = vec![0; total_len];
+    write_u32(&mut out, 0, SMB2_REPARSE_TAG_MOUNT_POINT)?;
+    write_u16(&mut out, 4, reparse_data_length_u16)?;
+    write_u16(&mut out, MOUNT_POINT_SUBSTITUTE_NAME_OFFSET_FIELD, 0)?;
+    write_u16(
+        &mut out,
+        MOUNT_POINT_SUBSTITUTE_NAME_LENGTH_FIELD,
+        subname_len,
+    )?;
+    write_u16(
+        &mut out,
+        MOUNT_POINT_PRINT_NAME_OFFSET_FIELD,
+        printname_offset,
+    )?;
+    write_u16(&mut out, MOUNT_POINT_PRINT_NAME_LENGTH_FIELD, printname_len)?;
+    write_bytes(&mut out, MOUNT_POINT_PATH_BUFFER_OFFSET, &subname_bytes)?;
+    write_bytes(
+        &mut out,
+        MOUNT_POINT_PATH_BUFFER_OFFSET + subname_bytes.len(),
         &printname_bytes,
     )?;
     Ok(out)
@@ -360,26 +535,31 @@ fn decode_utf16le_name(input: &[u8], range: ReparseNameRange) -> ReparseDataResu
     Ok(Some(smb2_utf16_to_utf8(&units)))
 }
 
-fn read_symlink_name_range(
+fn read_reparse_name_range(
     input: &[u8],
     reparse_data_length: u16,
     offset_field: usize,
     length_field: usize,
+    data_prefix: usize,
+    path_buffer_offset: usize,
 ) -> ReparseDataResult<ReparseNameRange> {
     let relative_offset = usize::from(read_u16(input, offset_field)?);
     let length = usize::from(read_u16(input, length_field)?);
     let reparse_bound = usize::from(reparse_data_length);
     let relative_end = relative_offset
         .checked_add(length)
-        .and_then(|end| end.checked_add(SYMLINK_REPARSE_DATA_PREFIX))
+        .and_then(|end| end.checked_add(data_prefix))
         .ok_or(ReparseDataError::LengthOverflow)?;
 
     if relative_end > reparse_bound {
         return Err(ReparseDataError::InvalidSymlinkNameRange);
     }
+    if length % 2 != 0 {
+        return Err(ReparseDataError::OddUtf16NameLength);
+    }
 
     let offset = relative_offset
-        .checked_add(SYMLINK_PATH_BUFFER_OFFSET)
+        .checked_add(path_buffer_offset)
         .ok_or(ReparseDataError::LengthOverflow)?;
     let end = offset
         .checked_add(length)
@@ -443,4 +623,80 @@ fn read_bytes<const N: usize>(input: &[u8], offset: usize) -> ReparseDataResult<
     let mut out = [0; N];
     out.copy_from_slice(bytes);
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn symlink_reparse_roundtrips_utf16_names() {
+        let data = Smb2ReparseDataBuffer::symlink(
+            0,
+            Smb2SymlinkReparseBuffer {
+                flags: SMB2_SYMLINK_FLAG_RELATIVE,
+                subname: Some("target/数据".to_string()),
+                printname: Some("display".to_string()),
+                subname_range: None,
+                printname_range: None,
+            },
+        );
+
+        let encoded = smb2_encode_reparse_data_buffer(&data).unwrap();
+        let decoded = smb2_decode_reparse_data_buffer(&encoded).unwrap();
+
+        let symlink = decoded.as_symlink().unwrap();
+        assert!(symlink.is_relative());
+        assert_eq!(symlink.subname.as_deref(), Some("target/数据"));
+        assert_eq!(symlink.printname.as_deref(), Some("display"));
+        assert_eq!(usize::from(decoded.reparse_data_length) + 8, encoded.len());
+    }
+
+    #[test]
+    fn mount_point_reparse_roundtrips_utf16_names() {
+        let data = Smb2ReparseDataBuffer {
+            reparse_tag: SMB2_REPARSE_TAG_MOUNT_POINT,
+            reparse_data_length: 0,
+            payload: Smb2ReparseDataPayload::MountPoint(Smb2MountPointReparseBuffer {
+                subname: Some("\\??\\C:\\数据".to_string()),
+                printname: Some("C:\\数据".to_string()),
+                subname_range: None,
+                printname_range: None,
+            }),
+        };
+
+        let encoded = smb2_encode_reparse_data_buffer(&data).unwrap();
+        let decoded = smb2_decode_reparse_data_buffer(&encoded).unwrap();
+
+        match decoded.payload {
+            Smb2ReparseDataPayload::MountPoint(mount_point) => {
+                assert_eq!(mount_point.subname.as_deref(), Some("\\??\\C:\\数据"));
+                assert_eq!(mount_point.printname.as_deref(), Some("C:\\数据"));
+            }
+            _ => panic!("expected mount-point payload"),
+        }
+    }
+
+    #[test]
+    fn reparse_rejects_truncated_declared_payload() {
+        let input = [0x34, 0x12, 0, 0, 4, 0, 0, 0, 1, 2];
+
+        assert_eq!(
+            smb2_decode_reparse_data_buffer(&input),
+            Err(ReparseDataError::InvalidReparseDataLength)
+        );
+    }
+
+    #[test]
+    fn reparse_rejects_odd_utf16_name_length() {
+        let mut input = vec![0; SMB2_SYMLINK_REPARSE_MIN_SIZE + 1];
+        input[0..4].copy_from_slice(&SMB2_REPARSE_TAG_SYMLINK.to_le_bytes());
+        input[4..6].copy_from_slice(&(13u16).to_le_bytes());
+        input[10..12].copy_from_slice(&(1u16).to_le_bytes());
+
+        assert_eq!(
+            smb2_decode_reparse_data_buffer(&input),
+            Err(ReparseDataError::OddUtf16NameLength)
+        );
+    }
 }

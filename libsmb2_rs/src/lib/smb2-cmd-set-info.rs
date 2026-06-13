@@ -542,7 +542,9 @@ fn encode_payload(
     match payload {
         SetInfoPayload::None => Ok(()),
         SetInfoPayload::Raw(bytes) => {
-            if !passthrough && bytes.len() != buf.len() {
+            if (!passthrough && bytes.len() != buf.len())
+                || (passthrough && bytes.len() < buf.len())
+            {
                 return Err(SetInfoError::MalformedPayload);
             }
             let len = if passthrough {

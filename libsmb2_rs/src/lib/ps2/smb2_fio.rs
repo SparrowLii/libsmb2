@@ -33,6 +33,7 @@ const ENOMEM: i32 = 12;
 const EINVAL: i32 = 22;
 const ENOENT: i32 = 2;
 const EROFS: i32 = 30;
+const ENOSYS: i32 = 38;
 
 /// Error values corresponding to negative errno returns in `smb2_fio.c`.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -43,12 +44,16 @@ pub enum Smb2FioError {
     BadFileDescriptor,
     /// The operation is unsupported by this skeleton or failed as generic I/O.
     Io,
+    /// The operation requires real PS2SDK or SMB2 protocol support that is not modeled here.
+    Unsupported,
     /// The operation is invalid for the provided arguments or current state.
     InvalidInput,
     /// The C implementation would have failed an allocation.
     OutOfMemory,
     /// The current C open path rejects writes and reports a read-only file system.
     ReadOnlyFileSystem,
+    /// A real PS2SDK backend is not available for the requested operation.
+    PlatformUnavailable,
 }
 
 impl Smb2FioError {
@@ -59,9 +64,11 @@ impl Smb2FioError {
             Self::NoEntry => -ENOENT,
             Self::BadFileDescriptor => -EBADF,
             Self::Io => -EIO,
+            Self::Unsupported => -ENOSYS,
             Self::InvalidInput => -EINVAL,
             Self::OutOfMemory => -ENOMEM,
             Self::ReadOnlyFileSystem => -EROFS,
+            Self::PlatformUnavailable => -ENOSYS,
         }
     }
 }
@@ -72,9 +79,11 @@ impl core::fmt::Display for Smb2FioError {
             Self::NoEntry => "entry not found",
             Self::BadFileDescriptor => "bad file descriptor",
             Self::Io => "I/O operation is not available in the skeleton",
+            Self::Unsupported => "operation is unsupported without a real PS2SDK/SMB2 backend",
             Self::InvalidInput => "invalid input",
             Self::OutOfMemory => "out of memory",
             Self::ReadOnlyFileSystem => "read-only file system",
+            Self::PlatformUnavailable => "PS2 platform backend is unavailable",
         };
         f.write_str(message)
     }
@@ -185,6 +194,75 @@ pub struct IopDevice {
     pub description: String,
 }
 
+/// Result of asking a PS2 platform backend to register the SMB2 device.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Ps2DeviceRegistration {
+    /// A real PS2 IOP device driver was registered by the backend.
+    Platform,
+    /// No PS2SDK registration was attempted; operations use local fallback state.
+    LocalFallback,
+}
+
+/// Platform adapter boundary for PS2 device registration and share connection.
+pub trait Ps2PlatformBackend {
+    /// Registers or prepares the SMB2 IOP device.
+    ///
+    /// # Errors
+    ///
+    /// Returns a platform error when the backend cannot install or prepare the device.
+    fn register_device(&mut self, device: &IopDevice) -> Smb2FioResult<Ps2DeviceRegistration>;
+
+    /// Unregisters backend-owned device state.
+    ///
+    /// # Errors
+    ///
+    /// Returns a platform error when teardown fails.
+    fn unregister_device(&mut self, device: &IopDevice) -> Smb2FioResult<()>;
+
+    /// Connects or validates a share before it is exposed through `smb:/<name>`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a platform error when the share cannot be connected.
+    fn connect_share(&mut self, input: &Smb2ConnectIn) -> Smb2FioResult<()>;
+}
+
+/// Native Rust fallback backend used when PS2SDK is not linked.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LocalPs2Backend;
+
+impl Ps2PlatformBackend for LocalPs2Backend {
+    fn register_device(&mut self, _device: &IopDevice) -> Smb2FioResult<Ps2DeviceRegistration> {
+        Ok(Ps2DeviceRegistration::LocalFallback)
+    }
+
+    fn unregister_device(&mut self, _device: &IopDevice) -> Smb2FioResult<()> {
+        Ok(())
+    }
+
+    fn connect_share(&mut self, _input: &Smb2ConnectIn) -> Smb2FioResult<()> {
+        Ok(())
+    }
+}
+
+/// Backend that reports the absence of PS2SDK support explicitly.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct UnavailablePs2Backend;
+
+impl Ps2PlatformBackend for UnavailablePs2Backend {
+    fn register_device(&mut self, _device: &IopDevice) -> Smb2FioResult<Ps2DeviceRegistration> {
+        Err(Smb2FioError::PlatformUnavailable)
+    }
+
+    fn unregister_device(&mut self, _device: &IopDevice) -> Smb2FioResult<()> {
+        Err(Smb2FioError::PlatformUnavailable)
+    }
+
+    fn connect_share(&mut self, _input: &Smb2ConnectIn) -> Smb2FioResult<()> {
+        Err(Smb2FioError::PlatformUnavailable)
+    }
+}
+
 impl Default for IopDevice {
     fn default() -> Self {
         Self {
@@ -288,6 +366,10 @@ pub enum Smb2DeviceState {
     Uninitialized,
     /// Device operations may allocate file and directory handles.
     Initialized,
+    /// Device operations are backed by a real PS2 IOP device registration.
+    PlatformRegistered,
+    /// Device operations are available through the Rust local fallback backend.
+    LocalFallback,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -297,20 +379,36 @@ enum Smb2HandleRecord {
 }
 
 /// In-memory skeleton for the PS2 SMB2 file I/O device operations table.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Smb2Fio {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Smb2Fio<B = LocalPs2Backend> {
     shares: Vec<Smb2Share>,
     curdir: Option<String>,
     handles: Vec<Option<Smb2HandleRecord>>,
     files: Vec<Smb2LocalFile>,
     next_context: usize,
     state: Smb2DeviceState,
+    backend: B,
+    device: Option<IopDevice>,
 }
 
-impl Smb2Fio {
-    /// Creates an empty PS2 SMB2 file I/O skeleton.
+impl Default for Smb2Fio<LocalPs2Backend> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Smb2Fio<LocalPs2Backend> {
+    /// Creates an empty PS2 SMB2 file I/O adapter using the local fallback backend.
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
+        Self::with_backend(LocalPs2Backend)
+    }
+}
+
+impl<B> Smb2Fio<B> {
+    /// Creates an empty PS2 SMB2 file I/O adapter with a platform backend.
+    #[must_use]
+    pub fn with_backend(backend: B) -> Self {
         Self {
             shares: Vec::new(),
             curdir: None,
@@ -318,31 +416,68 @@ impl Smb2Fio {
             files: Vec::new(),
             next_context: 0,
             state: Smb2DeviceState::Uninitialized,
+            backend,
+            device: None,
         }
+    }
+
+    /// Returns shared access to the configured platform backend.
+    #[must_use]
+    pub const fn backend(&self) -> &B {
+        &self.backend
+    }
+
+    /// Returns mutable access to the configured platform backend.
+    pub fn backend_mut(&mut self) -> &mut B {
+        &mut self.backend
     }
 
     /// Mirrors `SMB2_init` by marking the skeleton as initialized.
     pub fn init(&mut self, _dev: &mut IopDevice) -> Smb2FioResult<()> {
-        self.state = Smb2DeviceState::Initialized;
+        if self.state == Smb2DeviceState::Uninitialized {
+            self.state = Smb2DeviceState::Initialized;
+        }
         Ok(())
     }
 
     /// Mirrors `SMB2_deinit` by clearing initialization-only state.
-    pub fn deinit(&mut self, _dev: &mut IopDevice) -> Smb2FioResult<()> {
+    pub fn deinit(&mut self, dev: &mut IopDevice) -> Smb2FioResult<()>
+    where
+        B: Ps2PlatformBackend,
+    {
+        if matches!(
+            self.state,
+            Smb2DeviceState::PlatformRegistered | Smb2DeviceState::LocalFallback
+        ) {
+            self.backend.unregister_device(dev)?;
+        }
         self.state = Smb2DeviceState::Uninitialized;
         self.handles.clear();
         self.files.clear();
+        self.device = None;
         Ok(())
     }
 
-    /// Mirrors `SMB2_initdev` without registering a PS2 kernel driver.
-    #[must_use]
-    pub fn initdev(&self) -> IopDevice {
-        IopDevice::default()
+    /// Mirrors `SMB2_initdev` through the configured platform backend.
+    pub fn initdev(&mut self) -> Smb2FioResult<IopDevice>
+    where
+        B: Ps2PlatformBackend,
+    {
+        let device = IopDevice::default();
+        let registration = self.backend.register_device(&device)?;
+        self.state = match registration {
+            Ps2DeviceRegistration::Platform => Smb2DeviceState::PlatformRegistered,
+            Ps2DeviceRegistration::LocalFallback => Smb2DeviceState::LocalFallback,
+        };
+        self.device = Some(device.clone());
+        Ok(device)
     }
 
     /// Mirrors `SMB2_devctl` command dispatch for supported skeleton commands.
-    pub fn devctl(&mut self, command: Smb2DevctlCommand) -> Smb2FioResult<Smb2ConnectOut> {
+    pub fn devctl(&mut self, command: Smb2DevctlCommand) -> Smb2FioResult<Smb2ConnectOut>
+    where
+        B: Ps2PlatformBackend,
+    {
         match command {
             Smb2DevctlCommand::Connect(input) => self.connect(input),
             Smb2DevctlCommand::Unknown(_) => Err(Smb2FioError::InvalidInput),
@@ -350,7 +485,10 @@ impl Smb2Fio {
     }
 
     /// Mirrors the C `smb2_Connect` helper by registering a virtual share.
-    pub fn connect(&mut self, input: Smb2ConnectIn) -> Smb2FioResult<Smb2ConnectOut> {
+    pub fn connect(&mut self, input: Smb2ConnectIn) -> Smb2FioResult<Smb2ConnectOut>
+    where
+        B: Ps2PlatformBackend,
+    {
         if input.name.is_empty()
             || input.name.len() >= SMB2_MAX_NAME_LEN
             || input.name.contains(['/', '\\', ':'])
@@ -358,6 +496,8 @@ impl Smb2Fio {
         {
             return Err(Smb2FioError::InvalidInput);
         }
+
+        self.backend.connect_share(&input)?;
 
         let context = Smb2ContextId(self.next_context);
         self.next_context = self.next_context.saturating_add(1);
@@ -407,16 +547,14 @@ impl Smb2Fio {
 
     /// Mirrors `SMB2_close` by dropping file private data.
     pub fn close(&mut self, file: &mut IopFile) -> Smb2FioResult<()> {
-        match file.privdata.take() {
+        match file.privdata.as_ref() {
             Some(Smb2PrivData::File(_)) => {
                 self.remove_handle(file.handle_id, true)?;
+                file.privdata = None;
                 file.handle_id = None;
                 Ok(())
             }
-            Some(other) => {
-                file.privdata = Some(other);
-                Err(Smb2FioError::BadFileDescriptor)
-            }
+            Some(Smb2PrivData::Directory(_)) => Err(Smb2FioError::BadFileDescriptor),
             None => Err(Smb2FioError::BadFileDescriptor),
         }
     }
@@ -452,16 +590,14 @@ impl Smb2Fio {
 
     /// Mirrors `SMB2_dclose` by dropping directory private data.
     pub fn dclose(&mut self, file: &mut IopFile) -> Smb2FioResult<()> {
-        match file.privdata.take() {
+        match file.privdata.as_ref() {
             Some(Smb2PrivData::Directory(_)) => {
                 self.remove_handle(file.handle_id, false)?;
+                file.privdata = None;
                 file.handle_id = None;
                 Ok(())
             }
-            Some(other) => {
-                file.privdata = Some(other);
-                Err(Smb2FioError::BadFileDescriptor)
-            }
+            Some(Smb2PrivData::File(_)) => Err(Smb2FioError::BadFileDescriptor),
             None => Err(Smb2FioError::BadFileDescriptor),
         }
     }
@@ -580,21 +716,21 @@ impl Smb2Fio {
     pub fn mkdir(&self, dirname: &str, _mode: i32) -> Smb2FioResult<()> {
         let prepared = self.prepare_path(dirname)?;
         let _resolved = self.find_context(&prepared)?;
-        Err(Smb2FioError::Io)
+        Err(Smb2FioError::Unsupported)
     }
 
     /// Mirrors `SMB2_rmdir`; validates share routing but performs no SMB request.
     pub fn rmdir(&self, dirname: &str) -> Smb2FioResult<()> {
         let prepared = self.prepare_path(dirname)?;
         let _resolved = self.find_context(&prepared)?;
-        Err(Smb2FioError::Io)
+        Err(Smb2FioError::Unsupported)
     }
 
     /// Mirrors `SMB2_remove`; validates share routing but performs no SMB request.
     pub fn remove(&self, filename: &str) -> Smb2FioResult<()> {
         let prepared = self.prepare_path(filename)?;
         let _resolved = self.find_context(&prepared)?;
-        Err(Smb2FioError::Io)
+        Err(Smb2FioError::Unsupported)
     }
 
     /// Mirrors `SMB2_rename`; validates both paths resolve to the same share.
@@ -606,7 +742,7 @@ impl Smb2Fio {
         if old_context != new_context {
             return Err(Smb2FioError::InvalidInput);
         }
-        Err(Smb2FioError::Io)
+        Err(Smb2FioError::Unsupported)
     }
 
     /// Mirrors `SMB2_chdir` by storing the prepared current directory path.
@@ -621,7 +757,7 @@ impl Smb2Fio {
 
     /// Mirrors `SMB2_dummy` for unsupported operation table slots.
     pub const fn dummy(&self) -> Smb2FioResult<()> {
-        Err(Smb2FioError::Io)
+        Err(Smb2FioError::Unsupported)
     }
 
     /// Returns registered virtual shares in the same newest-first order as C.
@@ -698,7 +834,12 @@ impl Smb2Fio {
     }
 
     fn ensure_initialized(&self) -> Smb2FioResult<()> {
-        if self.state == Smb2DeviceState::Initialized {
+        if matches!(
+            self.state,
+            Smb2DeviceState::Initialized
+                | Smb2DeviceState::PlatformRegistered
+                | Smb2DeviceState::LocalFallback
+        ) {
             Ok(())
         } else {
             Err(Smb2FioError::Io)
@@ -733,12 +874,13 @@ impl Smb2Fio {
             return Err(Smb2FioError::BadFileDescriptor);
         };
         let matches_kind = matches!(
-            (expect_file, record),
+            (expect_file, &record),
             (true, Smb2HandleRecord::File(_)) | (false, Smb2HandleRecord::Directory(_))
         );
         if matches_kind {
             Ok(())
         } else {
+            *slot = Some(record);
             Err(Smb2FioError::BadFileDescriptor)
         }
     }
@@ -940,5 +1082,61 @@ pub fn smb2_stat_filler(stat: &Smb2Stat64) -> IoxStat {
         } else {
             FIO_S_IFREG
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn connected_fio() -> Smb2Fio {
+        let mut fio = Smb2Fio::new();
+        let mut dev = IopDevice::default();
+        fio.init(&mut dev).unwrap();
+        fio.connect(Smb2ConnectIn {
+            url: "smb://server/share".to_owned(),
+            name: "share".to_owned(),
+            username: String::new(),
+            password: String::new(),
+        })
+        .unwrap();
+        fio
+    }
+
+    #[test]
+    fn unsupported_operations_return_enosys() {
+        let fio = connected_fio();
+
+        let err = fio.mkdir("smb:/share/newdir", 0).unwrap_err();
+        assert_eq!(err, Smb2FioError::Unsupported);
+        assert_eq!(err.errno_code(), -ENOSYS);
+        assert_eq!(fio.dummy().unwrap_err(), Smb2FioError::Unsupported);
+    }
+
+    #[test]
+    fn failed_close_with_wrong_handle_kind_preserves_table_entry() {
+        let mut fio = connected_fio();
+        let mut dir = IopFile::default();
+        fio.dopen(&mut dir, "smb:/share").unwrap();
+
+        assert_eq!(fio.close(&mut dir), Err(Smb2FioError::BadFileDescriptor));
+        assert_eq!(fio.handle_count(), 1);
+
+        fio.dclose(&mut dir).unwrap();
+        assert_eq!(fio.handle_count(), 0);
+    }
+
+    #[test]
+    fn failed_dclose_with_wrong_handle_kind_preserves_table_entry() {
+        let mut fio = connected_fio();
+        let mut file = IopFile::default();
+        fio.open(&mut file, "smb:/share/file.txt", O_RDWR, 0)
+            .unwrap();
+
+        assert_eq!(fio.dclose(&mut file), Err(Smb2FioError::BadFileDescriptor));
+        assert_eq!(fio.handle_count(), 1);
+
+        fio.close(&mut file).unwrap();
+        assert_eq!(fio.handle_count(), 0);
     }
 }

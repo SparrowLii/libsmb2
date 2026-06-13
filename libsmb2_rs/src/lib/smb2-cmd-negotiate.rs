@@ -1,6 +1,7 @@
 //! NEGOTIATE command pack/unpack skeleton migrated from `lib/smb2-cmd-negotiate.c`.
 
 use super::init::InitState;
+use super::smb3_seal::smb3_select_encryption_cipher;
 
 const SMB2_HEADER_SIZE: usize = 64;
 const SMB2_GUID_SIZE: usize = 16;
@@ -229,10 +230,11 @@ impl Smb2NegotiateReply {
             self.max_write_size,
         );
         state.config.security_mode = self.security_mode;
-        state.update_preauth_hash_skeleton(&self.security_buffer);
+        state.apply_negotiate_context_state(self.cipher);
+        state.update_preauth_hash(&self.security_buffer);
         for context in &self.negotiate_contexts {
-            state.update_preauth_hash_skeleton(&context.context_type.as_raw().to_le_bytes());
-            state.update_preauth_hash_skeleton(&context.data);
+            state.update_preauth_hash(&context.context_type.as_raw().to_le_bytes());
+            state.update_preauth_hash(&context.data);
         }
     }
 }
@@ -551,7 +553,16 @@ fn parse_encryption_context(context: &NegotiateContext) -> Option<u16> {
     if context.context_type != NegotiateContextType::Encryption || context.data.len() < 4 {
         return None;
     }
-    read_u16_le(&context.data, 2).ok()
+    let cipher_count = usize::from(read_u16_le(&context.data, 0).ok()?);
+    let mut raw_ciphers = Vec::with_capacity(cipher_count);
+    for index in 0..cipher_count {
+        let offset = 2 + index * core::mem::size_of::<u16>();
+        let Ok(cipher) = read_u16_le(&context.data, offset) else {
+            break;
+        };
+        raw_ciphers.push(cipher);
+    }
+    smb3_select_encryption_cipher(&raw_ciphers).map(|cipher| cipher.as_u16())
 }
 
 fn parse_negotiate_contexts(

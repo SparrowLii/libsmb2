@@ -8,6 +8,9 @@ pub const SID_ID_AUTH_LEN: usize = 6;
 /// Number of bytes used by ACE object-type GUID fields in the legacy C layout.
 pub const SMB2_OBJECT_TYPE_SIZE: usize = 16;
 
+/// Security descriptor and SID revision accepted by SMB2 security descriptors.
+pub const SMB2_SECURITY_DESCRIPTOR_REVISION: u8 = 0x01;
+
 /// Object ACE flag indicating that an object-type GUID is present on the wire.
 pub const SMB2_ACE_OBJECT_TYPE_PRESENT: u32 = 0x0000_0001;
 
@@ -286,6 +289,16 @@ impl Smb2SecurityDescriptor {
     pub fn encode(&self) -> CodecResult<Vec<u8>> {
         smb2_encode_security_descriptor(self)
     }
+
+    /// Decodes a self-relative security descriptor from SMB2 wire bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SecurityDescriptorDecodeError`] when the descriptor header, child offsets,
+    /// or nested SID/ACL data is malformed.
+    pub fn decode(input: &[u8]) -> DecodeResult<Self> {
+        smb2_decode_security_descriptor(input)
+    }
 }
 
 /// Decodes a SID corresponding to the C `decode_sid` helper.
@@ -297,6 +310,12 @@ pub fn decode_sid(input: &[u8]) -> DecodeResult<Smb2Sid> {
     require_len(input, 8)?;
 
     let revision = input[0];
+    if revision != SMB2_SECURITY_DESCRIPTOR_REVISION {
+        return Err(SecurityDescriptorDecodeError::UnsupportedRevision {
+            structure: "sid",
+            revision,
+        });
+    }
     let sub_auth_count = input[1];
     let sub_auth_len = usize::from(sub_auth_count)
         .checked_mul(4)
@@ -415,8 +434,20 @@ pub fn decode_acl(input: &[u8]) -> DecodeResult<Smb2Acl> {
     require_len(input, 8)?;
 
     let revision = input[0];
+    match revision {
+        SMB2_ACL_REVISION | SMB2_ACL_REVISION_DS => {}
+        _ => {
+            return Err(SecurityDescriptorDecodeError::UnsupportedRevision {
+                structure: "acl",
+                revision,
+            });
+        }
+    }
     let acl_size = usize::from(read_u16_le(input, 2)?);
     let ace_count = read_u16_le(input, 4)?;
+    if acl_size < 8 {
+        return Err(SecurityDescriptorDecodeError::Malformed("acl"));
+    }
     require_len(input, acl_size)?;
 
     let mut aces = Vec::with_capacity(usize::from(ace_count));
@@ -453,6 +484,12 @@ pub fn smb2_decode_security_descriptor(input: &[u8]) -> DecodeResult<Smb2Securit
     require_len(input, 20)?;
 
     let revision = input[0];
+    if revision != SMB2_SECURITY_DESCRIPTOR_REVISION {
+        return Err(SecurityDescriptorDecodeError::UnsupportedRevision {
+            structure: "security descriptor",
+            revision,
+        });
+    }
     let control = read_u16_le(input, 2)?;
     let owner_offset = read_u32_le(input, 4)? as usize;
     let group_offset = read_u32_le(input, 8)? as usize;
@@ -679,8 +716,11 @@ fn decode_optional_sid(input: &[u8], offset: usize) -> DecodeResult<Option<Smb2S
     if offset == 0 {
         return Ok(None);
     }
+    if offset < 20 {
+        return Err(SecurityDescriptorDecodeError::Malformed("sid offset"));
+    }
     if offset.checked_add(8).is_none_or(|end| end > input.len()) {
-        return Ok(None);
+        return Err(SecurityDescriptorDecodeError::Malformed("sid offset"));
     }
     Ok(Some(decode_sid(&input[offset..])?))
 }
@@ -689,8 +729,11 @@ fn decode_optional_acl(input: &[u8], offset: usize) -> DecodeResult<Option<Smb2A
     if offset == 0 {
         return Ok(None);
     }
+    if offset < 20 {
+        return Err(SecurityDescriptorDecodeError::Malformed("acl offset"));
+    }
     if offset.checked_add(8).is_none_or(|end| end > input.len()) {
-        return Ok(None);
+        return Err(SecurityDescriptorDecodeError::Malformed("acl offset"));
     }
     Ok(Some(decode_acl(&input[offset..])?))
 }
@@ -776,5 +819,65 @@ fn saturating_u16_len(len: usize) -> u16 {
         u16::MAX
     } else {
         len as u16
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sid() -> Smb2Sid {
+        Smb2Sid::from_parts(
+            SMB2_SECURITY_DESCRIPTOR_REVISION,
+            [0, 0, 0, 0, 0, 5],
+            vec![32, 544],
+        )
+    }
+
+    #[test]
+    fn security_descriptor_roundtrips_owner_and_dacl() {
+        let owner = sid();
+        let ace = Smb2Ace {
+            ace_type: SMB2_ACCESS_ALLOWED_ACE_TYPE,
+            ace_flags: 0,
+            ace_size: 24,
+            mask: 0x001f_01ff,
+            sid: Some(owner.clone()),
+            ..Smb2Ace::default()
+        };
+        let descriptor = Smb2SecurityDescriptor {
+            revision: SMB2_SECURITY_DESCRIPTOR_REVISION,
+            control: 0x8004,
+            owner: Some(owner),
+            dacl: Some(Smb2Acl::from_aces(SMB2_ACL_REVISION, vec![ace])),
+            ..Smb2SecurityDescriptor::default()
+        };
+
+        let encoded = descriptor.encode().unwrap();
+        let decoded = Smb2SecurityDescriptor::decode(&encoded).unwrap();
+
+        assert_eq!(decoded, descriptor);
+    }
+
+    #[test]
+    fn security_descriptor_rejects_offsets_inside_header() {
+        let mut input = vec![0; 20];
+        input[0] = SMB2_SECURITY_DESCRIPTOR_REVISION;
+        input[4..8].copy_from_slice(&4u32.to_le_bytes());
+
+        assert_eq!(
+            smb2_decode_security_descriptor(&input),
+            Err(SecurityDescriptorDecodeError::Malformed("sid offset"))
+        );
+    }
+
+    #[test]
+    fn acl_rejects_size_smaller_than_header() {
+        let input = [SMB2_ACL_REVISION, 0, 4, 0, 0, 0, 0, 0];
+
+        assert_eq!(
+            decode_acl(&input),
+            Err(SecurityDescriptorDecodeError::Malformed("acl"))
+        );
     }
 }
