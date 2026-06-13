@@ -27,8 +27,8 @@
 | baseline | examples/smb2-stat-sync.c | none | none | skipped | upstream-skip: legacy-spec 已跳过该 examples 样例源文件，FFI 不为样例单独建立基础链路。 |
 | baseline | examples/smb2-statvfs-sync.c | none | none | skipped | upstream-skip: legacy-spec 已跳过该 examples 样例源文件，FFI 不为样例单独建立基础链路。 |
 | baseline | examples/smb2-truncate-sync.c | none | none | skipped | upstream-skip: legacy-spec 已跳过该 examples 样例源文件，FFI 不为样例单独建立基础链路。 |
-| baseline | include/amiga_os/config.h | none | none | skipped | ffi-blocked: Autotools 生成的平台配置宏 header，仅提供 CONFIGURE_OPTION_TCP_LINGER、HAVE_*、PACKAGE_VERSION、VERSION 等预处理期宏；无运行时函数、稳定 C ABI 类型、对象生命周期或可调用符号。 |
-| baseline | include/apple/config.h | none | none | skipped | ffi-blocked: 仅包含 Autotools 生成的平台配置宏和包元数据宏，无运行时函数、对象生命周期入口、可调用 ABI 或可安全导出的数据结构；宏值仅影响条件编译。 |
+| baseline | include/amiga_os/config.h | none | libsmb2_sys/src/include/config.rs | generated | direct bindgen not required: config macro safe binding 直接以 Rust 常量快照表达该预处理期配置头；无运行时 C ABI shim。 |
+| baseline | include/apple/config.h | none | libsmb2_sys/src/include/config.rs | generated | direct bindgen not required: config macro safe binding 直接以 Rust 常量快照表达该预处理期配置头；无运行时 C ABI shim。 |
 | baseline | include/asprintf.h | none | none | skipped | ffi-blocked: header-only 平台兼容 static inline/宏入口，无独立链接符号或稳定运行时 ABI；运行时行为应由实际调用方或实现侧链路覆盖。 |
 | baseline | include/esp/config.h | none | none | skipped | ffi-blocked: 仅包含 ESP 平台编译期 config 宏，无运行时函数、生命周期入口或稳定 C ABI；代表性宏 CONFIGURE_OPTION_TCP_LINGER 仅影响条件编译分支。 |
 | baseline | include/libsmb2-private.h | libsmb2_sys/shim/include/libsmb2_private_ffi.h,libsmb2_sys/shim/include/libsmb2_private_ffi.c | libsmb2_sys/src/include/libsmb2_private.rs | generated | minimal macro/type boundary: 已生成私有常量、PAD_TO_32BIT/PAD_TO_64BIT、recv state 和代表性内部布局 size 的 C ABI shim 与 safe binding；函数声明仍归属实现文件 FFI 条目。 |
@@ -38,7 +38,8 @@
 | baseline | include/picow/lwipopts_examples_common.h | none | none | skipped | ffi-blocked: 仅定义 PicoW/lwIP 编译期配置宏；spec 证据为预处理契约，适合构建配置/spec 验证而非运行时 FFI。 |
 | baseline | include/portable-endian.h | libsmb2_sys/shim/include/portable-endian_ffi.h,libsmb2_sys/shim/include/portable-endian_ffi.c | libsmb2_sys/src/include/portable_endian.rs | generated | macro wrapper boundary: endian 转换为 function-like 宏，bindgen 不能直接提供稳定 callable binding；已通过最小 C ABI shim 包装 16/32/64 位 host/big/little-endian 转换并生成 safe binding 与 smoke test。 |
 | baseline | include/ps3/config.h | none | none | skipped | ffi-blocked: 仅包含 PS3 平台 Autoconf 生成配置宏和包元数据宏，无运行时函数、对象生命周期入口、可跨 FFI 暴露的数据结构或稳定 C ABI；宏仅影响条件编译。 |
-| baseline | include/slist.h | none | none | skipped | ffi-blocked: header-only intrusive list 宏无可链接函数符号或稳定 C ABI；行为应由使用宏的具体实现文件 FFI target 覆盖。 |
+| baseline | include/slist.h | none | none | skipped | ffi-blocked: header-only intrusive list 宏无可链接函数符号；基础链路不把调用方任意 intrusive 节点布局整体标为 generated。 |
+| spec-origin | specs/include/slist.spec.md#prepend-item-to-list@ffi-1 | libsmb2_sys/shim/include/slist_ffi.h,libsmb2_sys/shim/include/slist_ffi.c | libsmb2_sys/src/include/slist.rs | generated | source-backed contract: include/slist.h SMB2_LIST_ADD/SMB2_LIST_ADD_END/SMB2_LIST_REMOVE/SMB2_LIST_LENGTH 只依赖节点首字段 next；最小 shim 使用 next-only slist_ffi_node 调用真实宏，safe binding 提供 SListHead/SListNode 以验证 head、next 和 length 行为。GitNexus impact SMB2_LIST_* 为 LOW，0 direct callers/processes affected. |
 | baseline | include/smb2/libsmb2-dcerpc-lsa.h | none | libsmb2_sys/src/smb2/libsmb2_dcerpc_lsa.rs | generated | direct bindgen/direct constant data-model binding: LSA opnum/access-mask 宏、NT_SID_AUTHORITY、lookup level 枚举和 OpenPolicy2/RPC SID 最小 Rust 数据模型已生成；GitNexus context 显示 callable lsa_*_coder 行为归属 lib/dcerpc-lsa.c 条目，本条目不生成 C ABI shim。 |
 | baseline | include/smb2/libsmb2-dcerpc-srvsvc.h | none | none | skipped | ffi-blocked: header 声明 SRVSVC DCERPC share enum/getinfo 数据模型、coder 和 async/sync share API；可调用行为依赖 DCERPC context、SMB2 context、网络 pipe 和 lib/dcerpc-srvsvc.c/lib/smb2-share-enum.c 生命周期，无法作为 header 独立生成最小安全 FFI smoke。 |
 | baseline | include/smb2/libsmb2-dcerpc.h | none | none | skipped | ffi-blocked: header 声明 DCERPC context/PDU 生命周期、NDR coder、async open/call 等大接口；最小 safe binding 需要 smb2_context、pipe file id、PDU payload allocator 和 callback 生命周期，无法脱离 lib/dcerpc.c 真实状态独立 smoke。 |
@@ -132,7 +133,7 @@
 
 ## 统计信息
 
-- generated: 19
-- skipped: 108
+- generated: 22
+- skipped: 106
 - pending: 0
-- total: 127
+- total: 128

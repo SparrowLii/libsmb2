@@ -22,8 +22,6 @@ pub enum Smb2WriteError {
     InvalidStructureSize { expected: u16, actual: u16 },
     /// The write-channel-info range overlaps the fixed WRITE request area.
     ChannelInfoOverlapsRequest,
-    /// ChannelInfo requires passthrough support in the original C encoder.
-    ChannelInfoUnsupported,
     /// A declared payload length cannot fit in the Rust target type.
     LengthOverflow,
 }
@@ -36,7 +34,7 @@ pub type Smb2WriteResult<T> = Result<T, Smb2WriteError>;
 pub struct WriteEncodeOptions {
     /// Whether the peer supports multi-credit writes larger than 64 KiB.
     pub supports_multi_credit: bool,
-    /// Whether channel-info passthrough is allowed while encoding a request.
+    /// Compatibility flag retained while raw channel-info is preserved either way.
     pub passthrough: bool,
 }
 
@@ -166,25 +164,15 @@ pub struct Smb2WritePdu<'a> {
     pub buffer_ownership: WriteBufferOwnership,
     /// Credit charge calculated for large multi-credit writes.
     pub credit_charge: u16,
+    /// Encoded output vectors: fixed body, optional channel info, and write data.
+    pub out: Vec<Vec<u8>>,
 }
 
 /// Encodes the fixed WRITE request fields into a standalone byte buffer.
-///
-/// # Errors
-///
-/// Returns [`Smb2WriteError::ChannelInfoUnsupported`] when channel-info is present without
-/// passthrough support, matching the C skeleton's explicit unsupported branch.
 pub fn encode_write_request_fixed(
     options: WriteEncodeOptions,
     request: &Smb2WriteRequest<'_>,
 ) -> Smb2WriteResult<Vec<u8>> {
-    if request.write_channel_info_length > 0
-        && request.write_channel_info.is_some()
-        && !options.passthrough
-    {
-        return Err(Smb2WriteError::ChannelInfoUnsupported);
-    }
-
     let mut out = vec![0; fixed_write_request_len()];
     let effective_length = request.effective_length(options.supports_multi_credit);
 
@@ -216,13 +204,53 @@ pub fn encode_write_request_fixed(
     Ok(out)
 }
 
+/// Encodes WRITE request fixed and variable vectors in the same order as C `pdu->out`.
+pub fn encode_write_request_vectors(
+    options: WriteEncodeOptions,
+    request: &Smb2WriteRequest<'_>,
+) -> Smb2WriteResult<Vec<Vec<u8>>> {
+    let mut fixed = encode_write_request_fixed(options, request)?;
+    let mut vectors = Vec::new();
+
+    if request.write_channel_info_length > 0 {
+        let Some(info) = request.write_channel_info else {
+            let data_len = request.effective_length(options.supports_multi_credit) as usize;
+            if request.buffer.len() < data_len {
+                return Err(Smb2WriteError::BufferTooSmall);
+            }
+            vectors.push(fixed);
+            vectors.push(request.buffer[..data_len].to_vec());
+            return Ok(vectors);
+        };
+        put_u16(
+            &mut fixed,
+            40,
+            (SMB2_HEADER_SIZE + fixed_write_request_len()) as u16,
+        );
+        vectors.push(fixed);
+        vectors.push(padded_copy(
+            info,
+            pad_to_64bit(usize::from(request.write_channel_info_length)),
+        ));
+    } else {
+        vectors.push(fixed);
+    }
+
+    let data_len = request.effective_length(options.supports_multi_credit) as usize;
+    if request.buffer.len() < data_len {
+        return Err(Smb2WriteError::BufferTooSmall);
+    }
+    vectors.push(request.buffer[..data_len].to_vec());
+    Ok(vectors)
+}
+
 /// Creates a WRITE PDU skeleton from the C `smb2_cmd_write_async` responsibilities.
 #[must_use]
 pub fn smb2_cmd_write_async<'a>(
     options: WriteEncodeOptions,
     mut request: Smb2WriteRequest<'a>,
     buffer_ownership: WriteBufferOwnership,
-) -> Smb2WritePdu<'a> {
+) -> Smb2WriteResult<Smb2WritePdu<'a>> {
     request.length = request.effective_length(options.supports_multi_credit);
     let credit_charge = if options.supports_multi_credit {
         ((request.length.saturating_sub(1)) / 65_536 + 1) as u16
@@ -230,20 +258,29 @@ pub fn smb2_cmd_write_async<'a>(
         1
     };
 
-    Smb2WritePdu {
+    let out = encode_write_request_vectors(options, &request)?;
+    Ok(Smb2WritePdu {
         request,
         buffer_ownership,
         credit_charge,
-    }
+        out,
+    })
 }
 
 /// Encodes the fixed WRITE reply fields into a standalone byte buffer.
 #[must_use]
 pub fn encode_write_reply_fixed(reply: Smb2WriteReply) -> Vec<u8> {
-    let mut out = vec![0; usize::from(SMB2_WRITE_REPLY_SIZE)];
+    let mut out = vec![0; fixed_write_reply_len()];
     put_u16(&mut out, 0, SMB2_WRITE_REPLY_SIZE);
     put_u32(&mut out, 4, reply.count);
     put_u32(&mut out, 8, reply.remaining);
+    out
+}
+
+fn padded_copy(bytes: &[u8], padded_len: usize) -> Vec<u8> {
+    let mut out = vec![0; padded_len];
+    let copy_len = bytes.len().min(out.len());
+    out[..copy_len].copy_from_slice(&bytes[..copy_len]);
     out
 }
 

@@ -1,5 +1,11 @@
 //! SMB3 encryption helpers migrated from `lib/smb3-seal.c`.
 
+use super::aes128ccm::{
+    Aes128BlockEncrypt, Aes128Ccm, Aes128CcmError, Aes128CcmKey, Aes128CcmParams, CcmTag,
+    ReferenceAes128BlockEncryptor,
+};
+use super::smb2_signing::SessionDerivedKeys;
+
 /// SMB3 transform protocol id: `0xFD 'S' 'M' 'B'`.
 pub const SMB3_TRANSFORM_PROTOCOL_ID: [u8; 4] = [0xfd, b'S', b'M', b'B'];
 
@@ -21,6 +27,17 @@ pub const SMB3_AES128_CCM_AUTH_DATA_SIZE: usize = 32;
 /// SMB3 encryption algorithm id for AES-128-CCM.
 pub const SMB3_ENCRYPTION_AES128_CCM: u16 = 0x0001;
 
+/// SMB3 encryption algorithm id for AES-128-GCM.
+pub const SMB3_ENCRYPTION_AES128_GCM: u16 = 0x0002;
+
+/// SMB3 encryption algorithm ids defined by the protocol constants known to this module.
+pub const SMB3_KNOWN_ENCRYPTION_CIPHERS: [u16; 2] =
+    [SMB3_ENCRYPTION_AES128_CCM, SMB3_ENCRYPTION_AES128_GCM];
+
+/// SMB3 encryption ciphers backed by crypto helpers in this module.
+pub const SMB3_SUPPORTED_ENCRYPTION_CIPHERS: [Smb3EncryptionCipher; 1] =
+    [Smb3EncryptionCipher::Aes128Ccm];
+
 /// Error returned by SMB3 sealing skeleton helpers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Smb3SealError {
@@ -28,12 +45,32 @@ pub enum Smb3SealError {
     HeaderTooSmall,
     /// The transform header does not start with the SMB3 transform protocol id.
     BadTransformProtocolId,
-    /// The transform header advertises an unsupported encryption algorithm.
-    UnsupportedCipher(u16),
+    /// The transform header advertises a cipher without a local crypto helper.
+    UnavailableCipher(u16),
     /// The encrypted payload length cannot be represented in the transform header.
     PayloadTooLarge,
     /// The operation needs at least one outbound payload vector.
     MissingPayload,
+    /// The nonce supplied for AES-128-CCM does not match the SMB3 legacy nonce size.
+    InvalidNonceLength,
+    /// The operation requires a non-zero SMB3 AES-128-CCM nonce.
+    MissingNonce,
+    /// The SMB3 transform nonce has already been used for this session.
+    DuplicateNonce,
+    /// The local SMB3 transform nonce sequence cannot be advanced further.
+    NonceExhausted,
+    /// The transform session id does not match the available decrypt context session id.
+    SessionIdMismatch,
+    /// The transform payload length does not match the original message size field.
+    PayloadLengthMismatch,
+    /// AES-128-CCM failed while sealing or unsealing the payload.
+    Aes128Ccm(Aes128CcmError),
+}
+
+impl From<Aes128CcmError> for Smb3SealError {
+    fn from(value: Aes128CcmError) -> Self {
+        Self::Aes128Ccm(value)
+    }
 }
 
 /// Result alias used by SMB3 sealing skeleton helpers.
@@ -48,7 +85,7 @@ pub enum Smb3EncryptionCipher {
 }
 
 impl Smb3EncryptionCipher {
-    /// Converts a raw SMB3 transform cipher id into a known cipher.
+    /// Converts a raw SMB3 transform cipher id into a cipher supported by this module.
     #[must_use]
     pub const fn from_raw(value: u16) -> Option<Self> {
         match value {
@@ -57,11 +94,34 @@ impl Smb3EncryptionCipher {
         }
     }
 
+    /// Returns whether a raw SMB3 cipher id is safe to negotiate with the available helpers.
+    #[must_use]
+    pub const fn is_supported_raw(value: u16) -> bool {
+        matches!(value, SMB3_ENCRYPTION_AES128_CCM)
+    }
+
     /// Returns the numeric transform cipher id.
     #[must_use]
     pub const fn as_u16(self) -> u16 {
         self as u16
     }
+}
+
+/// Filters a negotiated raw SMB3 encryption cipher list to ciphers this module can seal.
+#[must_use]
+pub fn smb3_sanitize_encryption_ciphers(raw_ciphers: &[u16]) -> Vec<Smb3EncryptionCipher> {
+    raw_ciphers
+        .iter()
+        .filter_map(|cipher| Smb3EncryptionCipher::from_raw(*cipher))
+        .collect()
+}
+
+/// Selects the first negotiated SMB3 encryption cipher backed by local crypto helpers.
+#[must_use]
+pub fn smb3_select_encryption_cipher(raw_ciphers: &[u16]) -> Option<Smb3EncryptionCipher> {
+    raw_ciphers
+        .iter()
+        .find_map(|cipher| Smb3EncryptionCipher::from_raw(*cipher))
 }
 
 /// Parsed SMB3 transform header corresponding to the fixed 52-byte C layout.
@@ -125,7 +185,8 @@ impl Smb3TransformHeader {
     /// Returns [`Smb3SealError::HeaderTooSmall`] when the buffer is shorter than
     /// [`SMB3_TRANSFORM_HEADER_SIZE`], [`Smb3SealError::BadTransformProtocolId`] when
     /// the protocol id does not match SMB3 transform frames, or
-    /// [`Smb3SealError::UnsupportedCipher`] for unknown algorithms.
+    /// [`Smb3SealError::UnavailableCipher`] when the selected algorithm is not backed by
+    /// this module's crypto helpers.
     pub fn decode(buf: &[u8]) -> Smb3SealResult<Self> {
         if buf.len() < SMB3_TRANSFORM_HEADER_SIZE {
             return Err(Smb3SealError::HeaderTooSmall);
@@ -138,7 +199,7 @@ impl Smb3TransformHeader {
 
         let raw_cipher = u16::from_le_bytes(fixed_bytes::<2>(buf, 42)?);
         let Some(encryption_algorithm) = Smb3EncryptionCipher::from_raw(raw_cipher) else {
-            return Err(Smb3SealError::UnsupportedCipher(raw_cipher));
+            return Err(Smb3SealError::UnavailableCipher(raw_cipher));
         };
 
         Ok(Self {
@@ -164,6 +225,12 @@ pub struct Smb3SealContext {
     pub serverin_key: [u8; 16],
     /// Server-to-client sealing key used by the legacy decrypt path.
     pub serverout_key: [u8; 16],
+    /// Caller-provided AES-128-CCM nonce used by the default encrypt path.
+    pub aes128_ccm_nonce: [u8; SMB3_AES128_CCM_NONCE_SIZE],
+    /// SMB3 transform nonces already emitted for this local session.
+    pub used_outbound_nonces: Vec<[u8; SMB3_TRANSFORM_NONCE_SIZE]>,
+    /// SMB3 transform nonces already accepted for this remote session.
+    pub seen_inbound_nonces: Vec<(u64, [u8; SMB3_TRANSFORM_NONCE_SIZE])>,
 }
 
 impl Smb3SealContext {
@@ -177,6 +244,56 @@ impl Smb3SealContext {
     #[must_use]
     pub const fn is_seal_enabled(&self) -> bool {
         self.seal
+    }
+
+    /// Creates sealing state from derived session key metadata.
+    #[must_use]
+    pub const fn from_session_keys(
+        seal: bool,
+        session_id: u64,
+        keys: SessionDerivedKeys,
+        aes128_ccm_nonce: [u8; SMB3_AES128_CCM_NONCE_SIZE],
+    ) -> Self {
+        Self {
+            seal,
+            session_id,
+            serverin_key: keys.serverin_key,
+            serverout_key: keys.serverout_key,
+            aes128_ccm_nonce,
+            used_outbound_nonces: Vec::new(),
+            seen_inbound_nonces: Vec::new(),
+        }
+    }
+
+    fn next_encrypt_nonce(&mut self) -> Smb3SealResult<[u8; SMB3_AES128_CCM_NONCE_SIZE]> {
+        if self.aes128_ccm_nonce == [0; SMB3_AES128_CCM_NONCE_SIZE] {
+            advance_aes128_ccm_nonce(&mut self.aes128_ccm_nonce)?;
+        }
+        let nonce = self.aes128_ccm_nonce;
+        advance_aes128_ccm_nonce(&mut self.aes128_ccm_nonce)?;
+        Ok(nonce)
+    }
+
+    fn record_outbound_nonce(&mut self, nonce: [u8; SMB3_TRANSFORM_NONCE_SIZE]) {
+        self.used_outbound_nonces.push(nonce);
+    }
+
+    fn has_outbound_nonce(&self, nonce: &[u8; SMB3_TRANSFORM_NONCE_SIZE]) -> bool {
+        self.used_outbound_nonces
+            .iter()
+            .any(|used_nonce| used_nonce == nonce)
+    }
+
+    fn record_inbound_nonce(&mut self, session_id: u64, nonce: [u8; SMB3_TRANSFORM_NONCE_SIZE]) {
+        self.seen_inbound_nonces.push((session_id, nonce));
+    }
+
+    fn has_inbound_nonce(&self, session_id: u64, nonce: &[u8; SMB3_TRANSFORM_NONCE_SIZE]) -> bool {
+        self.seen_inbound_nonces
+            .iter()
+            .any(|(seen_session_id, seen_nonce)| {
+                *seen_session_id == session_id && seen_nonce == nonce
+            })
     }
 }
 
@@ -210,8 +327,8 @@ impl Smb3SealPdu {
 pub enum Smb3EncryptOutcome {
     /// Sealing was disabled by the context or the PDU flag, matching the C fast path.
     Skipped,
-    /// A transform buffer was prepared, but cryptographic sealing is not implemented here.
-    Prepared { transform_len: usize },
+    /// A transform buffer was prepared and the payload was sealed.
+    Sealed { transform_len: usize },
 }
 
 /// Plan returned by the decrypt skeleton after parsing the transform header.
@@ -225,8 +342,9 @@ pub struct Smb3DecryptPlan {
 
 /// Prepares an SMB3 transform buffer for an outbound PDU.
 ///
-/// This mirrors the allocation and header-population responsibility of the C
-/// `smb3_encrypt_pdu` function without implementing AES-128-CCM or nonce generation.
+/// This mirrors the allocation, header-population, and AES-128-CCM sealing responsibility of the C
+/// `smb3_encrypt_pdu` function. A missing all-zero context nonce is replaced with the next local
+/// sequence nonce, and every emitted transform nonce is tracked to prevent local reuse.
 ///
 /// # Errors
 ///
@@ -234,7 +352,7 @@ pub struct Smb3DecryptPlan {
 /// in the transform header size field, or [`Smb3SealError::MissingPayload`] when sealing
 /// is requested for an empty PDU view.
 pub fn smb3_encrypt_pdu(
-    context: &Smb3SealContext,
+    context: &mut Smb3SealContext,
     pdu: &mut Smb3SealPdu,
 ) -> Smb3SealResult<Smb3EncryptOutcome> {
     if !context.seal || !pdu.seal {
@@ -243,6 +361,43 @@ pub fn smb3_encrypt_pdu(
     if pdu.out_vectors.is_empty() {
         pdu.seal = false;
         return Err(Smb3SealError::MissingPayload);
+    }
+    let nonce = context.next_encrypt_nonce()?;
+    smb3_encrypt_pdu_with(context, pdu, &nonce, &ReferenceAes128BlockEncryptor)
+}
+
+/// Seals an outbound PDU using a caller-supplied AES-128 block encryptor and CCM nonce.
+///
+/// `nonce` is copied into the first 11 bytes of the 16-byte SMB3 transform nonce field, matching
+/// the legacy C AES-128-CCM path that calls CCM with `&header[20], 11` and authenticates
+/// `&header[20], 32`. The context rejects all-zero or previously used outbound transform nonces.
+///
+/// # Errors
+///
+/// Returns [`Smb3SealError::InvalidNonceLength`] when `nonce` is not 11 bytes, payload/header
+/// sizing errors from this module, or [`Smb3SealError::Aes128Ccm`] for CCM validation,
+/// authentication, or missing AES backend failures.
+pub fn smb3_encrypt_pdu_with<E>(
+    context: &mut Smb3SealContext,
+    pdu: &mut Smb3SealPdu,
+    nonce: &[u8],
+    encryptor: &E,
+) -> Smb3SealResult<Smb3EncryptOutcome>
+where
+    E: Aes128BlockEncrypt,
+{
+    if !context.seal || !pdu.seal {
+        return Ok(Smb3EncryptOutcome::Skipped);
+    }
+    if pdu.out_vectors.is_empty() {
+        pdu.seal = false;
+        return Err(Smb3SealError::MissingPayload);
+    }
+    if nonce.len() != SMB3_AES128_CCM_NONCE_SIZE {
+        return Err(Smb3SealError::InvalidNonceLength);
+    }
+    if nonce.iter().all(|byte| *byte == 0) {
+        return Err(Smb3SealError::MissingNonce);
     }
 
     let payload_len = pdu.payload_len();
@@ -254,8 +409,12 @@ pub fn smb3_encrypt_pdu(
 
     pdu.crypt.clear();
     pdu.crypt.resize(transform_len, 0);
-    Smb3TransformHeader::aes128_ccm(context.session_id, original_message_size)
-        .encode_into(&mut pdu.crypt)?;
+    let mut header = Smb3TransformHeader::aes128_ccm(context.session_id, original_message_size);
+    header.nonce[..SMB3_AES128_CCM_NONCE_SIZE].copy_from_slice(nonce);
+    if context.has_outbound_nonce(&header.nonce) {
+        return Err(Smb3SealError::DuplicateNonce);
+    }
+    header.encode_into(&mut pdu.crypt)?;
 
     let mut offset = SMB3_TRANSFORM_HEADER_SIZE;
     for vector in &pdu.out_vectors {
@@ -266,30 +425,110 @@ pub fn smb3_encrypt_pdu(
         offset = next;
     }
 
-    Ok(Smb3EncryptOutcome::Prepared { transform_len })
+    let aad = fixed_bytes::<SMB3_AES128_CCM_AUTH_DATA_SIZE>(&pdu.crypt, 20)?;
+    let nonce = fixed_bytes::<SMB3_AES128_CCM_NONCE_SIZE>(&pdu.crypt, 20)?;
+    let ccm = Aes128Ccm::new(Aes128CcmKey::new(context.serverin_key));
+    let tag = ccm.encrypt_in_place_with(
+        Aes128CcmParams::new(&nonce, &aad, 16),
+        &mut pdu.crypt[SMB3_TRANSFORM_HEADER_SIZE..],
+        encryptor,
+    )?;
+    write_bytes(&mut pdu.crypt, 4, tag.as_bytes())?;
+    context.record_outbound_nonce(header.nonce);
+
+    Ok(Smb3EncryptOutcome::Sealed { transform_len })
 }
 
 /// Parses an inbound SMB3 transform buffer enough to plan decryption.
 ///
-/// This mirrors the validation and buffer-splitting responsibility of the C
-/// `smb3_decrypt_pdu` function without implementing AES-128-CCM or receive-state replay.
+/// This mirrors the validation, buffer-splitting, and AES-128-CCM decryption responsibility of the
+/// C `smb3_decrypt_pdu` function. The local context rejects duplicate transform nonces per session;
+/// the returned `encrypted_payload` field contains the authenticated plaintext payload.
 ///
 /// # Errors
 ///
-/// Returns any header parsing error from [`Smb3TransformHeader::decode`].
+/// Returns any header parsing error from [`Smb3TransformHeader::decode`] or
+/// [`Smb3SealError::SessionIdMismatch`] when the context has a session id and it differs from the
+/// transform header session id.
 pub fn smb3_decrypt_pdu(
-    _context: &Smb3SealContext,
+    context: &mut Smb3SealContext,
     transform: &[u8],
 ) -> Smb3SealResult<Smb3DecryptPlan> {
     let header = Smb3TransformHeader::decode(transform)?;
-    let encrypted_payload = transform
-        .get(SMB3_TRANSFORM_HEADER_SIZE..)
-        .map_or_else(Vec::new, <[u8]>::to_vec);
+    let encrypted_payload =
+        smb3_decrypt_pdu_with(context, transform, &ReferenceAes128BlockEncryptor)?;
 
     Ok(Smb3DecryptPlan {
         header,
         encrypted_payload,
     })
+}
+
+/// Decrypts and authenticates an inbound SMB3 AES-128-CCM transform buffer.
+///
+/// This mirrors the AES-CCM portion of the legacy C `smb3_decrypt_pdu` and records successfully
+/// authenticated transform nonces so replays are rejected per session.
+///
+/// # Errors
+///
+/// Returns transform header errors, [`Smb3SealError::SessionIdMismatch`] when the context has a
+/// session id and it differs from the transform header session id,
+/// [`Smb3SealError::PayloadLengthMismatch`] when the payload size differs from the header's
+/// original-message-size field, [`Smb3SealError::InvalidNonceLength`] when the transform nonce is
+/// not usable as an SMB3 AES-128-CCM nonce, or [`Smb3SealError::Aes128Ccm`] when CCM
+/// validation/authentication fails.
+pub fn smb3_decrypt_pdu_with<E>(
+    context: &mut Smb3SealContext,
+    transform: &[u8],
+    encryptor: &E,
+) -> Smb3SealResult<Vec<u8>>
+where
+    E: Aes128BlockEncrypt,
+{
+    let header = Smb3TransformHeader::decode(transform)?;
+    if context.session_id != 0 && header.session_id != context.session_id {
+        return Err(Smb3SealError::SessionIdMismatch);
+    }
+    let payload = transform
+        .get(SMB3_TRANSFORM_HEADER_SIZE..)
+        .ok_or(Smb3SealError::HeaderTooSmall)?;
+    if payload.len() != header.original_message_size as usize {
+        return Err(Smb3SealError::PayloadLengthMismatch);
+    }
+
+    let aad = fixed_bytes::<SMB3_AES128_CCM_AUTH_DATA_SIZE>(transform, 20)?;
+    let nonce = header
+        .nonce
+        .get(..SMB3_AES128_CCM_NONCE_SIZE)
+        .ok_or(Smb3SealError::InvalidNonceLength)?;
+    if nonce.iter().all(|byte| *byte == 0) {
+        return Err(Smb3SealError::MissingNonce);
+    }
+    if context.has_inbound_nonce(header.session_id, &header.nonce) {
+        return Err(Smb3SealError::DuplicateNonce);
+    }
+    let tag = CcmTag::new(header.signature);
+    let mut plaintext = payload.to_vec();
+    let ccm = Aes128Ccm::new(Aes128CcmKey::new(context.serverout_key));
+    ccm.decrypt_in_place_with(
+        Aes128CcmParams::new(nonce, &aad, 16),
+        &mut plaintext,
+        &tag,
+        encryptor,
+    )?;
+    context.record_inbound_nonce(header.session_id, header.nonce);
+    Ok(plaintext)
+}
+
+fn advance_aes128_ccm_nonce(nonce: &mut [u8; SMB3_AES128_CCM_NONCE_SIZE]) -> Smb3SealResult<()> {
+    for byte in nonce {
+        let (advanced, overflowed) = byte.overflowing_add(1);
+        *byte = advanced;
+        if !overflowed {
+            return Ok(());
+        }
+    }
+    Err(Smb3SealError::NonceExhausted)
 }
 
 fn fixed_bytes<const N: usize>(buf: &[u8], offset: usize) -> Smb3SealResult<[u8; N]> {

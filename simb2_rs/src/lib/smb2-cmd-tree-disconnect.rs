@@ -8,6 +8,8 @@ pub const SMB2_TREE_DISCONNECT_REQUEST_SIZE: u16 = 4;
 
 /// Fixed TREE_DISCONNECT reply structure size from the SMB2 wire format.
 pub const SMB2_TREE_DISCONNECT_REPLY_SIZE: u16 = 4;
+/// Maximum active tree-id nesting tracked by the skeleton context.
+pub const SMB2_MAX_TREE_NESTING: usize = 32;
 
 /// Result type used by the TREE_DISCONNECT migration skeleton.
 pub type TreeDisconnectResult<T> = Result<T, TreeDisconnectError>;
@@ -19,12 +21,16 @@ pub enum TreeDisconnectError {
     InvalidStructureSize { expected: u16, actual: usize },
     /// The request or reply buffer is too short for the requested field.
     BufferTooShort { needed: usize, actual: usize },
+    /// The active tree-id stack reached the legacy nesting limit.
+    TreeNestingTooDeep,
+    /// The requested tree id is not present in the active stack.
+    TreeIdNotFound { tree_id: u32 },
 }
 
 /// Minimal context state touched by TREE_DISCONNECT handling in the C source.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Smb2TreeDisconnectContext {
-    tree_id: u32,
+    tree_ids: Vec<u32>,
 }
 
 impl Smb2TreeDisconnectContext {
@@ -37,19 +43,34 @@ impl Smb2TreeDisconnectContext {
     /// Returns the currently connected tree id tracked by this skeleton.
     #[must_use]
     pub fn tree_id(&self) -> u32 {
-        self.tree_id
+        match self.tree_ids.first().copied() {
+            Some(tree_id) => tree_id,
+            None => 0,
+        }
+    }
+
+    /// Returns the active tree-id stack, newest/current tree first.
+    #[must_use]
+    pub fn tree_ids(&self) -> &[u32] {
+        &self.tree_ids
     }
 
     /// Records an active tree id for tests or higher-level skeleton code.
-    pub fn connect_tree_id(&mut self, tree_id: u32) {
-        self.tree_id = tree_id;
+    pub fn connect_tree_id(&mut self, tree_id: u32) -> TreeDisconnectResult<()> {
+        if self.tree_ids.len() >= SMB2_MAX_TREE_NESTING {
+            return Err(TreeDisconnectError::TreeNestingTooDeep);
+        }
+        self.tree_ids.insert(0, tree_id);
+        Ok(())
     }
 
     /// Clears the tracked tree id like `smb2_disconnect_tree_id` in the C code.
-    pub fn disconnect_tree_id(&mut self, tree_id: u32) {
-        if self.tree_id == tree_id {
-            self.tree_id = 0;
-        }
+    pub fn disconnect_tree_id(&mut self, tree_id: u32) -> TreeDisconnectResult<()> {
+        let Some(index) = self.tree_ids.iter().position(|value| *value == tree_id) else {
+            return Err(TreeDisconnectError::TreeIdNotFound { tree_id });
+        };
+        self.tree_ids.remove(index);
+        Ok(())
     }
 }
 
@@ -169,7 +190,7 @@ pub fn smb2_process_tree_disconnect_fixed(
     header_tree_id: u32,
 ) -> TreeDisconnectResult<()> {
     validate_fixed_size(fixed, SMB2_TREE_DISCONNECT_REPLY_SIZE)?;
-    context.disconnect_tree_id(header_tree_id);
+    context.disconnect_tree_id(header_tree_id)?;
     pdu.reply = Some(Smb2TreeDisconnectReply::new());
     Ok(())
 }

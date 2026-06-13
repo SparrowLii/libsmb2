@@ -1,11 +1,19 @@
 //! Socket and event-loop integration migrated from `lib/socket.c`.
 //!
-//! This module intentionally models the state transitions and API shape from
-//! the C socket layer without performing OS socket I/O. Platform-specific
-//! `socket`, `connect`, `readv`, `writev`, `poll`, and `accept` calls are left
-//! for a later migration step.
+//! This module models the state transitions and API shape from the C socket
+//! layer while using safe `std::net` TCP streams for local migrated behavior.
+//! The public API still exposes legacy integer descriptors, backed internally by
+//! an owned TCP registry because portable safe Rust cannot adopt arbitrary OS
+//! file descriptors without platform-specific code.
 
+use super::compat::{CompatError, MemoryReadWrite, PollEvents};
 use crate::include::libsmb2_private::{IoVectors, Pdu, RecvState, Smb2Header};
+use std::collections::HashMap;
+use std::io::{self, Read, Write};
+use std::net::{TcpListener, TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 /// Maximum URL buffer size used by the legacy socket code.
 pub const MAX_URL_SIZE: usize = 1024;
@@ -33,6 +41,16 @@ pub const POLLHUP: i32 = 0x0010;
 
 const SMB2_NEGOTIATE_COMMAND: u16 = 0;
 const SMB2_VERSION_0202: u16 = 0x0202;
+/// First deterministic descriptor allocated by the internal TCP registry.
+///
+/// Registry descriptors are process-local handles, not OS file descriptors, so
+/// callers should use [`SocketContext::get_fds`] and [`poll_internal_fd`] rather
+/// than passing them to platform `poll(2)` directly.
+pub const FIRST_INTERNAL_FD: SocketFd = 10_000;
+
+static NEXT_INTERNAL_FD: AtomicI32 = AtomicI32::new(FIRST_INTERNAL_FD);
+static TCP_STREAMS: OnceLock<Mutex<HashMap<SocketFd, TcpStream>>> = OnceLock::new();
+static TCP_LISTENERS: OnceLock<Mutex<HashMap<SocketFd, TcpListener>>> = OnceLock::new();
 
 /// File descriptor type used by the migrated socket skeleton.
 pub type SocketFd = i32;
@@ -82,8 +100,12 @@ pub enum SocketError {
     InvalidSocket,
     /// Address text could not be split into host and port components.
     InvalidAddress,
-    /// Operation is intentionally deferred to a later OS I/O migration.
+    /// Operation reached a boundary that still needs OS socket I/O.
     Unsupported(&'static str),
+    /// A nonblocking transport cannot make progress yet.
+    WouldBlock,
+    /// The injected transport returned a compatibility-layer error.
+    Transport(&'static str),
 }
 
 impl core::fmt::Display for SocketError {
@@ -95,11 +117,159 @@ impl core::fmt::Display for SocketError {
             Self::Unsupported(operation) => {
                 write!(f, "socket operation is unsupported: {operation}")
             }
+            Self::WouldBlock => f.write_str("socket transport operation would block"),
+            Self::Transport(operation) => {
+                write!(f, "socket transport operation failed: {operation}")
+            }
         }
     }
 }
 
 impl std::error::Error for SocketError {}
+
+impl From<CompatError> for SocketError {
+    fn from(error: CompatError) -> Self {
+        match error {
+            CompatError::WouldBlock => Self::WouldBlock,
+            CompatError::InvalidInput
+            | CompatError::LengthOverflow
+            | CompatError::AddressParseFailed => Self::Transport("compat"),
+        }
+    }
+}
+
+impl From<io::Error> for SocketError {
+    fn from(error: io::Error) -> Self {
+        match error.kind() {
+            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => Self::WouldBlock,
+            io::ErrorKind::InvalidInput | io::ErrorKind::AddrNotAvailable => Self::InvalidAddress,
+            _ => Self::Transport("tcp"),
+        }
+    }
+}
+
+/// Platform-neutral byte transport used by the socket service loop.
+pub trait TransportAdapter {
+    /// Reads bytes from `fd` into `buf`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`SocketError`] when the adapter cannot service the read.
+    fn read(&mut self, fd: SocketFd, buf: &mut [u8]) -> SocketResult<usize>;
+
+    /// Writes bytes for `fd` from `buf`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`SocketError`] when the adapter cannot service the write.
+    fn write(&mut self, fd: SocketFd, buf: &[u8]) -> SocketResult<usize>;
+
+    /// Returns currently ready events for `fd` from a requested event mask.
+    fn poll_ready(&self, fd: SocketFd, requested: Events) -> SocketResult<Events>;
+}
+
+/// In-memory transport adapter for deterministic service-loop tests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryTransportAdapter {
+    fd: SocketFd,
+    io: MemoryReadWrite,
+}
+
+#[derive(Debug, Default)]
+struct StdTcpTransport;
+
+impl TransportAdapter for StdTcpTransport {
+    fn read(&mut self, fd: SocketFd, buf: &mut [u8]) -> SocketResult<usize> {
+        with_tcp_stream(fd, |stream| stream.read(buf))
+    }
+
+    fn write(&mut self, fd: SocketFd, buf: &[u8]) -> SocketResult<usize> {
+        with_tcp_stream(fd, |stream| stream.write(buf))
+    }
+
+    fn poll_ready(&self, fd: SocketFd, requested: Events) -> SocketResult<Events> {
+        poll_internal_fd(fd, requested)
+    }
+}
+
+impl MemoryTransportAdapter {
+    /// Creates an empty memory transport bound to `fd`.
+    #[must_use]
+    pub fn new(fd: SocketFd) -> Self {
+        Self {
+            fd,
+            io: MemoryReadWrite::new(),
+        }
+    }
+
+    /// Creates a memory transport seeded with bytes that future reads consume.
+    #[must_use]
+    pub fn with_readable(fd: SocketFd, bytes: impl Into<Vec<u8>>) -> Self {
+        Self {
+            fd,
+            io: MemoryReadWrite::with_readable(bytes),
+        }
+    }
+
+    /// Returns the descriptor served by this adapter.
+    #[must_use]
+    pub const fn fd(&self) -> SocketFd {
+        self.fd
+    }
+
+    /// Appends bytes for future reads.
+    pub fn push_readable(&mut self, bytes: &[u8]) {
+        self.io.push_readable(bytes);
+    }
+
+    /// Returns bytes captured from writes.
+    #[must_use]
+    pub fn written(&self) -> &[u8] {
+        self.io.written()
+    }
+
+    /// Removes and returns bytes captured from writes.
+    #[must_use]
+    pub fn take_written(&mut self) -> Vec<u8> {
+        self.io.take_written()
+    }
+
+    /// Limits each read call to at most `chunk_size` bytes when non-zero.
+    pub fn set_max_read_chunk(&mut self, chunk_size: Option<usize>) {
+        self.io.set_max_read_chunk(chunk_size);
+    }
+
+    /// Limits each write call to at most `chunk_size` bytes when non-zero.
+    pub fn set_max_write_chunk(&mut self, chunk_size: Option<usize>) {
+        self.io.set_max_write_chunk(chunk_size);
+    }
+}
+
+impl TransportAdapter for MemoryTransportAdapter {
+    fn read(&mut self, fd: SocketFd, buf: &mut [u8]) -> SocketResult<usize> {
+        if fd != self.fd {
+            return Err(SocketError::InvalidSocket);
+        }
+        self.io.read(buf).map_err(SocketError::from)
+    }
+
+    fn write(&mut self, fd: SocketFd, buf: &[u8]) -> SocketResult<usize> {
+        if fd != self.fd {
+            return Err(SocketError::InvalidSocket);
+        }
+        self.io.write(buf).map_err(SocketError::from)
+    }
+
+    fn poll_ready(&self, fd: SocketFd, requested: Events) -> SocketResult<Events> {
+        if fd != self.fd {
+            return Err(SocketError::InvalidSocket);
+        }
+        let ready = self
+            .io
+            .poll_ready(PollEvents::from_bits(requested.to_poll_bits() as i16));
+        Ok(Events::from_poll_bits(i32::from(ready.bits())))
+    }
+}
 
 /// Parsed server endpoint corresponding to `smb2_connect_async` input parsing.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -165,6 +335,8 @@ pub struct AddrInfoEntry {
 pub struct SocketPdu {
     /// SMB2 header used for credit accounting.
     pub header: Smb2Header,
+    /// Outbound vector bytes that make up this PDU payload.
+    pub vectors: Vec<Vec<u8>>,
     /// Total number of bytes already written for this compound chain.
     pub bytes_done: usize,
     /// Payload length used by the stream length prefix.
@@ -181,10 +353,15 @@ impl SocketPdu {
     pub fn from_pdu(pdu: &Pdu) -> Self {
         Self {
             header: pdu.header,
+            vectors: pdu.out.vectors.iter().map(|iov| iov.buf.clone()).collect(),
             bytes_done: pdu.out.done,
             payload_len: pdu.out.total_size,
             sealed: false,
-            next_compound: Vec::new(),
+            next_compound: pdu
+                .next_compound
+                .as_deref()
+                .map(|pdu| vec![Self::from_pdu(pdu)])
+                .unwrap_or_default(),
         }
     }
 
@@ -260,6 +437,10 @@ pub struct SocketContext {
     pub spl: u32,
     /// Last socket-layer error message.
     pub last_error: Option<String>,
+    /// Synthetic descriptor seed used until real OS socket creation is migrated.
+    pub next_fd_seed: SocketFd,
+    /// Bytes collected for the current receive phase by an injected transport.
+    pub recv_buffer: Vec<u8>,
 }
 
 impl Default for SocketContext {
@@ -278,6 +459,8 @@ impl Default for SocketContext {
             input: IoVectors::default(),
             spl: 0,
             last_error: None,
+            next_fd_seed: 0,
+            recv_buffer: Vec::new(),
         }
     }
 }
@@ -296,6 +479,14 @@ impl SocketContext {
         self.connecting_fds.clear();
         self.addrinfos.clear();
         self.next_addrinfo = None;
+    }
+
+    /// Adds a resolver entry to the pending connection list.
+    pub fn add_addrinfo(&mut self, entry: AddrInfoEntry) {
+        self.addrinfos.push(entry);
+        if self.next_addrinfo.is_none() {
+            self.next_addrinfo = Some(0);
+        }
     }
 
     /// Returns the poll events currently required by this socket context.
@@ -357,12 +548,25 @@ impl SocketContext {
         }
     }
 
-    /// Advances the write side enough to mirror credit gating from `smb2_write_to_socket`.
+    /// Advances the write side, moving a fully sent PDU chain to the wait queue.
     ///
     /// # Errors
     ///
     /// Returns [`SocketError::NotConnected`] when no established descriptor is present.
     pub fn write_to_socket(&mut self) -> SocketResult<WriteOutcome> {
+        self.write_to_transport(&mut StdTcpTransport)
+    }
+
+    /// Advances the write side using an injected platform-neutral transport.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SocketError::NotConnected`] when no established descriptor is
+    /// present, or any error produced by `transport`.
+    pub fn write_to_transport<T: TransportAdapter + ?Sized>(
+        &mut self,
+        transport: &mut T,
+    ) -> SocketResult<WriteOutcome> {
         if !is_valid_socket(self.fd) {
             self.last_error = Some("trying to write but not connected".to_owned());
             return Err(SocketError::NotConnected);
@@ -372,14 +576,66 @@ impl SocketContext {
             return Ok(WriteOutcome::Idle);
         };
 
-        if pdu.credit_charge(self.dialect) > self.credits {
+        let credit_charge = pdu.credit_charge(self.dialect);
+        if credit_charge > self.credits {
             return Ok(WriteOutcome::CreditBlocked);
         }
 
         let total_len = SMB2_SPL_SIZE + pdu.stream_payload_len();
-        Ok(WriteOutcome::WouldWrite {
-            bytes_remaining: total_len.saturating_sub(pdu.bytes_done),
-        })
+        if pdu.bytes_done >= total_len {
+            return self.finish_written_pdu(credit_charge, 0, total_len);
+        }
+
+        let frame = encode_socket_pdu_frame(pdu, total_len);
+        let bytes_written = transport.write(self.fd, &frame[pdu.bytes_done..])?;
+        if bytes_written == 0 {
+            return Ok(WriteOutcome::WouldBlock);
+        }
+
+        let pdu = &mut self.outqueue[0];
+        pdu.bytes_done = pdu.bytes_done.saturating_add(bytes_written).min(total_len);
+        if pdu.bytes_done < total_len {
+            return Ok(WriteOutcome::Written { bytes_written });
+        }
+
+        self.finish_written_pdu(credit_charge, bytes_written, total_len)
+    }
+
+    /// Records bytes read by a future transport adapter and advances the current input phase.
+    #[must_use]
+    pub fn record_read_progress(&mut self, bytes: usize) -> ReadOutcome {
+        if self.input.total_size == 0 {
+            return ReadOutcome::NeedMoreData;
+        }
+        self.input.done = self
+            .input
+            .done
+            .saturating_add(bytes)
+            .min(self.input.total_size);
+        if self.input.done < self.input.total_size {
+            ReadOutcome::NeedMoreData
+        } else {
+            ReadOutcome::Advanced(self.recv_state)
+        }
+    }
+
+    /// Records concrete bytes read by an injected transport.
+    #[must_use]
+    pub fn record_read_bytes(&mut self, bytes: &[u8]) -> ReadOutcome {
+        self.recv_buffer.extend_from_slice(bytes);
+        let outcome = self.record_read_progress(bytes.len());
+        if self.recv_state == RecvState::Spl
+            && self.input.done >= SMB2_SPL_SIZE
+            && self.recv_buffer.len() >= SMB2_SPL_SIZE
+        {
+            self.spl = u32::from_be_bytes([
+                self.recv_buffer[0],
+                self.recv_buffer[1],
+                self.recv_buffer[2],
+                self.recv_buffer[3],
+            ]);
+        }
+        outcome
     }
 
     /// Advances the read state skeleton shared by socket and transform-buffer reads.
@@ -399,11 +655,27 @@ impl SocketContext {
         }
 
         let next = match self.recv_state {
-            RecvState::Spl => RecvState::Header,
-            RecvState::Header => RecvState::Fixed,
-            RecvState::Fixed => RecvState::Variable,
+            RecvState::Spl => {
+                self.input.done = 0;
+                self.input.total_size = 64;
+                RecvState::Header
+            }
+            RecvState::Header => {
+                self.input.done = 0;
+                self.input.total_size = self.spl.saturating_sub(64) as usize;
+                if self.input.total_size == 0 {
+                    return Ok(ReadOutcome::Complete);
+                }
+                RecvState::Fixed
+            }
+            RecvState::Fixed => {
+                self.input.done = 0;
+                self.input.total_size = 0;
+                RecvState::Variable
+            }
             RecvState::Variable | RecvState::Pad | RecvState::Transform | RecvState::Unknown => {
                 self.input.done = 0;
+                self.input.total_size = 0;
                 return Ok(ReadOutcome::Complete);
             }
         };
@@ -418,16 +690,50 @@ impl SocketContext {
     ///
     /// Returns [`SocketError::NotConnected`] when no established descriptor is present.
     pub fn read_from_socket(&mut self) -> SocketResult<ReadOutcome> {
-        if self.input.done == 0 {
-            self.recv_state = RecvState::Spl;
-            self.spl = 0;
-            self.input = IoVectors {
-                done: 0,
-                total_size: SMB2_SPL_SIZE,
-                vectors: Vec::new(),
-            };
+        self.read_from_transport(&mut StdTcpTransport)
+    }
+
+    /// Reads bytes from an injected transport and advances the receive state.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SocketError::NotConnected`] when no established descriptor is
+    /// present, or any error produced by `transport` except
+    /// [`SocketError::WouldBlock`], which maps to [`ReadOutcome::NeedMoreData`].
+    pub fn read_from_transport<T: TransportAdapter + ?Sized>(
+        &mut self,
+        transport: &mut T,
+    ) -> SocketResult<ReadOutcome> {
+        if !is_valid_socket(self.fd) {
+            self.last_error = Some("trying to read but not connected".to_owned());
+            return Err(SocketError::NotConnected);
         }
-        self.read_data(ReadSource::Socket)
+
+        self.prepare_socket_read();
+        if self.input.done >= self.input.total_size {
+            return self.read_data(ReadSource::Socket);
+        }
+
+        let remaining = self.input.total_size.saturating_sub(self.input.done);
+        if remaining == 0 {
+            return self.read_data(ReadSource::Socket);
+        }
+
+        let mut buffer = vec![0; remaining];
+        let bytes_read = match transport.read(self.fd, &mut buffer) {
+            Ok(bytes_read) => bytes_read,
+            Err(SocketError::WouldBlock) => return Ok(ReadOutcome::NeedMoreData),
+            Err(error) => return Err(error),
+        };
+        if bytes_read == 0 {
+            return Ok(ReadOutcome::NeedMoreData);
+        }
+        let outcome = self.record_read_bytes(&buffer[..bytes_read]);
+        if matches!(outcome, ReadOutcome::NeedMoreData) {
+            Ok(outcome)
+        } else {
+            self.read_data(ReadSource::Socket)
+        }
     }
 
     /// Continues reading from a decrypted SMB3 transform buffer.
@@ -443,18 +749,40 @@ impl SocketContext {
     ///
     /// # Errors
     ///
-    /// Returns [`SocketError::InvalidSocket`] for invalid explicit descriptors,
-    /// [`SocketError::NotConnected`] for read/write events before connection, or
-    /// [`SocketError::Unsupported`] for OS-level connect completion handling.
+    /// Returns [`SocketError::InvalidSocket`] for invalid explicit descriptors or
+    /// [`SocketError::NotConnected`] for read/write events before connection.
     pub fn service_fd(&mut self, fd: SocketFd, revents: i32) -> SocketResult<ServiceOutcome> {
+        self.service_fd_with_transport(fd, revents, &mut StdTcpTransport)
+    }
+
+    /// Services a descriptor with a platform-neutral transport adapter.
+    ///
+    /// # Errors
+    ///
+    /// Returns descriptor, connection, or transport errors produced while
+    /// servicing the injected adapter.
+    pub fn service_fd_with_transport<T: TransportAdapter + ?Sized>(
+        &mut self,
+        fd: SocketFd,
+        revents: i32,
+        transport: &mut T,
+    ) -> SocketResult<ServiceOutcome> {
         if !is_valid_socket(fd) {
             if self.next_addrinfo.is_some() {
                 return self.connect_async_next_addr();
             }
-            return Err(SocketError::InvalidSocket);
+            return Ok(ServiceOutcome::Serviced);
+        }
+
+        if fd != self.fd && !self.connecting_fds.contains(&fd) {
+            return Ok(ServiceOutcome::Serviced);
         }
 
         if revents & POLLERR != 0 {
+            if !is_valid_socket(self.fd) && self.next_addrinfo.is_some() {
+                self.close_connecting_fd(fd);
+                return self.connect_async_next_addr();
+            }
             self.last_error = Some("smb2_service: socket error".to_owned());
             return Ok(ServiceOutcome::Error);
         }
@@ -473,13 +801,16 @@ impl SocketContext {
         }
 
         if revents & POLLIN != 0 {
-            self.read_from_socket()?;
+            self.read_from_transport(transport)?;
         }
 
         if revents & POLLOUT != 0 && !self.outqueue.is_empty() {
-            self.write_to_socket()?;
+            self.write_to_transport(transport)?;
         }
 
+        let requested = self.which_events();
+        let ready = transport.poll_ready(fd, requested)?;
+        self.change_events(ready);
         Ok(ServiceOutcome::Serviced)
     }
 
@@ -496,16 +827,33 @@ impl SocketContext {
         self.service_fd(fd, revents)
     }
 
+    /// Services the primary descriptor through an injected transport adapter.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error produced by [`SocketContext::service_fd_with_transport`].
+    pub fn service_with_transport<T: TransportAdapter + ?Sized>(
+        &mut self,
+        revents: i32,
+        transport: &mut T,
+    ) -> SocketResult<ServiceOutcome> {
+        let fd = match self.get_fd() {
+            Some(fd) => fd,
+            None => INVALID_SOCKET,
+        };
+        self.service_fd_with_transport(fd, revents, transport)
+    }
+
     /// Parses and records the first address for an asynchronous connection attempt.
     ///
     /// # Errors
     ///
-    /// Returns [`SocketError::InvalidAddress`] for malformed server strings or
-    /// [`SocketError::Unsupported`] when an actual OS connection would be needed.
+    /// Returns [`SocketError::InvalidAddress`] for malformed server strings or a
+    /// transport error when TCP connection setup fails.
     pub fn connect_async(&mut self, server: &str) -> SocketResult<ServiceOutcome> {
         if is_valid_socket(self.fd) {
             self.last_error = Some("trying to connect but already connected".to_owned());
-            return Err(SocketError::Unsupported("already connected"));
+            return Err(SocketError::InvalidSocket);
         }
 
         let address = SocketAddress::parse(server)?;
@@ -518,14 +866,67 @@ impl SocketContext {
     ///
     /// # Errors
     ///
-    /// Returns [`SocketError::Unsupported`] because opening nonblocking sockets is
-    /// outside this skeleton.
+    /// Returns [`SocketError::InvalidAddress`] if no address candidates remain.
     pub fn connect_async_next_addr(&mut self) -> SocketResult<ServiceOutcome> {
         if let Some(index) = self.next_addrinfo {
+            if index >= self.addrinfos.len() {
+                self.next_addrinfo = None;
+                return Err(SocketError::InvalidAddress);
+            }
+            let address = self.addrinfos[index].address.clone();
             self.next_addrinfo = (index + 1 < self.addrinfos.len()).then_some(index + 1);
-            return Err(SocketError::Unsupported("connect_async_ai"));
+            match connect_tcp_stream(&address) {
+                Ok(fd) => {
+                    self.fd = fd;
+                    self.close_connecting_fds();
+                    let events = self.which_events();
+                    self.change_events(events);
+                    Ok(ServiceOutcome::Connected)
+                }
+                Err(error) => {
+                    self.last_error = Some(error.to_string());
+                    if self.next_addrinfo.is_some() {
+                        self.connect_async_next_addr()
+                    } else {
+                        Err(error)
+                    }
+                }
+            }
+        } else {
+            Err(SocketError::InvalidAddress)
         }
-        Err(SocketError::InvalidAddress)
+    }
+
+    fn close_connecting_fd(&mut self, fd: SocketFd) {
+        self.connecting_fds.retain(|candidate| *candidate != fd);
+    }
+
+    fn prepare_socket_read(&mut self) {
+        if self.input.done == 0 && self.input.total_size == 0 {
+            self.recv_state = RecvState::Spl;
+            self.spl = 0;
+            self.recv_buffer.clear();
+            self.input = IoVectors {
+                done: 0,
+                total_size: SMB2_SPL_SIZE,
+                vectors: Vec::new(),
+            };
+        }
+    }
+
+    fn finish_written_pdu(
+        &mut self,
+        credit_charge: i32,
+        bytes_written: usize,
+        total_len: usize,
+    ) -> SocketResult<WriteOutcome> {
+        let mut pdu = self.outqueue.remove(0);
+        pdu.bytes_done = total_len;
+        self.credits = self.credits.saturating_sub(credit_charge);
+        self.waitqueue.push(pdu);
+        let events = self.which_events();
+        self.change_events(events);
+        Ok(WriteOutcome::Written { bytes_written })
     }
 }
 
@@ -545,16 +946,43 @@ pub enum WriteOutcome {
     Idle,
     /// The first outbound PDU is waiting for more credits.
     CreditBlocked,
-    /// A later I/O layer would write this many bytes.
-    WouldWrite {
-        /// Remaining byte count including the SPL prefix.
-        bytes_remaining: usize,
+    /// The transport accepted no bytes and should be polled again later.
+    WouldBlock,
+    /// A complete PDU chain was accepted by the socket state machine.
+    Written {
+        /// Byte count including the SPL prefix.
+        bytes_written: usize,
     },
+}
+
+fn encode_socket_pdu_frame(pdu: &SocketPdu, total_len: usize) -> Vec<u8> {
+    let payload_len = total_len.saturating_sub(SMB2_SPL_SIZE);
+    let mut frame = Vec::with_capacity(total_len);
+    let spl = (payload_len as u32).to_be_bytes();
+    frame.extend_from_slice(&spl);
+    append_socket_pdu_payload(pdu, &mut frame);
+    frame.resize(total_len, 0);
+    frame.truncate(total_len);
+    frame
+}
+
+fn append_socket_pdu_payload(pdu: &SocketPdu, frame: &mut Vec<u8>) {
+    for vector in &pdu.vectors {
+        frame.extend_from_slice(vector);
+    }
+    for pdu in &pdu.next_compound {
+        append_socket_pdu_payload(pdu, frame);
+    }
 }
 
 /// Service loop skeleton outcome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServiceOutcome {
+    /// A nonblocking connection attempt was started for a descriptor.
+    Connecting {
+        /// Descriptor to poll for write readiness.
+        fd: SocketFd,
+    },
     /// A pending connection descriptor became the connected descriptor.
     Connected,
     /// Revents were consumed without completing a connection.
@@ -569,6 +997,60 @@ pub enum ServiceOutcome {
 #[must_use]
 pub const fn is_valid_socket(fd: SocketFd) -> bool {
     fd >= 0
+}
+
+/// Returns whether a descriptor belongs to the internal TCP registry range.
+#[must_use]
+pub const fn is_internal_fd(fd: SocketFd) -> bool {
+    fd >= FIRST_INTERNAL_FD
+}
+
+/// Returns current readiness for an internally registered TCP descriptor.
+///
+/// This is a deterministic, safe-Rust substitute for polling registry-backed
+/// descriptors. Stream readability is checked with non-consuming `peek`; stream
+/// writability is considered ready for poll-style progress attempts. Listener
+/// readability cannot be tested without accepting a connection in portable safe
+/// `std`, so listeners report no readiness here and should be driven through
+/// [`accept_connection_async`].
+///
+/// # Errors
+///
+/// Returns [`SocketError::InvalidSocket`] when `fd` is not an internal registry
+/// stream or listener, or a transport error if the registry check fails.
+pub fn poll_internal_fd(fd: SocketFd, requested: Events) -> SocketResult<Events> {
+    if !is_internal_fd(fd) {
+        return Err(SocketError::InvalidSocket);
+    }
+
+    let stream_ready = {
+        let mut streams = tcp_streams()
+            .lock()
+            .map_err(|_| SocketError::Transport("tcp registry"))?;
+        if let Some(stream) = streams.get_mut(&fd) {
+            let mut ready = Events::default();
+            if requested.readable {
+                let mut byte = [0_u8; 1];
+                match stream.peek(&mut byte) {
+                    Ok(_) => ready.readable = true,
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
+                    Err(error) => return Err(SocketError::from(error)),
+                }
+            }
+            if requested.writable {
+                ready.writable = true;
+            }
+            Some(ready)
+        } else {
+            None
+        }
+    };
+
+    if let Some(ready) = stream_ready {
+        return Ok(ready);
+    }
+
+    with_tcp_listener(fd, |_| Ok(Events::default()))
 }
 
 /// Returns the credit charge for one PDU header.
@@ -608,25 +1090,149 @@ pub fn interleave_addrinfo(entries: &mut [AddrInfoEntry]) {
     }
 }
 
-/// Builds a listening socket placeholder corresponding to `smb2_bind_and_listen`.
-///
-/// # Errors
-///
-/// Returns [`SocketError::Unsupported`] because binding a real socket is outside
-/// this migration skeleton.
-pub fn bind_and_listen(_port: u16, _max_connections: i32) -> SocketResult<SocketFd> {
-    Err(SocketError::Unsupported("bind_and_listen"))
+fn tcp_streams() -> &'static Mutex<HashMap<SocketFd, TcpStream>> {
+    TCP_STREAMS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Accepts one pending connection placeholder corresponding to `smb2_accept_connection_async`.
-///
-/// # Errors
-///
-/// Returns [`SocketError::InvalidSocket`] for invalid listener descriptors or
-/// [`SocketError::Unsupported`] because polling and accepting are outside this skeleton.
-pub fn accept_connection_async(fd: SocketFd, _timeout_ms: i32) -> SocketResult<SocketFd> {
+fn tcp_listeners() -> &'static Mutex<HashMap<SocketFd, TcpListener>> {
+    TCP_LISTENERS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn allocate_internal_fd() -> SocketResult<SocketFd> {
+    loop {
+        let current = NEXT_INTERNAL_FD.load(Ordering::Relaxed);
+        if !is_internal_fd(current) {
+            return Err(SocketError::Transport("tcp registry fd"));
+        }
+        let next = current
+            .checked_add(1)
+            .ok_or(SocketError::Transport("tcp registry fd"))?;
+        if NEXT_INTERNAL_FD
+            .compare_exchange(current, next, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            return Ok(current);
+        }
+    }
+}
+
+fn register_tcp_stream(stream: TcpStream) -> SocketResult<SocketFd> {
+    stream.set_nonblocking(true).map_err(SocketError::from)?;
+    let fd = allocate_internal_fd()?;
+    let mut streams = tcp_streams()
+        .lock()
+        .map_err(|_| SocketError::Transport("tcp registry"))?;
+    streams.insert(fd, stream);
+    Ok(fd)
+}
+
+fn register_tcp_listener(listener: TcpListener) -> SocketResult<SocketFd> {
+    listener.set_nonblocking(true).map_err(SocketError::from)?;
+    let fd = allocate_internal_fd()?;
+    let mut listeners = tcp_listeners()
+        .lock()
+        .map_err(|_| SocketError::Transport("tcp registry"))?;
+    listeners.insert(fd, listener);
+    Ok(fd)
+}
+
+fn with_tcp_stream<T>(
+    fd: SocketFd,
+    operation: impl FnOnce(&mut TcpStream) -> io::Result<T>,
+) -> SocketResult<T> {
     if !is_valid_socket(fd) {
         return Err(SocketError::InvalidSocket);
     }
-    Err(SocketError::Unsupported("accept_connection_async"))
+    let mut streams = tcp_streams()
+        .lock()
+        .map_err(|_| SocketError::Transport("tcp registry"))?;
+    let stream = streams.get_mut(&fd).ok_or(SocketError::InvalidSocket)?;
+    operation(stream).map_err(SocketError::from)
+}
+
+fn with_tcp_listener<T>(
+    fd: SocketFd,
+    operation: impl FnOnce(&TcpListener) -> io::Result<T>,
+) -> SocketResult<T> {
+    if !is_valid_socket(fd) {
+        return Err(SocketError::InvalidSocket);
+    }
+    let listeners = tcp_listeners()
+        .lock()
+        .map_err(|_| SocketError::Transport("tcp registry"))?;
+    let listener = listeners.get(&fd).ok_or(SocketError::InvalidSocket)?;
+    operation(listener).map_err(SocketError::from)
+}
+
+fn connect_tcp_stream(address: &SocketAddress) -> SocketResult<SocketFd> {
+    let port = address
+        .port
+        .parse::<u16>()
+        .map_err(|_| SocketError::InvalidAddress)?;
+    let mut last_error = None;
+    for socket_address in (address.host.as_str(), port)
+        .to_socket_addrs()
+        .map_err(SocketError::from)?
+    {
+        match TcpStream::connect(socket_address) {
+            Ok(stream) => return register_tcp_stream(stream),
+            Err(error) => last_error = Some(error),
+        }
+    }
+
+    Err(last_error.map_or(SocketError::InvalidAddress, SocketError::from))
+}
+
+/// Builds a listening socket corresponding to `smb2_bind_and_listen`.
+///
+/// # Errors
+///
+/// Returns [`SocketError::InvalidAddress`] if `max_connections` is negative, or
+/// a transport error when binding the any-address listener or registering its
+/// internal descriptor fails.
+///
+/// # Backlog limitation
+///
+/// Safe `std::net::TcpListener::bind` does not expose a portable backlog value.
+/// The value is validated for legacy API parity, but the OS default backlog is
+/// used for the internal listener.
+pub fn bind_and_listen(port: u16, max_connections: i32) -> SocketResult<SocketFd> {
+    if max_connections < 0 {
+        return Err(SocketError::InvalidAddress);
+    }
+    let listener = TcpListener::bind(("0.0.0.0", port)).map_err(SocketError::from)?;
+    register_tcp_listener(listener)
+}
+
+/// Accepts one pending connection corresponding to `smb2_accept_connection_async`.
+///
+/// # Errors
+///
+/// Returns [`SocketError::InvalidSocket`] for invalid listener descriptors,
+/// [`SocketError::WouldBlock`] when no connection arrives before `timeout_ms`,
+/// or a transport error if accepting/registering the stream fails.
+pub fn accept_connection_async(fd: SocketFd, timeout_ms: i32) -> SocketResult<SocketFd> {
+    if !is_valid_socket(fd) {
+        return Err(SocketError::InvalidSocket);
+    }
+    let deadline = if timeout_ms < 0 {
+        None
+    } else {
+        Some(Instant::now() + Duration::from_millis(timeout_ms as u64))
+    };
+
+    loop {
+        let accepted = with_tcp_listener(fd, TcpListener::accept);
+
+        match accepted {
+            Ok((stream, _address)) => return register_tcp_stream(stream),
+            Err(SocketError::WouldBlock) => {
+                if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+                    return Err(SocketError::WouldBlock);
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            Err(error) => return Err(error),
+        }
+    }
 }

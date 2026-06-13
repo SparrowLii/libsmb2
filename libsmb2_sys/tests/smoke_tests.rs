@@ -1,8 +1,9 @@
+use libsmb2_sys::include::config::{AMIGA_OS_CONFIG, APPLE_CONFIG};
 use libsmb2_sys::include::libsmb2_private::{
     pad_to_32bit, pad_to_64bit, private_constants, sizeof_smb2_context, sizeof_smb2_header,
     sizeof_smb2_io_vectors, sizeof_smb2_pdu, sizeof_smb2dir,
 };
-use libsmb2_sys::include::portable_endian;
+use libsmb2_sys::include::{portable_endian, slist};
 use libsmb2_sys::legacy::{aes, aes128ccm, errors, hmac_md5, md4, md5, sha, timestamps, unicode};
 use libsmb2_sys::smb2::{libsmb2_dcerpc_lsa, smb2_errors, smb2_ioctl};
 use libsmb2_sys::RecvState;
@@ -84,6 +85,66 @@ fn test_smoke_portable_endian_conversions() {
         portable_endian::le64_to_host(0x1234_5678_9ABC_DEF0_u64.to_le()),
         0x1234_5678_9ABC_DEF0
     );
+}
+
+#[test]
+fn test_smoke_slist_macro_wrappers() {
+    // Smoke source: include/slist.h; target: SMB2_LIST_* macro wrappers.
+    let mut first = slist::SListNode::new();
+    let mut second = slist::SListNode::new();
+    let mut third = slist::SListNode::new();
+    let mut missing = slist::SListNode::new();
+    let mut list = slist::SListHead::empty();
+
+    list.add(&mut first);
+    assert!(list.head_is(Some(&first)));
+    assert!(first.next_is(None));
+
+    list.add_end(&mut second);
+    assert!(list.head_is(Some(&first)));
+    assert!(first.next_is(Some(&second)));
+    assert!(second.next_is(None));
+
+    list.add(&mut third);
+    assert!(list.head_is(Some(&third)));
+    assert!(third.next_is(Some(&first)));
+    assert_eq!(list.len(), 3);
+    assert!(list.head_is(Some(&third)));
+
+    list.remove(&mut first);
+    assert!(list.head_is(Some(&third)));
+    assert!(third.next_is(Some(&second)));
+    assert_eq!(list.len(), 2);
+
+    list.remove(&mut missing);
+    assert!(list.head_is(Some(&third)));
+    assert_eq!(list.len(), 2);
+
+    list.remove(&mut third);
+    assert!(list.head_is(Some(&second)));
+}
+
+#[test]
+fn test_smoke_platform_config_macros() {
+    // Smoke source: include/amiga_os/config.h and include/apple/config.h; target: config macros.
+    assert_eq!(AMIGA_OS_CONFIG.configure_option_tcp_linger, Some(1));
+    assert_eq!(AMIGA_OS_CONFIG.have_arpa_inet_h, Some(1));
+    assert_eq!(AMIGA_OS_CONFIG.have_gssapi_gssapi_h, None);
+    assert_eq!(AMIGA_OS_CONFIG.have_linger, None);
+    assert_eq!(AMIGA_OS_CONFIG.have_poll_h, None);
+    assert_eq!(AMIGA_OS_CONFIG.have_sockaddr_storage, None);
+    assert_eq!(AMIGA_OS_CONFIG.lt_objdir, ".libs/");
+    assert_eq!(AMIGA_OS_CONFIG.package, "libsmb2");
+    assert_eq!(AMIGA_OS_CONFIG.version, "4.0.0");
+
+    assert_eq!(APPLE_CONFIG.configure_option_tcp_linger, Some(1));
+    assert_eq!(APPLE_CONFIG.have_arpa_inet_h, Some(1));
+    assert_eq!(APPLE_CONFIG.have_gssapi_gssapi_h, Some(1));
+    assert_eq!(APPLE_CONFIG.have_linger, Some(1));
+    assert_eq!(APPLE_CONFIG.have_poll_h, Some(1));
+    assert_eq!(APPLE_CONFIG.have_sockaddr_storage, Some(1));
+    assert_eq!(APPLE_CONFIG.have_sys_iovec_h, None);
+    assert_eq!(APPLE_CONFIG.package_string, "libsmb2 4.0.0");
 }
 
 #[test]

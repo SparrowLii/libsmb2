@@ -1,7 +1,7 @@
 //! MD4 helpers migrated from `lib/md4c.c`.
 //!
 //! This module mirrors the structure and public lifecycle of the original C
-//! implementation without providing the full MD4 compression algorithm yet.
+//! implementation while providing the full MD4 compression algorithm.
 
 const MD4_DIGEST_LEN: usize = 16;
 const MD4_BLOCK_LEN: usize = 64;
@@ -72,10 +72,6 @@ impl Md4Context {
     }
 
     /// Updates the context with input bytes, following the C `MD4Update` shape.
-    ///
-    /// This is a migration skeleton: it tracks bit counts and staging buffers,
-    /// but the compression transform is intentionally a no-op until the full
-    /// hash algorithm is ported.
     pub fn update(&mut self, input: &[u8]) {
         let mut index = ((self.count[0] >> 3) & 0x3f) as usize;
         self.add_input_bits(input.len());
@@ -105,8 +101,7 @@ impl Md4Context {
     /// Finalizes this context and returns the current digest bytes.
     ///
     /// This mirrors the C `MD4Final` control flow and zeroizes the context after
-    /// producing output. Because the transform is still a skeleton, the returned
-    /// bytes are not a complete MD4 digest yet.
+    /// producing output.
     #[must_use]
     pub fn final_bytes(&mut self) -> [u8; MD4_DIGEST_LEN] {
         let bits = encode_words(&self.count, MD4_COUNT_WORDS * 4);
@@ -154,19 +149,107 @@ pub fn md4_update(context: &mut Md4Context, input: &[u8]) {
 
 /// Finalizes an MD4 context into a 16-byte digest, matching C `MD4Final`.
 ///
-/// The current Rust transform is a skeleton and does not yet compute the full
-/// MD4 digest.
 #[must_use]
 pub fn md4_final(context: &mut Md4Context) -> [u8; MD4_DIGEST_LEN] {
     context.final_bytes()
 }
 
 fn md4_transform(state: &mut [u32; MD4_STATE_WORDS], block: &[u8; MD4_BLOCK_LEN]) {
-    let mut decoded = [0_u32; 16];
-    decode_words(&mut decoded, block, MD4_BLOCK_LEN);
-    let schedule = [S11, S12, S13, S14, S21, S22, S23, S24, S31, S32, S33, S34];
+    let mut x = [0_u32; 16];
+    decode_words(&mut x, block, MD4_BLOCK_LEN);
 
-    let _ = (state, decoded, schedule);
+    let mut a = state[0];
+    let mut b = state[1];
+    let mut c = state[2];
+    let mut d = state[3];
+
+    ff(&mut a, b, c, d, x[0], S11);
+    ff(&mut d, a, b, c, x[1], S12);
+    ff(&mut c, d, a, b, x[2], S13);
+    ff(&mut b, c, d, a, x[3], S14);
+    ff(&mut a, b, c, d, x[4], S11);
+    ff(&mut d, a, b, c, x[5], S12);
+    ff(&mut c, d, a, b, x[6], S13);
+    ff(&mut b, c, d, a, x[7], S14);
+    ff(&mut a, b, c, d, x[8], S11);
+    ff(&mut d, a, b, c, x[9], S12);
+    ff(&mut c, d, a, b, x[10], S13);
+    ff(&mut b, c, d, a, x[11], S14);
+    ff(&mut a, b, c, d, x[12], S11);
+    ff(&mut d, a, b, c, x[13], S12);
+    ff(&mut c, d, a, b, x[14], S13);
+    ff(&mut b, c, d, a, x[15], S14);
+
+    gg(&mut a, b, c, d, x[0], S21);
+    gg(&mut d, a, b, c, x[4], S22);
+    gg(&mut c, d, a, b, x[8], S23);
+    gg(&mut b, c, d, a, x[12], S24);
+    gg(&mut a, b, c, d, x[1], S21);
+    gg(&mut d, a, b, c, x[5], S22);
+    gg(&mut c, d, a, b, x[9], S23);
+    gg(&mut b, c, d, a, x[13], S24);
+    gg(&mut a, b, c, d, x[2], S21);
+    gg(&mut d, a, b, c, x[6], S22);
+    gg(&mut c, d, a, b, x[10], S23);
+    gg(&mut b, c, d, a, x[14], S24);
+    gg(&mut a, b, c, d, x[3], S21);
+    gg(&mut d, a, b, c, x[7], S22);
+    gg(&mut c, d, a, b, x[11], S23);
+    gg(&mut b, c, d, a, x[15], S24);
+
+    hh(&mut a, b, c, d, x[0], S31);
+    hh(&mut d, a, b, c, x[8], S32);
+    hh(&mut c, d, a, b, x[4], S33);
+    hh(&mut b, c, d, a, x[12], S34);
+    hh(&mut a, b, c, d, x[2], S31);
+    hh(&mut d, a, b, c, x[10], S32);
+    hh(&mut c, d, a, b, x[6], S33);
+    hh(&mut b, c, d, a, x[14], S34);
+    hh(&mut a, b, c, d, x[1], S31);
+    hh(&mut d, a, b, c, x[9], S32);
+    hh(&mut c, d, a, b, x[5], S33);
+    hh(&mut b, c, d, a, x[13], S34);
+    hh(&mut a, b, c, d, x[3], S31);
+    hh(&mut d, a, b, c, x[11], S32);
+    hh(&mut c, d, a, b, x[7], S33);
+    hh(&mut b, c, d, a, x[15], S34);
+
+    state[0] = state[0].wrapping_add(a);
+    state[1] = state[1].wrapping_add(b);
+    state[2] = state[2].wrapping_add(c);
+    state[3] = state[3].wrapping_add(d);
+}
+
+const fn f(x: u32, y: u32, z: u32) -> u32 {
+    (x & y) | (!x & z)
+}
+
+const fn g(x: u32, y: u32, z: u32) -> u32 {
+    (x & y) | (x & z) | (y & z)
+}
+
+const fn h(x: u32, y: u32, z: u32) -> u32 {
+    x ^ y ^ z
+}
+
+fn ff(a: &mut u32, b: u32, c: u32, d: u32, x: u32, s: u32) {
+    *a = a.wrapping_add(f(b, c, d)).wrapping_add(x).rotate_left(s);
+}
+
+fn gg(a: &mut u32, b: u32, c: u32, d: u32, x: u32, s: u32) {
+    *a = a
+        .wrapping_add(g(b, c, d))
+        .wrapping_add(x)
+        .wrapping_add(0x5a82_7999)
+        .rotate_left(s);
+}
+
+fn hh(a: &mut u32, b: u32, c: u32, d: u32, x: u32, s: u32) {
+    *a = a
+        .wrapping_add(h(b, c, d))
+        .wrapping_add(x)
+        .wrapping_add(0x6ed9_eba1)
+        .rotate_left(s);
 }
 
 fn encode_words(input: &[u32], len: usize) -> Vec<u8> {

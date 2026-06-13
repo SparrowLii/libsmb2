@@ -412,14 +412,14 @@ impl Smb2Client {
         DisconnectData::default()
     }
 
-    /// Builds connection state for the future `smb2_connect_share_async` flow.
+    /// Builds connection state and queues the public `smb2_connect_share_async` flow.
     pub fn connect_share_async_skeleton(
         &mut self,
         server: &str,
         share: &str,
         user: Option<&str>,
     ) -> Result<ConnectData> {
-        self.connect_share(server, share)?;
+        self.connect_share_async(server, share, user);
         let mut data = ConnectData::new(server, share);
         data.user = user.map(str::to_owned);
         data.utf8_unc = Some(data.unc());
@@ -430,19 +430,21 @@ impl Smb2Client {
     /// Builds an open request skeleton matching `smb2_open_async`.
     pub fn open_async_skeleton(&mut self, path: &str, flags: i32) -> Result<OpenRequest> {
         validate_path(path)?;
-        let _ = self;
+        self.open_async(path, flags);
         Ok(OpenRequest::new(path, flags))
     }
 
     /// Builds a close request skeleton matching `smb2_close_async`.
     pub fn close_async_skeleton(&mut self, handle: &FileHandle) -> Result<[u8; SMB2_FILE_ID_SIZE]> {
-        let _ = self;
+        validate_file_id(handle.id())?;
+        self.close_async(handle);
         Ok(handle.id())
     }
 
     /// Builds a flush request skeleton matching `smb2_fsync_async`.
     pub fn fsync_async_skeleton(&mut self, handle: &FileHandle) -> Result<[u8; SMB2_FILE_ID_SIZE]> {
-        let _ = self;
+        validate_file_id(handle.id())?;
+        self.fsync_async(handle);
         Ok(handle.id())
     }
 
@@ -453,7 +455,8 @@ impl Smb2Client {
         count: u32,
         offset: u64,
     ) -> Result<ReadData> {
-        let _ = self;
+        validate_file_id(handle.id())?;
+        self.pread_async(handle, count, offset);
         Ok(ReadData {
             request: ReadRequest {
                 file_id: handle.id(),
@@ -476,7 +479,8 @@ impl Smb2Client {
         data: &[u8],
         offset: u64,
     ) -> Result<WriteData> {
-        let _ = self;
+        validate_file_id(handle.id())?;
+        self.pwrite_async(handle, data.len() as u32, offset);
         Ok(WriteData {
             request: WriteRequest {
                 file_id: handle.id(),
@@ -499,7 +503,7 @@ impl Smb2Client {
         entries: Vec<DirectoryEntry>,
     ) -> Result<Smb2Directory> {
         validate_path(path)?;
-        let _ = self;
+        self.opendir_async(path);
         Ok(Smb2Directory::new(entries))
     }
 
@@ -516,7 +520,7 @@ impl Smb2Client {
     /// Builds create callback state matching `smb2_mkdir_async`.
     pub fn mkdir_async_skeleton(&mut self, path: &str) -> Result<CreateCallbackData> {
         validate_path(path)?;
-        let _ = self;
+        self.mkdir_async(path);
         Ok(CreateCallbackData {
             path: path.to_owned(),
             kind: ObjectKind::Directory,
@@ -536,8 +540,8 @@ impl Smb2Client {
 
     /// Builds stat callback state matching `smb2_fstat_async`.
     pub fn fstat_async_skeleton(&mut self, handle: &FileHandle) -> Result<StatCallbackData> {
-        let _ = self;
-        let _ = handle.id();
+        validate_file_id(handle.id())?;
+        self.fstat_async(handle);
         Ok(StatCallbackData {
             info_type: 1,
             file_info_class: 18,
@@ -550,13 +554,20 @@ impl Smb2Client {
     /// Builds stat callback state matching `smb2_stat_async`.
     pub fn stat_async_skeleton(&mut self, path: &str) -> Result<StatCallbackData> {
         validate_path(path)?;
-        self.fstat_async_skeleton(&FileHandle::new(COMPOUND_FILE_ID))
+        self.stat_async(path);
+        Ok(StatCallbackData {
+            info_type: 1,
+            file_info_class: 18,
+            status: SMB2_STATUS_LOCAL_PLACEHOLDER,
+            stat: None,
+            statvfs: None,
+        })
     }
 
     /// Builds statvfs callback state matching `smb2_statvfs_async`.
     pub fn statvfs_async_skeleton(&mut self, path: &str) -> Result<StatCallbackData> {
         validate_path(path)?;
-        let _ = self;
+        self.statvfs_async(path);
         Ok(StatCallbackData {
             info_type: 2,
             file_info_class: 0,
@@ -573,8 +584,7 @@ impl Smb2Client {
         length: u64,
     ) -> Result<CreateCallbackData> {
         validate_path(path)?;
-        let _ = self;
-        let _ = length;
+        self.truncate_async(path, length);
         Ok(CreateCallbackData {
             path: path.to_owned(),
             kind: ObjectKind::File,
@@ -590,7 +600,7 @@ impl Smb2Client {
     ) -> Result<RenameCallbackData> {
         validate_path(old_path)?;
         validate_path(new_path)?;
-        let _ = self;
+        self.rename_async(old_path, new_path);
         Ok(RenameCallbackData::new(old_path, new_path))
     }
 
@@ -600,8 +610,8 @@ impl Smb2Client {
         handle: &FileHandle,
         length: u64,
     ) -> Result<CreateCallbackData> {
-        let _ = self;
-        let _ = length;
+        validate_file_id(handle.id())?;
+        self.ftruncate_async(handle, length);
         Ok(CreateCallbackData {
             path: format!("file-id:{:02x?}", handle.id()),
             kind: ObjectKind::File,
@@ -612,7 +622,7 @@ impl Smb2Client {
     /// Builds readlink callback state matching `smb2_readlink_async`.
     pub fn readlink_async_skeleton(&mut self, path: &str) -> Result<ReadlinkCallbackData> {
         validate_path(path)?;
-        let _ = self;
+        self.readlink_async(path, 0);
         Ok(ReadlinkCallbackData {
             path: path.to_owned(),
             status: SMB2_STATUS_LOCAL_PLACEHOLDER,
@@ -631,20 +641,20 @@ impl Smb2Client {
 
     /// Builds echo state matching `smb2_echo_async`.
     pub fn echo_async_skeleton(&mut self) -> Result<EchoData> {
-        let _ = self;
+        self.echo_async();
         Ok(EchoData::default())
     }
 
     /// Returns the current placeholder maximum read size.
     #[must_use]
     pub fn max_read_size_skeleton(&self) -> u32 {
-        0
+        self.max_read_size()
     }
 
     /// Returns the current placeholder maximum write size.
     #[must_use]
     pub fn max_write_size_skeleton(&self) -> u32 {
-        0
+        self.max_write_size()
     }
 
     /// Builds a file handle skeleton matching `smb2_fh_from_file_id`.
@@ -662,7 +672,13 @@ impl Smb2Client {
         filter: u32,
         repeat: bool,
     ) -> Result<NotifyChangeCallbackData> {
-        let _ = self;
+        validate_file_id(directory.id())?;
+        self.notify_change_filehandle_async(
+            &FileHandle::new(directory.id()),
+            flags,
+            filter,
+            repeat,
+        );
         Ok(NotifyChangeCallbackData {
             directory_file_id: directory.id(),
             filter,
@@ -697,7 +713,10 @@ impl Smb2Client {
         kind: ObjectKind,
     ) -> Result<CreateCallbackData> {
         validate_path(path)?;
-        let _ = self;
+        match kind {
+            ObjectKind::File | ObjectKind::ReparsePoint => self.unlink_async(path),
+            ObjectKind::Directory => self.rmdir_async(path),
+        }
         Ok(CreateCallbackData {
             path: path.to_owned(),
             kind,
@@ -708,6 +727,13 @@ impl Smb2Client {
 
 fn validate_path(path: &str) -> Result<()> {
     if path.is_empty() {
+        return Err(ErrorCode(-22));
+    }
+    Ok(())
+}
+
+fn validate_file_id(file_id: [u8; SMB2_FILE_ID_SIZE]) -> Result<()> {
+    if file_id == [0; SMB2_FILE_ID_SIZE] {
         return Err(ErrorCode(-22));
     }
     Ok(())

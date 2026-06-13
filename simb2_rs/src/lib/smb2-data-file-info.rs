@@ -17,6 +17,15 @@ pub const FILE_STREAM_INFO_HEADER_SIZE: usize = 24;
 /// Encoded size of `struct smb2_file_position_info`.
 pub const FILE_POSITION_INFO_SIZE: usize = 8;
 
+/// Encoded size of `struct smb2_file_end_of_file_info`.
+pub const FILE_END_OF_FILE_INFO_SIZE: usize = 8;
+
+/// Encoded size of `struct smb2_file_disposition_info`.
+pub const FILE_DISPOSITION_INFO_SIZE: usize = 1;
+
+/// Encoded prefix size of `struct smb2_file_rename_info` before the UTF-16 name.
+pub const FILE_RENAME_INFO_PREFIX_SIZE: usize = 20;
+
 /// Encoded prefix size of `struct smb2_file_all_info` before the UTF-16 name.
 pub const FILE_ALL_INFO_PREFIX_SIZE: usize = 100;
 
@@ -162,6 +171,129 @@ pub struct Smb2FileStreamInfo {
 pub struct Smb2FilePositionInfo {
     /// Current byte offset for the open file.
     pub current_byte_offset: u64,
+}
+
+/// Rust counterpart of `struct smb2_file_end_of_file_info`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Smb2FileEndOfFileInfo {
+    /// New end-of-file value.
+    pub end_of_file: u64,
+}
+
+impl Smb2FileEndOfFileInfo {
+    /// Decodes `FileEndOfFileInformation` from an SMB2 wire buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FileInfoError::BufferTooShort`] when fewer than
+    /// [`FILE_END_OF_FILE_INFO_SIZE`] bytes are available.
+    pub fn decode(buf: &[u8]) -> Result<Self> {
+        smb2_decode_file_end_of_file_info(buf)
+    }
+
+    /// Encodes `FileEndOfFileInformation` into an SMB2 wire buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FileInfoError::BufferTooShort`] when fewer than
+    /// [`FILE_END_OF_FILE_INFO_SIZE`] bytes are available.
+    pub fn encode(&self, buf: &mut [u8]) -> Result<usize> {
+        smb2_encode_file_end_of_file_info(self, buf)
+    }
+}
+
+/// Rust counterpart of `struct smb2_file_disposition_info`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Smb2FileDispositionInfo {
+    /// Non-zero when the file should be marked delete-pending.
+    pub delete_pending: u8,
+}
+
+impl Smb2FileDispositionInfo {
+    /// Creates a disposition payload from a boolean delete-pending flag.
+    #[must_use]
+    pub const fn from_bool(delete_pending: bool) -> Self {
+        Self {
+            delete_pending: if delete_pending { 1 } else { 0 },
+        }
+    }
+
+    /// Returns whether the payload requests delete-pending state.
+    #[must_use]
+    pub const fn is_delete_pending(&self) -> bool {
+        self.delete_pending != 0
+    }
+
+    /// Decodes `FileDispositionInformation` from an SMB2 wire buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FileInfoError::BufferTooShort`] when fewer than
+    /// [`FILE_DISPOSITION_INFO_SIZE`] bytes are available.
+    pub fn decode(buf: &[u8]) -> Result<Self> {
+        smb2_decode_file_disposition_info(buf)
+    }
+
+    /// Encodes `FileDispositionInformation` into an SMB2 wire buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FileInfoError::BufferTooShort`] when fewer than
+    /// [`FILE_DISPOSITION_INFO_SIZE`] bytes are available.
+    pub fn encode(&self, buf: &mut [u8]) -> Result<usize> {
+        smb2_encode_file_disposition_info(self, buf)
+    }
+}
+
+/// Rust counterpart of `struct smb2_file_rename_info`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Smb2FileRenameInfo {
+    /// Non-zero when an existing destination may be replaced.
+    pub replace_if_exist: u8,
+    /// UTF-8 destination name before the UTF-16 wire conversion.
+    pub file_name: String,
+}
+
+impl Smb2FileRenameInfo {
+    /// Creates a rename payload.
+    #[must_use]
+    pub fn new(file_name: impl Into<String>, replace_if_exist: bool) -> Self {
+        Self {
+            replace_if_exist: u8::from(replace_if_exist),
+            file_name: file_name.into(),
+        }
+    }
+
+    /// Returns whether the payload allows replacing an existing destination.
+    #[must_use]
+    pub const fn replaces_existing(&self) -> bool {
+        self.replace_if_exist != 0
+    }
+
+    /// Returns the UTF-16LE byte length reserved for the name on the wire.
+    #[must_use]
+    pub fn utf16_wire_len(&self) -> usize {
+        self.file_name.encode_utf16().count().saturating_mul(2)
+    }
+
+    /// Decodes `FileRenameInformation` from an SMB2 wire buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FileInfoError::BufferTooShort`] when the fixed or declared name bytes are absent.
+    pub fn decode(buf: &[u8]) -> Result<Self> {
+        smb2_decode_file_rename_info(buf)
+    }
+
+    /// Encodes `FileRenameInformation` into an SMB2 wire buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FileInfoError::BufferTooShort`] when the buffer is too short, or
+    /// [`FileInfoError::InvalidUtf8`] when the file name is not valid UTF-8.
+    pub fn encode(&self, buf: &mut [u8]) -> Result<usize> {
+        smb2_encode_file_rename_info(self, buf)
+    }
 }
 
 impl Smb2FilePositionInfo {
@@ -446,6 +578,112 @@ pub fn smb2_encode_file_position_info(
     require_len(buf, FILE_POSITION_INFO_SIZE)?;
     write_u64_le(buf, 0, info.current_byte_offset)?;
     Ok(FILE_POSITION_INFO_SIZE)
+}
+
+/// Decodes `smb2_file_end_of_file_info` from a wire buffer.
+///
+/// # Errors
+///
+/// Returns [`FileInfoError::BufferTooShort`] when the buffer is too short.
+pub fn smb2_decode_file_end_of_file_info(buf: &[u8]) -> Result<Smb2FileEndOfFileInfo> {
+    require_len(buf, FILE_END_OF_FILE_INFO_SIZE)?;
+    Ok(Smb2FileEndOfFileInfo {
+        end_of_file: read_u64_le(buf, 0)?,
+    })
+}
+
+/// Encodes `smb2_file_end_of_file_info` into a wire buffer.
+///
+/// # Errors
+///
+/// Returns [`FileInfoError::BufferTooShort`] when the buffer is too short.
+pub fn smb2_encode_file_end_of_file_info(
+    info: &Smb2FileEndOfFileInfo,
+    buf: &mut [u8],
+) -> Result<usize> {
+    require_len(buf, FILE_END_OF_FILE_INFO_SIZE)?;
+    write_u64_le(buf, 0, info.end_of_file)?;
+    Ok(FILE_END_OF_FILE_INFO_SIZE)
+}
+
+/// Decodes `smb2_file_disposition_info` from a wire buffer.
+///
+/// # Errors
+///
+/// Returns [`FileInfoError::BufferTooShort`] when the buffer is too short.
+pub fn smb2_decode_file_disposition_info(buf: &[u8]) -> Result<Smb2FileDispositionInfo> {
+    require_len(buf, FILE_DISPOSITION_INFO_SIZE)?;
+    Ok(Smb2FileDispositionInfo {
+        delete_pending: read_u8(buf, 0)?,
+    })
+}
+
+/// Encodes `smb2_file_disposition_info` into a wire buffer.
+///
+/// # Errors
+///
+/// Returns [`FileInfoError::BufferTooShort`] when the buffer is too short.
+pub fn smb2_encode_file_disposition_info(
+    info: &Smb2FileDispositionInfo,
+    buf: &mut [u8],
+) -> Result<usize> {
+    require_len(buf, FILE_DISPOSITION_INFO_SIZE)?;
+    write_u8(buf, 0, info.delete_pending)?;
+    Ok(FILE_DISPOSITION_INFO_SIZE)
+}
+
+/// Decodes `smb2_file_rename_info` from a wire buffer.
+///
+/// # Errors
+///
+/// Returns [`FileInfoError::BufferTooShort`] when the fixed or declared name bytes are absent.
+pub fn smb2_decode_file_rename_info(buf: &[u8]) -> Result<Smb2FileRenameInfo> {
+    require_len(buf, FILE_RENAME_INFO_PREFIX_SIZE)?;
+    let name_len = read_u32_le(buf, 16)? as usize;
+    require_len_at(buf, FILE_RENAME_INFO_PREFIX_SIZE, name_len)?;
+    let mut units = Vec::with_capacity(name_len / 2);
+    for chunk in
+        buf[FILE_RENAME_INFO_PREFIX_SIZE..FILE_RENAME_INFO_PREFIX_SIZE + name_len].chunks_exact(2)
+    {
+        let mut unit = u16::from_le_bytes([chunk[0], chunk[1]]);
+        if unit == 0x005c {
+            unit = 0x002f;
+        }
+        units.push(unit);
+    }
+    Ok(Smb2FileRenameInfo {
+        replace_if_exist: read_u8(buf, 0)?,
+        file_name: String::from_utf16_lossy(&units),
+    })
+}
+
+/// Encodes `smb2_file_rename_info` into a wire buffer.
+///
+/// # Errors
+///
+/// Returns [`FileInfoError::BufferTooShort`] when the buffer is too short, or
+/// [`FileInfoError::InvalidUtf8`] when the file name is not valid UTF-8.
+pub fn smb2_encode_file_rename_info(info: &Smb2FileRenameInfo, buf: &mut [u8]) -> Result<usize> {
+    let mut encoded_name = encode_optional_utf16_name(Some(&info.file_name))?;
+    for unit in &mut encoded_name {
+        if *unit == 0x002f {
+            *unit = 0x005c;
+        }
+    }
+    let name_len = encoded_name
+        .len()
+        .checked_mul(2)
+        .ok_or(FileInfoError::IntegerOverflow)?;
+    let total_len = FILE_RENAME_INFO_PREFIX_SIZE
+        .checked_add(name_len)
+        .ok_or(FileInfoError::IntegerOverflow)?;
+    require_len(buf, total_len)?;
+    write_u8(buf, 0, info.replace_if_exist)?;
+    buf[1..8].fill(0);
+    write_u64_le(buf, 8, 0)?;
+    write_u32_le(buf, 16, usize_to_u32(name_len)?)?;
+    write_utf16_units(buf, FILE_RENAME_INFO_PREFIX_SIZE, &encoded_name)?;
+    Ok(total_len)
 }
 
 /// Decodes the fixed and name fields of `smb2_file_all_info`.

@@ -6,29 +6,7 @@
 //! separate so the generated skeleton can grow without embedding protocol flow
 //! logic in the lookup functions.
 
-/// NTSTATUS value carried by SMB2 responses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NtStatus(u32);
-
-impl NtStatus {
-    /// Creates an NTSTATUS wrapper from its raw 32-bit value.
-    #[must_use]
-    pub const fn new(raw: u32) -> Self {
-        Self(raw)
-    }
-
-    /// Returns the raw 32-bit NTSTATUS value.
-    #[must_use]
-    pub const fn raw(self) -> u32 {
-        self.0
-    }
-}
-
-impl From<u32> for NtStatus {
-    fn from(value: u32) -> Self {
-        Self::new(value)
-    }
-}
+pub use crate::include::smb2::smb2_errors::NtStatus;
 
 /// Named NTSTATUS entry corresponding to one `nterror_to_str` switch arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -180,166 +158,39 @@ impl NtStatusErrno {
     }
 }
 
-/// Successful NTSTATUS value.
-pub const SMB2_STATUS_SUCCESS: u32 = 0x0000_0000;
-/// Asynchronous operation is still pending.
-pub const SMB2_STATUS_PENDING: u32 = 0x0000_0103;
-/// No more directory entries are available.
-pub const SMB2_STATUS_NO_MORE_FILES: u32 = 0x8000_0006;
-/// Symbolic link traversal stopped.
-pub const SMB2_STATUS_STOPPED_ON_SYMLINK: u32 = 0x8000_002D;
-/// Generic unsuccessful status.
-pub const SMB2_STATUS_UNSUCCESSFUL: u32 = 0xC000_0001;
-/// Operation is not implemented.
-pub const SMB2_STATUS_NOT_IMPLEMENTED: u32 = 0xC000_0002;
-/// Invalid handle status.
-pub const SMB2_STATUS_INVALID_HANDLE: u32 = 0xC000_0008;
-/// Invalid parameter status.
-pub const SMB2_STATUS_INVALID_PARAMETER: u32 = 0xC000_000D;
-/// No such device status.
-pub const SMB2_STATUS_NO_SUCH_DEVICE: u32 = 0xC000_000E;
-/// No such file status.
-pub const SMB2_STATUS_NO_SUCH_FILE: u32 = 0xC000_000F;
-/// Invalid device request status.
-pub const SMB2_STATUS_INVALID_DEVICE_REQUEST: u32 = 0xC000_0010;
-/// End of file status.
-pub const SMB2_STATUS_END_OF_FILE: u32 = 0xC000_0011;
-/// No media in device status.
-pub const SMB2_STATUS_NO_MEDIA_IN_DEVICE: u32 = 0xC000_0013;
-/// More processing is required.
-pub const SMB2_STATUS_MORE_PROCESSING_REQUIRED: u32 = 0xC000_0016;
-/// Invalid lock sequence status.
-pub const SMB2_STATUS_INVALID_LOCK_SEQUENCE: u32 = 0xC000_001E;
-/// Invalid view size status.
-pub const SMB2_STATUS_INVALID_VIEW_SIZE: u32 = 0xC000_001F;
-/// Memory has already been committed.
-pub const SMB2_STATUS_ALREADY_COMMITTED: u32 = 0xC000_0021;
-/// Access denied status.
-pub const SMB2_STATUS_ACCESS_DENIED: u32 = 0xC000_0022;
-/// Object type mismatch status.
-pub const SMB2_STATUS_OBJECT_TYPE_MISMATCH: u32 = 0xC000_0024;
-/// Object name was not found.
-pub const SMB2_STATUS_OBJECT_NAME_NOT_FOUND: u32 = 0xC000_0034;
-/// Object name collision status.
-pub const SMB2_STATUS_OBJECT_NAME_COLLISION: u32 = 0xC000_0035;
-/// Port disconnected status.
-pub const SMB2_STATUS_PORT_DISCONNECTED: u32 = 0xC000_0037;
-/// Object path is invalid.
-pub const SMB2_STATUS_OBJECT_PATH_INVALID: u32 = 0xC000_0039;
-/// Object path was not found.
-pub const SMB2_STATUS_OBJECT_PATH_NOT_FOUND: u32 = 0xC000_003A;
-/// Object path syntax is invalid.
-pub const SMB2_STATUS_OBJECT_PATH_SYNTAX_BAD: u32 = 0xC000_003B;
-/// Data error status.
-pub const SMB2_STATUS_DATA_ERROR: u32 = 0xC000_003E;
-/// CRC error status.
-pub const SMB2_STATUS_CRC_ERROR: u32 = 0xC000_003F;
-/// Section too big status.
-pub const SMB2_STATUS_SECTION_TOO_BIG: u32 = 0xC000_0040;
-/// Port connection refused status.
-pub const SMB2_STATUS_PORT_CONNECTION_REFUSED: u32 = 0xC000_0041;
-/// Invalid port handle status.
-pub const SMB2_STATUS_INVALID_PORT_HANDLE: u32 = 0xC000_0042;
-/// Sharing violation status.
-pub const SMB2_STATUS_SHARING_VIOLATION: u32 = 0xC000_0043;
-/// Thread is terminating status.
-pub const SMB2_STATUS_THREAD_IS_TERMINATING: u32 = 0xC000_004B;
-/// File lock conflict status.
-pub const SMB2_STATUS_FILE_LOCK_CONFLICT: u32 = 0xC000_0054;
-/// Lock not granted status.
-pub const SMB2_STATUS_LOCK_NOT_GRANTED: u32 = 0xC000_0055;
-/// Delete pending status.
-pub const SMB2_STATUS_DELETE_PENDING: u32 = 0xC000_0056;
-/// Privilege not held status.
-pub const SMB2_STATUS_PRIVILEGE_NOT_HELD: u32 = 0xC000_0061;
-/// Logon failure status.
-pub const SMB2_STATUS_LOGON_FAILURE: u32 = 0xC000_006D;
-/// Account restriction status.
-pub const SMB2_STATUS_ACCOUNT_RESTRICTION: u32 = 0xC000_006E;
-/// Invalid logon hours status.
-pub const SMB2_STATUS_INVALID_LOGON_HOURS: u32 = 0xC000_006F;
-/// Password expired status.
-pub const SMB2_STATUS_PASSWORD_EXPIRED: u32 = 0xC000_0071;
-/// Account disabled status.
-pub const SMB2_STATUS_ACCOUNT_DISABLED: u32 = 0xC000_0072;
-/// Disk full status.
-pub const SMB2_STATUS_DISK_FULL: u32 = 0xC000_007F;
-/// Too many paging files status.
-pub const SMB2_STATUS_TOO_MANY_PAGING_FILES: u32 = 0xC000_0097;
-/// Insufficient resources status.
-pub const SMB2_STATUS_INSUFFICIENT_RESOURCES: u32 = 0xC000_009A;
-/// DFS exit path found status.
-pub const SMB2_STATUS_DFS_EXIT_PATH_FOUND: u32 = 0xC000_009B;
-/// Device data error status.
-pub const SMB2_STATUS_DEVICE_DATA_ERROR: u32 = 0xC000_009C;
-/// Media is write protected.
-pub const SMB2_STATUS_MEDIA_WRITE_PROTECTED: u32 = 0xC000_00A2;
-/// Illegal function status.
-pub const SMB2_STATUS_ILLEGAL_FUNCTION: u32 = 0xC000_00AF;
-/// Pipe disconnected status.
-pub const SMB2_STATUS_PIPE_DISCONNECTED: u32 = 0xC000_00B0;
-/// I/O timeout status.
-pub const SMB2_STATUS_IO_TIMEOUT: u32 = 0xC000_00B5;
-/// File is a directory status.
-pub const SMB2_STATUS_FILE_IS_A_DIRECTORY: u32 = 0xC000_00BA;
-/// Request not supported status.
-pub const SMB2_STATUS_NOT_SUPPORTED: u32 = 0xC000_00BB;
-/// Invalid network response status.
-pub const SMB2_STATUS_INVALID_NETWORK_RESPONSE: u32 = 0xC000_00C3;
-/// Network name deleted status.
-pub const SMB2_STATUS_NETWORK_NAME_DELETED: u32 = 0xC000_00C9;
-/// Network access denied status.
-pub const SMB2_STATUS_NETWORK_ACCESS_DENIED: u32 = 0xC000_00CA;
-/// Bad network name status.
-pub const SMB2_STATUS_BAD_NETWORK_NAME: u32 = 0xC000_00CC;
-/// Not the same device status.
-pub const SMB2_STATUS_NOT_SAME_DEVICE: u32 = 0xC000_00D4;
-/// File renamed status.
-pub const SMB2_STATUS_FILE_RENAMED: u32 = 0xC000_00D5;
-/// Internal error status.
-pub const SMB2_STATUS_INTERNAL_ERROR: u32 = 0xC000_00E5;
-/// Redirector not started status.
-pub const SMB2_STATUS_REDIRECTOR_NOT_STARTED: u32 = 0xC000_00FB;
-/// Directory is not empty.
-pub const SMB2_STATUS_DIRECTORY_NOT_EMPTY: u32 = 0xC000_0101;
-/// Path component is not a directory.
-pub const SMB2_STATUS_NOT_A_DIRECTORY: u32 = 0xC000_0103;
-/// Process is terminating status.
-pub const SMB2_STATUS_PROCESS_IS_TERMINATING: u32 = 0xC000_010A;
-/// Too many opened files status.
-pub const SMB2_STATUS_TOO_MANY_OPENED_FILES: u32 = 0xC000_011F;
-/// Operation was cancelled.
-pub const SMB2_STATUS_CANCELLED: u32 = 0xC000_0120;
-/// Cannot delete status.
-pub const SMB2_STATUS_CANNOT_DELETE: u32 = 0xC000_0121;
-/// File was deleted.
-pub const SMB2_STATUS_FILE_DELETED: u32 = 0xC000_0123;
-/// File was closed.
-pub const SMB2_STATUS_FILE_CLOSED: u32 = 0xC000_0128;
-/// I/O device error status.
-pub const SMB2_STATUS_IO_DEVICE_ERROR: u32 = 0xC000_0185;
-/// Insufficient server resources status.
-pub const SMB2_STATUS_INSUFF_SERVER_RESOURCES: u32 = 0xC000_0205;
-/// Connection disconnected status.
-pub const SMB2_STATUS_CONNECTION_DISCONNECTED: u32 = 0xC000_020C;
-/// Connection reset status.
-pub const SMB2_STATUS_CONNECTION_RESET: u32 = 0xC000_020D;
-/// Status not found.
-pub const SMB2_STATUS_NOT_FOUND: u32 = 0xC000_0225;
-/// Handle cannot be closed.
-pub const SMB2_STATUS_HANDLE_NOT_CLOSABLE: u32 = 0xC000_0235;
-/// Connection invalid status.
-pub const SMB2_STATUS_CONNECTION_INVALID: u32 = 0xC000_023A;
-/// Connection aborted status.
-pub const SMB2_STATUS_CONNECTION_ABORTED: u32 = 0xC000_0241;
-/// Path was not covered.
-pub const SMB2_STATUS_PATH_NOT_COVERED: u32 = 0xC000_0257;
-/// Volume dismounted status.
-pub const SMB2_STATUS_VOLUME_DISMOUNTED: u32 = 0xC000_026E;
-/// Status is not a reparse point.
-pub const SMB2_STATUS_NOT_A_REPARSE_POINT: u32 = 0xC000_0275;
-/// Shutdown status handled specially by the C mapping.
-pub const SMB2_STATUS_SHUTDOWN: u32 = 0xC000_02FE;
+pub use crate::include::smb2::smb2_errors::{
+    SMB2_STATUS_ACCESS_DENIED, SMB2_STATUS_ACCOUNT_DISABLED, SMB2_STATUS_ACCOUNT_RESTRICTION,
+    SMB2_STATUS_ALREADY_COMMITTED, SMB2_STATUS_BAD_NETWORK_NAME, SMB2_STATUS_CANCELLED,
+    SMB2_STATUS_CANNOT_DELETE, SMB2_STATUS_CONNECTION_ABORTED, SMB2_STATUS_CONNECTION_DISCONNECTED,
+    SMB2_STATUS_CONNECTION_INVALID, SMB2_STATUS_CONNECTION_RESET, SMB2_STATUS_CRC_ERROR,
+    SMB2_STATUS_DATA_ERROR, SMB2_STATUS_DELETE_PENDING, SMB2_STATUS_DEVICE_DATA_ERROR,
+    SMB2_STATUS_DFS_EXIT_PATH_FOUND, SMB2_STATUS_DIRECTORY_NOT_EMPTY, SMB2_STATUS_DISK_FULL,
+    SMB2_STATUS_END_OF_FILE, SMB2_STATUS_FILE_CLOSED, SMB2_STATUS_FILE_DELETED,
+    SMB2_STATUS_FILE_IS_A_DIRECTORY, SMB2_STATUS_FILE_LOCK_CONFLICT, SMB2_STATUS_FILE_RENAMED,
+    SMB2_STATUS_HANDLE_NOT_CLOSABLE, SMB2_STATUS_ILLEGAL_FUNCTION,
+    SMB2_STATUS_INSUFFICIENT_RESOURCES, SMB2_STATUS_INSUFF_SERVER_RESOURCES,
+    SMB2_STATUS_INVALID_DEVICE_REQUEST, SMB2_STATUS_INVALID_HANDLE,
+    SMB2_STATUS_INVALID_LOCK_SEQUENCE, SMB2_STATUS_INVALID_LOGON_HOURS,
+    SMB2_STATUS_INVALID_NETWORK_RESPONSE, SMB2_STATUS_INVALID_PARAMETER,
+    SMB2_STATUS_INVALID_PORT_HANDLE, SMB2_STATUS_INVALID_VIEW_SIZE, SMB2_STATUS_IO_DEVICE_ERROR,
+    SMB2_STATUS_IO_TIMEOUT, SMB2_STATUS_LOCK_NOT_GRANTED, SMB2_STATUS_LOGON_FAILURE,
+    SMB2_STATUS_MEDIA_WRITE_PROTECTED, SMB2_STATUS_MORE_PROCESSING_REQUIRED,
+    SMB2_STATUS_NETWORK_ACCESS_DENIED, SMB2_STATUS_NETWORK_NAME_DELETED,
+    SMB2_STATUS_NOT_A_DIRECTORY, SMB2_STATUS_NOT_A_REPARSE_POINT, SMB2_STATUS_NOT_FOUND,
+    SMB2_STATUS_NOT_IMPLEMENTED, SMB2_STATUS_NOT_SAME_DEVICE, SMB2_STATUS_NOT_SUPPORTED,
+    SMB2_STATUS_NO_MEDIA_IN_DEVICE, SMB2_STATUS_NO_MORE_FILES, SMB2_STATUS_NO_SUCH_DEVICE,
+    SMB2_STATUS_NO_SUCH_FILE, SMB2_STATUS_OBJECT_NAME_COLLISION, SMB2_STATUS_OBJECT_NAME_NOT_FOUND,
+    SMB2_STATUS_OBJECT_PATH_INVALID, SMB2_STATUS_OBJECT_PATH_NOT_FOUND,
+    SMB2_STATUS_OBJECT_PATH_SYNTAX_BAD, SMB2_STATUS_OBJECT_TYPE_MISMATCH,
+    SMB2_STATUS_PASSWORD_EXPIRED, SMB2_STATUS_PATH_NOT_COVERED, SMB2_STATUS_PENDING,
+    SMB2_STATUS_PIPE_DISCONNECTED, SMB2_STATUS_PORT_CONNECTION_REFUSED,
+    SMB2_STATUS_PORT_DISCONNECTED, SMB2_STATUS_PRIVILEGE_NOT_HELD,
+    SMB2_STATUS_PROCESS_IS_TERMINATING, SMB2_STATUS_REDIRECTOR_NOT_STARTED,
+    SMB2_STATUS_SECTION_TOO_BIG, SMB2_STATUS_SHARING_VIOLATION, SMB2_STATUS_SHUTDOWN,
+    SMB2_STATUS_STOPPED_ON_SYMLINK, SMB2_STATUS_SUCCESS, SMB2_STATUS_THREAD_IS_TERMINATING,
+    SMB2_STATUS_TOO_MANY_OPENED_FILES, SMB2_STATUS_TOO_MANY_PAGING_FILES, SMB2_STATUS_UNSUCCESSFUL,
+    SMB2_STATUS_VOLUME_DISMOUNTED,
+};
 
 /// Representative name entries from the `nterror_to_str` switch table.
 pub const NTERROR_NAME_TABLE: &[NtStatusName] = &[
@@ -520,10 +371,18 @@ pub const NTERROR_ERRNO_TABLE: &[NtStatusErrno] = &[
 /// Looks up the status name returned by the legacy `nterror_to_str` function.
 #[must_use]
 pub fn nterror_name(status: u32) -> Option<&'static str> {
-    NTERROR_NAME_TABLE
+    let legacy_name = NTERROR_NAME_TABLE
         .iter()
         .find(|entry| entry.matches(status))
-        .map(|entry| entry.name)
+        .map(|entry| entry.name);
+
+    legacy_name.or_else(|| crate::include::smb2::smb2_errors::ntstatus_name(status))
+}
+
+/// Returns the unified NTSTATUS name for a raw status value when it is known.
+#[must_use]
+pub fn ntstatus_name(status: u32) -> Option<&'static str> {
+    nterror_name(status)
 }
 
 /// Converts an NT status code to a textual name.

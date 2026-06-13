@@ -5,6 +5,7 @@ fn main() {
     let shims = [
         PathBuf::from("shim/include/libsmb2_private_ffi.c"),
         PathBuf::from("shim/include/portable-endian_ffi.c"),
+        PathBuf::from("shim/include/slist_ffi.c"),
         PathBuf::from("shim/lib/unicode_ffi.c"),
     ];
     let sources = [
@@ -27,6 +28,7 @@ fn main() {
     let headers = [
         PathBuf::from("shim/include/libsmb2_private_ffi.h"),
         PathBuf::from("shim/include/portable-endian_ffi.h"),
+        PathBuf::from("shim/include/slist_ffi.h"),
         PathBuf::from("shim/lib/unicode_ffi.h"),
     ];
 
@@ -63,6 +65,7 @@ fn main() {
         .header(headers[0].to_string_lossy())
         .header(headers[1].to_string_lossy())
         .header(headers[2].to_string_lossy())
+        .header(headers[3].to_string_lossy())
         .header("../lib/aes.h")
         .header("../lib/aes128ccm.h")
         .header("../lib/aes_reference.h")
@@ -89,6 +92,7 @@ fn main() {
         .clang_arg("stdint.h")
         .allowlist_function("libsmb2_private_ffi_.*")
         .allowlist_function("portable_endian_ffi_.*")
+        .allowlist_function("slist_ffi_.*")
         .allowlist_function("AES128_ECB_encrypt")
         .allowlist_function("AES128_ECB_.*_reference")
         .allowlist_function("aes128ccm_.*")
@@ -105,6 +109,7 @@ fn main() {
         .allowlist_function("unicode_ffi_.*")
         .allowlist_type("libsmb2_private_ffi_.*")
         .allowlist_type("portable_endian_ffi_.*")
+        .allowlist_type("slist_ffi_.*")
         .allowlist_type("MD4_CTX")
         .allowlist_type("MD5Context")
         .allowlist_type("SHA.*")
@@ -133,6 +138,7 @@ fn main() {
     }
     println!("cargo:rerun-if-changed=../include/libsmb2-private.h");
     println!("cargo:rerun-if-changed=../include/portable-endian.h");
+    println!("cargo:rerun-if-changed=../include/slist.h");
     println!("cargo:rerun-if-changed=../include/smb2/smb2-ioctl.h");
     println!("cargo:rerun-if-changed=../lib/aes.h");
     println!("cargo:rerun-if-changed=../lib/aes128ccm.h");

@@ -20,7 +20,10 @@ fn test_unicode_ascii_and_multibyte_conversion() {
 // - **THEN** 返回的 `val` MUST 使用两个 little-endian UTF-16 surrogate code units 表示该 codepoint，并将 `len` 增加两个 code units
 #[test]
 fn test_unicode_supplementary_plane_conversion() {
-    assert_eq!(unicode::utf8_to_utf16_units("😀"), Some(vec![0xd83d, 0xde00]));
+    assert_eq!(
+        unicode::utf8_to_utf16_units("😀"),
+        Some(vec![0xd83d, 0xde00])
+    );
 }
 
 // Trace: `lib/unicode.c:smb2_utf16_to_utf8`, `include/smb2/libsmb2.h:smb2_utf16_to_utf8`
@@ -56,6 +59,12 @@ fn test_unicode_surrogate_pair_conversion() {
 // - **THEN** 函数 MUST 在输出中写入 UTF-8 replacement character `0xef 0xbf 0xbd` 表示无效 surrogate 单元
 #[test]
 fn test_unicode_invalid_surrogate_replacement() {
-    assert_eq!(unicode::utf16_units_to_utf8(&[0xd83d]), Some(String::from("�")));
-    assert_eq!(unicode::utf16_units_to_utf8(&[0xde00]), Some(String::from("�")));
+    assert_eq!(
+        unicode::utf16_units_to_utf8(&[0xd83d]),
+        Some(String::from("�"))
+    );
+    assert_eq!(
+        unicode::utf16_units_to_utf8(&[0xde00]),
+        Some(String::from("�"))
+    );
 }

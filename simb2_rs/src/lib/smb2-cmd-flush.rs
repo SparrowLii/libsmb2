@@ -116,6 +116,9 @@ pub fn smb2_cmd_flush_async(
         input: IoVectors::default(),
         callback,
         compound: false,
+        next_compound: None,
+        prev_compound_mid: 0,
+        payload: None,
         timeout: None,
     })
 }
@@ -133,6 +136,9 @@ pub fn smb2_cmd_flush_reply_async(callback: Option<CommandCallback>) -> Result<P
         input: IoVectors::default(),
         callback,
         compound: false,
+        next_compound: None,
+        prev_compound_mid: 0,
+        payload: None,
         timeout: None,
     })
 }

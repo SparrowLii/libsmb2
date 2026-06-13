@@ -1,5 +1,7 @@
 //! NEGOTIATE command pack/unpack skeleton migrated from `lib/smb2-cmd-negotiate.c`.
 
+use super::init::InitState;
+
 const SMB2_HEADER_SIZE: usize = 64;
 const SMB2_GUID_SIZE: usize = 16;
 const SMB2_SALT_SIZE: usize = 32;
@@ -214,6 +216,23 @@ impl Smb2NegotiateReply {
             negotiate_context_offset: 0,
             negotiate_contexts: Vec::new(),
             cipher: None,
+        }
+    }
+
+    /// Applies negotiated reply metadata to the shared initialization state skeleton.
+    pub fn apply_to_state(&self, state: &mut InitState) {
+        state.apply_negotiate_reply(
+            self.dialect_revision.0,
+            self.capabilities,
+            self.max_transact_size,
+            self.max_read_size,
+            self.max_write_size,
+        );
+        state.config.security_mode = self.security_mode;
+        state.update_preauth_hash_skeleton(&self.security_buffer);
+        for context in &self.negotiate_contexts {
+            state.update_preauth_hash_skeleton(&context.context_type.as_raw().to_le_bytes());
+            state.update_preauth_hash_skeleton(&context.data);
         }
     }
 }

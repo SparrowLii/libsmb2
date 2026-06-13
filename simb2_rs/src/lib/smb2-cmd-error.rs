@@ -1,8 +1,7 @@
 //! ERROR response pack/unpack skeleton migrated from `lib/smb2-cmd-error.c`.
 
-use crate::include::libsmb2_private::{IoVec, IoVectors, Pdu, Smb2Header, SMB2_SIGNATURE_SIZE};
+use crate::include::libsmb2_private::{IoVec, IoVectors, Pdu, Smb2Header};
 use crate::include::smb2::libsmb2::{CommandCallback, ErrorCode, Result};
-use crate::include::smb2::smb2::SMB2_PROTOCOL_ID;
 
 /// Fixed `ERROR` reply structure size from `SMB2_ERROR_REPLY_SIZE`.
 pub const SMB2_ERROR_REPLY_SIZE: u16 = 9;
@@ -48,7 +47,7 @@ impl Smb2ErrorReply {
     ///
     /// Returns `ErrorCode(-22)` if a fixed-field offset falls outside the buffer.
     pub fn encode_fixed(&self) -> Result<Vec<u8>> {
-        let mut buf = vec![0; usize::from(SMB2_ERROR_REPLY_SIZE)];
+        let mut buf = vec![0; ERROR_REPLY_FIXED_WIRE_SIZE];
         put_u16(&mut buf, 0, SMB2_ERROR_REPLY_SIZE)?;
         put_u8(&mut buf, 2, self.error_context_count)?;
         put_u32(&mut buf, 4, self.byte_count)?;
@@ -98,15 +97,12 @@ pub fn smb2_cmd_error_reply_async(
     status: u32,
     callback: Option<CommandCallback>,
 ) -> Result<Pdu> {
-    let out = iovectors_from_fixed(rep.encode_fixed()?);
-    Ok(Pdu {
-        header: error_reply_header(causing_command, status),
+    let out = iovectors_from_reply(rep, rep.encode_fixed()?);
+    Ok(Pdu::from_parts(
+        error_reply_header(causing_command, status),
         out,
-        input: IoVectors::default(),
         callback,
-        compound: false,
-        timeout: None,
-    })
+    ))
 }
 
 /// Encodes the fixed ERROR reply body, mirroring `smb2_encode_error_reply`.
@@ -136,8 +132,6 @@ pub fn smb2_process_error_variable(mut rep: Smb2ErrorReply, error_data: &[u8]) -
 
 fn error_reply_header(causing_command: u8, status: u32) -> Smb2Header {
     Smb2Header {
-        protocol_id: SMB2_PROTOCOL_ID,
-        struct_size: 64,
         credit_charge: 0,
         status,
         command: u16::from(causing_command),
@@ -149,15 +143,22 @@ fn error_reply_header(causing_command: u8, status: u32) -> Smb2Header {
         tree_id: 0,
         async_id: 0,
         session_id: 0,
-        signature: [0; SMB2_SIGNATURE_SIZE],
+        ..Smb2Header::default()
     }
 }
 
-fn iovectors_from_fixed(buf: Vec<u8>) -> IoVectors {
+fn iovectors_from_reply(rep: &Smb2ErrorReply, fixed: Vec<u8>) -> IoVectors {
+    let mut vectors = vec![IoVec { buf: fixed }];
+    if !rep.error_data.is_empty() {
+        vectors.push(IoVec {
+            buf: rep.error_data.clone(),
+        });
+    }
+    let total_size = vectors.iter().map(IoVec::len).sum();
     IoVectors {
         done: 0,
-        total_size: buf.len(),
-        vectors: vec![IoVec { buf }],
+        total_size,
+        vectors,
     }
 }
 

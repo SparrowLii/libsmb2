@@ -1,7 +1,16 @@
 //! SESSION_SETUP command pack/unpack skeleton migrated from `lib/smb2-cmd-session-setup.c`.
 
+use super::init::InitState;
+use super::smb2_signing::{
+    derive_session_keys, SessionDerivedKeys, SigningError, SigningResult, Smb2SigningContext,
+    SMB2_PREAUTH_HASH_SIZE,
+};
+use super::smb3_seal::{Smb3SealContext, SMB3_AES128_CCM_NONCE_SIZE};
 use crate::include::libsmb2_private::SMB2_HEADER_SIZE;
 use crate::include::smb2::smb2::Command;
+
+use super::ntlmssp::{get_message_type, NtlmBlob, NtlmError, NtlmMessageType};
+use super::spnego_wrapper::{SpnegoBlobKind, SpnegoError, SpnegoWrapper};
 
 /// Session setup request fixed structure size from `SMB2_SESSION_SETUP_REQUEST_SIZE`.
 pub const SMB2_SESSION_SETUP_REQUEST_SIZE: u16 = 25;
@@ -44,6 +53,12 @@ pub enum SessionSetupError {
     },
     /// The security buffer offset overlaps the fixed SESSION_SETUP payload.
     SecurityBufferOverlapsFixedPart { offset: usize, minimum: usize },
+    /// The security buffer token is not a supported SPNEGO token.
+    InvalidSpnegoToken,
+    /// The unwrapped security buffer token is not a supported NTLMSSP token.
+    InvalidNtlmToken,
+    /// Signing or sealing key derivation failed.
+    Signing(SigningError),
 }
 
 impl core::fmt::Display for SessionSetupError {
@@ -64,11 +79,53 @@ impl core::fmt::Display for SessionSetupError {
                 f,
                 "session setup security buffer offset {offset} overlaps fixed payload ending at {minimum}"
             ),
+            Self::InvalidSpnegoToken => write!(f, "invalid session setup SPNEGO token"),
+            Self::InvalidNtlmToken => write!(f, "invalid session setup NTLMSSP token"),
+            Self::Signing(error) => write!(f, "session setup key derivation failed: {error:?}"),
         }
     }
 }
 
 impl std::error::Error for SessionSetupError {}
+
+impl From<SpnegoError> for SessionSetupError {
+    fn from(_error: SpnegoError) -> Self {
+        Self::InvalidSpnegoToken
+    }
+}
+
+impl From<NtlmError> for SessionSetupError {
+    fn from(_error: NtlmError) -> Self {
+        Self::InvalidNtlmToken
+    }
+}
+
+impl From<SigningError> for SessionSetupError {
+    fn from(error: SigningError) -> Self {
+        Self::Signing(error)
+    }
+}
+
+/// SESSION_SETUP security buffer wrapper kind after SPNEGO dispatch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SessionSetupTokenWrapper {
+    /// The security buffer carried a raw NTLMSSP token.
+    RawNtlmssp,
+    /// The security buffer carried a SPNEGO token of the given shape.
+    Spnego(SpnegoBlobKind),
+}
+
+/// Parsed SESSION_SETUP security buffer token metadata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionSetupSecurityToken {
+    /// Security token bytes after SPNEGO unwrap; empty for control-only SPNEGO target tokens.
+    pub token: Vec<u8>,
+    /// Raw/SPNEGO wrapper detected in the security buffer.
+    pub wrapper: SessionSetupTokenWrapper,
+    /// Parsed NTLMSSP message type when the token carries an NTLMSSP payload.
+    pub ntlm_message_type: Option<NtlmMessageType>,
+}
 
 /// Owned Rust equivalent of `struct smb2_session_setup_request`.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -168,6 +225,21 @@ impl Smb2SessionSetupRequest {
         self.security_buffer.clear();
         self.security_buffer.extend_from_slice(security_buffer);
     }
+
+    /// Replaces the variable security buffer with a raw or SPNEGO-wrapped NTLMSSP token.
+    pub fn attach_ntlm_token(&mut self, token: &NtlmBlob) {
+        self.attach_security_buffer(token.as_bytes());
+    }
+
+    /// Parses the SESSION_SETUP security buffer as SPNEGO and NTLMSSP token metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the security buffer is neither raw NTLMSSP nor a
+    /// supported SPNEGO wrapper around an NTLMSSP token.
+    pub fn decode_security_token(&self) -> Result<SessionSetupSecurityToken, SessionSetupError> {
+        decode_session_setup_security_token(&self.security_buffer)
+    }
 }
 
 /// Owned Rust equivalent of `struct smb2_session_setup_reply`.
@@ -175,6 +247,10 @@ impl Smb2SessionSetupRequest {
 pub struct Smb2SessionSetupReply {
     /// Server session flags.
     pub session_flags: u16,
+    /// Session id copied from the SMB2 reply header by higher-level skeleton code.
+    pub session_id: u64,
+    /// Session key bytes supplied by the authentication layer skeleton.
+    pub session_key: Vec<u8>,
     /// Absolute security buffer offset from the SMB2 header start.
     pub security_buffer_offset: u16,
     /// Opaque authentication token carried as the variable security buffer.
@@ -186,6 +262,8 @@ impl Smb2SessionSetupReply {
     pub fn new(session_flags: u16, security_buffer: Vec<u8>) -> Self {
         Self {
             session_flags,
+            session_id: 0,
+            session_key: Vec::new(),
             security_buffer_offset: 0,
             security_buffer,
         }
@@ -237,6 +315,8 @@ impl Smb2SessionSetupReply {
         )?;
         Ok(Self {
             session_flags: read_u16(fixed, 2),
+            session_id: 0,
+            session_key: Vec::new(),
             security_buffer_offset: read_u16(fixed, 4),
             security_buffer: Vec::new(),
         })
@@ -275,6 +355,87 @@ impl Smb2SessionSetupReply {
         self.security_buffer.clear();
         self.security_buffer.extend_from_slice(&pdu[offset..end]);
         Ok(())
+    }
+
+    /// Records metadata supplied outside the SESSION_SETUP fixed payload.
+    pub fn set_session_metadata(&mut self, session_id: u64, session_key: &[u8]) {
+        self.session_id = session_id;
+        self.session_key.clear();
+        self.session_key.extend_from_slice(session_key);
+    }
+
+    /// Derives signing and sealing keys from attached session key metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the HMAC-SHA256 counter-mode KDF fails.
+    pub fn derive_session_keys(
+        &self,
+        dialect: u16,
+        preauth_hash: Option<&[u8; SMB2_PREAUTH_HASH_SIZE]>,
+    ) -> SigningResult<SessionDerivedKeys> {
+        derive_session_keys(dialect, &self.session_key, preauth_hash)
+    }
+
+    /// Builds a signing context from attached session key metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when key derivation fails.
+    pub fn signing_context(
+        &self,
+        dialect: u16,
+        preauth_hash: Option<&[u8; SMB2_PREAUTH_HASH_SIZE]>,
+    ) -> SigningResult<Smb2SigningContext> {
+        let keys = self.derive_session_keys(dialect, preauth_hash)?;
+        Ok(Smb2SigningContext::new(
+            dialect,
+            self.session_id,
+            self.session_key.len(),
+            keys.signing_key,
+        ))
+    }
+
+    /// Builds a sealing context from attached session key metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when key derivation fails.
+    pub fn sealing_context(
+        &self,
+        dialect: u16,
+        seal: bool,
+        preauth_hash: Option<&[u8; SMB2_PREAUTH_HASH_SIZE]>,
+        aes128_ccm_nonce: [u8; SMB3_AES128_CCM_NONCE_SIZE],
+    ) -> SigningResult<Smb3SealContext> {
+        let keys = self.derive_session_keys(dialect, preauth_hash)?;
+        Ok(Smb3SealContext::from_session_keys(
+            seal,
+            self.session_id,
+            keys,
+            aes128_ccm_nonce,
+        ))
+    }
+
+    /// Applies reply metadata to the shared initialization state skeleton.
+    pub fn apply_to_state(&self, state: &mut InitState) {
+        state.apply_session_setup_reply(self.session_id, &self.session_key);
+    }
+
+    /// Replaces the variable security buffer with a raw or SPNEGO-wrapped NTLMSSP token.
+    pub fn attach_ntlm_token(&mut self, token: &NtlmBlob) {
+        self.security_buffer.clear();
+        self.security_buffer.extend_from_slice(token.as_bytes());
+    }
+
+    /// Parses the SESSION_SETUP security buffer as SPNEGO and NTLMSSP token metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the security buffer is neither raw NTLMSSP nor a
+    /// supported SPNEGO wrapper around an NTLMSSP token.
+    pub fn decode_security_token(&self) -> Result<SessionSetupSecurityToken, SessionSetupError> {
+        decode_session_setup_security_token(&self.security_buffer)
     }
 }
 
@@ -328,6 +489,33 @@ pub fn smb2_cmd_session_setup_reply_async(
         command: Command::SessionSetup,
         fixed: rep.encode_fixed()?,
         security_buffer,
+    })
+}
+
+/// Parses a SESSION_SETUP security buffer into SPNEGO wrapper and NTLMSSP type metadata.
+///
+/// # Errors
+///
+/// Returns an error when the security buffer is neither raw NTLMSSP nor a
+/// supported SPNEGO wrapper around an NTLMSSP token.
+pub fn decode_session_setup_security_token(
+    security_buffer: &[u8],
+) -> Result<SessionSetupSecurityToken, SessionSetupError> {
+    let unwrapped = SpnegoWrapper::new().unwrap_blob(security_buffer, false)?;
+    let wrapper = match unwrapped.kind {
+        SpnegoBlobKind::RawNtlmssp => SessionSetupTokenWrapper::RawNtlmssp,
+        kind => SessionSetupTokenWrapper::Spnego(kind),
+    };
+    let ntlm_message_type = if unwrapped.token.is_empty() {
+        None
+    } else {
+        Some(get_message_type(unwrapped.token)?)
+    };
+
+    Ok(SessionSetupSecurityToken {
+        token: unwrapped.token.to_vec(),
+        wrapper,
+        ntlm_message_type,
     })
 }
 

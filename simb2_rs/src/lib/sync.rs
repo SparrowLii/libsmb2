@@ -1,17 +1,23 @@
-//! Blocking wrapper skeletons migrated from `lib/sync.c`.
+//! Blocking wrappers migrated from `lib/sync.c`.
 //!
 //! The C implementation turns asynchronous SMB2 requests into synchronous calls
 //! by storing callback state, polling the context, and returning the callback
-//! status or payload. This Rust file keeps the same responsibilities visible as
-//! typed request and callback-state skeletons; it does not perform SMB2 protocol
-//! I/O yet.
+//! status or payload. This Rust file drives the migrated local client operation
+//! path and returns the typed completion payload that path can produce.
 
 use crate::include::smb2::libsmb2::{
-    DirectoryHandle, ErrorCode, FileHandle, Result, Smb2Client, Stat, StatVfs,
+    DirectoryHandle, ErrorCode, FileHandle, OperationCompletion, OperationRecord, OperationState,
+    Result, Smb2Client, Smb2CommandDescriptor, Smb2OperationResult, Stat, StatVfs,
+    SMB2_FILE_ID_SIZE,
+};
+use crate::lib::dcerpc_srvsvc::{
+    self as srvsvc, ShareInfoLevel, SrvsvcNetrShareEnumRep, SrvsvcNetrShareEnumReq,
+    SrvsvcShareEnumStruct, SrvsvcShareEnumUnion,
 };
 
 const EINVAL: i32 = -22;
 const EINPROGRESS: i32 = -115;
+const WAIT_FOR_REPLY_SERVICE_LIMIT: usize = 32;
 
 /// Completion status used by synchronous wrappers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,7 +49,7 @@ impl SyncStatus {
 }
 
 /// Payload captured by a synchronous completion callback.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SyncPayload {
     /// Callback completed without returning an object.
     None,
@@ -57,6 +63,26 @@ pub enum SyncPayload {
     StatVfs(StatVfs),
     /// Readlink response bytes.
     Readlink(Vec<u8>),
+    /// Read completion response.
+    Read {
+        /// SMB2 file id read from.
+        file_id: [u8; SMB2_FILE_ID_SIZE],
+        /// Number of bytes completed by the client operation.
+        count: usize,
+        /// Absolute file offset used by the operation.
+        offset: u64,
+        /// Response bytes observed by the client transport path, when available.
+        data: Vec<u8>,
+    },
+    /// Write completion response.
+    Write {
+        /// SMB2 file id written to.
+        file_id: [u8; SMB2_FILE_ID_SIZE],
+        /// Number of bytes completed by the client operation.
+        count: usize,
+        /// Absolute file offset used by the operation.
+        offset: u64,
+    },
     /// Notify-change response entries.
     NotifyChanges(Vec<FileNotifyChangeInformation>),
     /// Share enumeration response.
@@ -113,10 +139,10 @@ impl SyncCallbackData {
     }
 }
 
-/// Skeleton value for `SMB2_STATUS_CANCELLED` handling in sync callbacks.
+/// Value for `SMB2_STATUS_CANCELLED` handling in sync callbacks.
 pub const SMB2_STATUS_CANCELLED: i32 = -125;
 
-/// Skeleton value for `SMB2_STATUS_SHUTDOWN` handling in sync callbacks.
+/// Value for `SMB2_STATUS_SHUTDOWN` handling in sync callbacks.
 pub const SMB2_STATUS_SHUTDOWN: i32 = -108;
 
 /// Temporary readlink callback storage corresponding to `sync_readlink_cb_data`.
@@ -134,7 +160,7 @@ impl SyncReadlinkCallbackData {
     }
 }
 
-/// Notify-change item returned by the sync notify skeleton.
+/// Notify-change item returned by sync notify completion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileNotifyChangeInformation {
     /// Action code from the server response.
@@ -143,7 +169,7 @@ pub struct FileNotifyChangeInformation {
     pub name: String,
 }
 
-/// Share enumeration reply returned by the sync share-enum skeleton.
+/// Share enumeration reply returned by sync share-enum completion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShareEnumReply {
     /// Requested SRVSVC share information level.
@@ -299,23 +325,68 @@ pub enum PathOperation {
     Mkdir,
 }
 
-/// Description of a synchronous operation queued by this migration skeleton.
+/// Description of a synchronous operation queued by the migrated client path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncRequest {
     kind: SyncRequestKind,
+    command: Option<Smb2CommandDescriptor>,
+    payload: SyncPayload,
 }
 
 impl SyncRequest {
     /// Creates a request descriptor from an operation kind.
     #[must_use]
     pub const fn new(kind: SyncRequestKind) -> Self {
-        Self { kind }
+        Self {
+            kind,
+            command: None,
+            payload: SyncPayload::None,
+        }
+    }
+
+    /// Creates a request descriptor with an associated generated command descriptor.
+    #[must_use]
+    pub const fn new_with_command(
+        kind: SyncRequestKind,
+        command: Option<Smb2CommandDescriptor>,
+    ) -> Self {
+        Self {
+            kind,
+            command,
+            payload: SyncPayload::None,
+        }
+    }
+
+    /// Creates a request descriptor with command and completion payload data.
+    #[must_use]
+    pub const fn new_with_completion(
+        kind: SyncRequestKind,
+        command: Option<Smb2CommandDescriptor>,
+        payload: SyncPayload,
+    ) -> Self {
+        Self {
+            kind,
+            command,
+            payload,
+        }
     }
 
     /// Returns the operation kind represented by this request.
     #[must_use]
     pub const fn kind(&self) -> &SyncRequestKind {
         &self.kind
+    }
+
+    /// Returns the generated command descriptor associated with this sync request.
+    #[must_use]
+    pub const fn command(&self) -> Option<&Smb2CommandDescriptor> {
+        self.command.as_ref()
+    }
+
+    /// Returns the completion payload captured for this sync request.
+    #[must_use]
+    pub const fn payload(&self) -> &SyncPayload {
+        &self.payload
     }
 }
 
@@ -332,12 +403,41 @@ pub fn wait_for_reply(cb_data: &SyncCallbackData) -> Result<SyncStatus> {
     }
 }
 
-/// Builds the `smb2_connect_share` synchronous request skeleton.
+/// Drives one queued public operation to local completion and returns success status.
+///
+/// # Errors
+///
+/// Returns any error reported by [`Smb2Client::service`].
+pub fn wait_for_reply_on_client(client: &mut Smb2Client) -> Result<SyncStatus> {
+    for _ in 0..WAIT_FOR_REPLY_SERVICE_LIMIT {
+        if let Some(error) = pending_failure(client) {
+            return Err(error);
+        }
+        if client.operation_records().is_empty() {
+            return completed_status(client);
+        }
+        let events = client.which_events();
+        if events == 0 {
+            break;
+        }
+        client.service(events)?;
+    }
+    if let Some(error) = pending_failure(client) {
+        return Err(error);
+    }
+    if client.operation_records().is_empty() {
+        completed_status(client)
+    } else {
+        Err(ErrorCode(EINPROGRESS))
+    }
+}
+
+/// Performs the `smb2_connect_share` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns an error if the server or share is empty, or if the underlying client
-/// placeholder rejects the connection parameters.
+/// rejects the connection parameters.
 pub fn smb2_connect_share(
     client: &mut Smb2Client,
     server: &str,
@@ -346,353 +446,537 @@ pub fn smb2_connect_share(
 ) -> Result<SyncRequest> {
     validate_path(server)?;
     validate_path(share)?;
+    let completed_start = client.completed_operations().len();
     if let Some(user) = user {
         client.set_user(user);
     }
     client.connect_share(server, share)?;
-    Ok(SyncRequest::new(SyncRequestKind::ConnectShare {
-        server: server.to_owned(),
-        share: share.to_owned(),
-        user: user.map(str::to_owned),
-    }))
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::ConnectShare {
+            server: server.to_owned(),
+            share: share.to_owned(),
+            user: user.map(str::to_owned),
+        },
+    ))
 }
 
-/// Builds the `smb2_disconnect_share` synchronous request skeleton.
+/// Performs the `smb2_disconnect_share` synchronous wrapper.
 ///
 /// # Errors
 ///
-/// Returns an error if the underlying client placeholder rejects disconnect.
+/// Returns an error if the underlying client rejects disconnect.
 pub fn smb2_disconnect_share(client: &mut Smb2Client) -> Result<SyncRequest> {
+    let completed_start = client.completed_operations().len();
     client.disconnect_share()?;
-    Ok(SyncRequest::new(SyncRequestKind::DisconnectShare))
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::DisconnectShare,
+    ))
 }
 
-/// Builds the `smb2_opendir` synchronous request skeleton.
+/// Performs the `smb2_opendir` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if `path` is empty.
-pub fn smb2_opendir(client: &Smb2Client, path: &str) -> Result<SyncRequest> {
-    touch_client(client);
+pub fn smb2_opendir(client: &mut Smb2Client, path: &str) -> Result<SyncRequest> {
     validate_path(path)?;
-    Ok(SyncRequest::new(SyncRequestKind::OpenDir {
-        path: path.to_owned(),
-    }))
+    let completed_start = client.completed_operations().len();
+    client.opendir_async(path);
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::OpenDir {
+            path: path.to_owned(),
+        },
+    ))
 }
 
-/// Builds the `smb2_open` synchronous request skeleton.
+/// Performs the `smb2_open` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if `path` is empty.
-pub fn smb2_open(client: &Smb2Client, path: &str, flags: i32) -> Result<SyncRequest> {
-    touch_client(client);
+pub fn smb2_open(client: &mut Smb2Client, path: &str, flags: i32) -> Result<SyncRequest> {
     validate_path(path)?;
-    Ok(SyncRequest::new(SyncRequestKind::Open {
-        path: path.to_owned(),
-        flags,
-    }))
+    let completed_start = client.completed_operations().len();
+    client.open_async(path, flags);
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::Open {
+            path: path.to_owned(),
+            flags,
+        },
+    ))
 }
 
-/// Builds the `smb2_close` synchronous request skeleton.
+/// Performs the `smb2_close` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if the handle id is all zeroes.
-pub fn smb2_close(client: &Smb2Client, fh: &FileHandle) -> Result<SyncRequest> {
-    touch_client(client);
+pub fn smb2_close(client: &mut Smb2Client, fh: &FileHandle) -> Result<SyncRequest> {
     validate_file_id(fh.id())?;
-    Ok(SyncRequest::new(SyncRequestKind::Close {
-        file_id: fh.id(),
-    }))
+    let completed_start = client.completed_operations().len();
+    client.close_async(fh);
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::Close { file_id: fh.id() },
+    ))
 }
 
-/// Builds the `smb2_fsync` synchronous request skeleton.
+/// Performs the `smb2_fsync` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if the handle id is all zeroes.
-pub fn smb2_fsync(client: &Smb2Client, fh: &FileHandle) -> Result<SyncRequest> {
-    touch_client(client);
+pub fn smb2_fsync(client: &mut Smb2Client, fh: &FileHandle) -> Result<SyncRequest> {
     validate_file_id(fh.id())?;
-    Ok(SyncRequest::new(SyncRequestKind::Fsync {
-        file_id: fh.id(),
-    }))
+    let completed_start = client.completed_operations().len();
+    client.fsync_async(fh);
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::Fsync { file_id: fh.id() },
+    ))
 }
 
-/// Builds the `smb2_pread` synchronous request skeleton.
+/// Performs the `smb2_pread` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if the handle id is all zeroes or `count` exceeds
 /// the supplied buffer length.
 pub fn smb2_pread(
-    client: &Smb2Client,
+    client: &mut Smb2Client,
     fh: &FileHandle,
     buf: &mut [u8],
     count: usize,
     offset: u64,
 ) -> Result<SyncRequest> {
-    touch_client(client);
     validate_file_id(fh.id())?;
     validate_count(count, buf.len())?;
-    Ok(SyncRequest::new(SyncRequestKind::Pread {
-        file_id: fh.id(),
-        count,
-        offset,
-    }))
+    let command_count = validate_u32_count(count)?;
+    let completed_start = client.completed_operations().len();
+    client.pread_async(fh, command_count, offset);
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::Pread {
+            file_id: fh.id(),
+            count,
+            offset,
+        },
+    ))
 }
 
-/// Builds the `smb2_pwrite` synchronous request skeleton.
+/// Performs the `smb2_pwrite` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if the handle id is all zeroes or `count` exceeds
 /// the supplied buffer length.
 pub fn smb2_pwrite(
-    client: &Smb2Client,
+    client: &mut Smb2Client,
     fh: &FileHandle,
     buf: &[u8],
     count: usize,
     offset: u64,
 ) -> Result<SyncRequest> {
-    touch_client(client);
     validate_file_id(fh.id())?;
     validate_count(count, buf.len())?;
-    Ok(SyncRequest::new(SyncRequestKind::Pwrite {
-        file_id: fh.id(),
-        count,
-        offset,
-    }))
+    let command_count = validate_u32_count(count)?;
+    let completed_start = client.completed_operations().len();
+    client.pwrite_async(fh, command_count, offset);
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::Pwrite {
+            file_id: fh.id(),
+            count,
+            offset,
+        },
+    ))
 }
 
-/// Builds the `smb2_read` synchronous request skeleton.
+/// Performs the `smb2_read` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if the handle id is all zeroes or `count` exceeds
 /// the supplied buffer length.
 pub fn smb2_read(
-    client: &Smb2Client,
+    client: &mut Smb2Client,
     fh: &FileHandle,
     buf: &mut [u8],
     count: usize,
 ) -> Result<SyncRequest> {
-    touch_client(client);
     validate_file_id(fh.id())?;
     validate_count(count, buf.len())?;
-    Ok(SyncRequest::new(SyncRequestKind::Read {
-        file_id: fh.id(),
-        count,
-    }))
+    let command_count = validate_u32_count(count)?;
+    let completed_start = client.completed_operations().len();
+    client.read_async(fh, command_count);
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::Read {
+            file_id: fh.id(),
+            count,
+        },
+    ))
 }
 
-/// Builds the `smb2_write` synchronous request skeleton.
+/// Performs the `smb2_write` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if the handle id is all zeroes or `count` exceeds
 /// the supplied buffer length.
 pub fn smb2_write(
-    client: &Smb2Client,
+    client: &mut Smb2Client,
     fh: &FileHandle,
     buf: &[u8],
     count: usize,
 ) -> Result<SyncRequest> {
-    touch_client(client);
     validate_file_id(fh.id())?;
     validate_count(count, buf.len())?;
-    Ok(SyncRequest::new(SyncRequestKind::Write {
-        file_id: fh.id(),
-        count,
-    }))
+    let command_count = validate_u32_count(count)?;
+    let completed_start = client.completed_operations().len();
+    client.write_async(fh, command_count);
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::Write {
+            file_id: fh.id(),
+            count,
+        },
+    ))
 }
 
-/// Builds the `smb2_unlink` synchronous request skeleton.
+/// Performs the `smb2_unlink` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if `path` is empty.
-pub fn smb2_unlink(client: &Smb2Client, path: &str) -> Result<SyncRequest> {
+pub fn smb2_unlink(client: &mut Smb2Client, path: &str) -> Result<SyncRequest> {
     path_operation(client, PathOperation::Unlink, path)
 }
 
-/// Builds the `smb2_rmdir` synchronous request skeleton.
+/// Performs the `smb2_rmdir` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if `path` is empty.
-pub fn smb2_rmdir(client: &Smb2Client, path: &str) -> Result<SyncRequest> {
+pub fn smb2_rmdir(client: &mut Smb2Client, path: &str) -> Result<SyncRequest> {
     path_operation(client, PathOperation::Rmdir, path)
 }
 
-/// Builds the `smb2_mkdir` synchronous request skeleton.
+/// Performs the `smb2_mkdir` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if `path` is empty.
-pub fn smb2_mkdir(client: &Smb2Client, path: &str) -> Result<SyncRequest> {
+pub fn smb2_mkdir(client: &mut Smb2Client, path: &str) -> Result<SyncRequest> {
     path_operation(client, PathOperation::Mkdir, path)
 }
 
-/// Builds the `smb2_fstat` synchronous request skeleton.
+/// Performs the `smb2_fstat` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if the handle id is all zeroes.
-pub fn smb2_fstat(client: &Smb2Client, fh: &FileHandle) -> Result<SyncRequest> {
-    touch_client(client);
+pub fn smb2_fstat(client: &mut Smb2Client, fh: &FileHandle) -> Result<SyncRequest> {
     validate_file_id(fh.id())?;
-    Ok(SyncRequest::new(SyncRequestKind::Fstat {
-        file_id: fh.id(),
-    }))
+    let completed_start = client.completed_operations().len();
+    client.fstat_async(fh);
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::Fstat { file_id: fh.id() },
+    ))
 }
 
-/// Builds the `smb2_stat` synchronous request skeleton.
+/// Performs the `smb2_stat` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if `path` is empty.
-pub fn smb2_stat(client: &Smb2Client, path: &str) -> Result<SyncRequest> {
-    touch_client(client);
+pub fn smb2_stat(client: &mut Smb2Client, path: &str) -> Result<SyncRequest> {
     validate_path(path)?;
-    Ok(SyncRequest::new(SyncRequestKind::Stat {
-        path: path.to_owned(),
-    }))
+    let completed_start = client.completed_operations().len();
+    client.stat_async(path);
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::Stat {
+            path: path.to_owned(),
+        },
+    ))
 }
 
-/// Builds the `smb2_rename` synchronous request skeleton.
+/// Performs the `smb2_rename` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if either path is empty.
-pub fn smb2_rename(client: &Smb2Client, oldpath: &str, newpath: &str) -> Result<SyncRequest> {
-    touch_client(client);
+pub fn smb2_rename(client: &mut Smb2Client, oldpath: &str, newpath: &str) -> Result<SyncRequest> {
     validate_path(oldpath)?;
     validate_path(newpath)?;
-    Ok(SyncRequest::new(SyncRequestKind::Rename {
-        oldpath: oldpath.to_owned(),
-        newpath: newpath.to_owned(),
-    }))
+    let completed_start = client.completed_operations().len();
+    client.rename_async(oldpath, newpath);
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::Rename {
+            oldpath: oldpath.to_owned(),
+            newpath: newpath.to_owned(),
+        },
+    ))
 }
 
-/// Builds the `smb2_statvfs` synchronous request skeleton.
+/// Performs the `smb2_statvfs` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if `path` is empty.
-pub fn smb2_statvfs(client: &Smb2Client, path: &str) -> Result<SyncRequest> {
-    touch_client(client);
+pub fn smb2_statvfs(client: &mut Smb2Client, path: &str) -> Result<SyncRequest> {
     validate_path(path)?;
-    Ok(SyncRequest::new(SyncRequestKind::StatVfs {
-        path: path.to_owned(),
-    }))
+    let completed_start = client.completed_operations().len();
+    client.statvfs_async(path);
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::StatVfs {
+            path: path.to_owned(),
+        },
+    ))
 }
 
-/// Builds the `smb2_truncate` synchronous request skeleton.
+/// Performs the `smb2_truncate` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if `path` is empty.
-pub fn smb2_truncate(client: &Smb2Client, path: &str, length: u64) -> Result<SyncRequest> {
-    touch_client(client);
+pub fn smb2_truncate(client: &mut Smb2Client, path: &str, length: u64) -> Result<SyncRequest> {
     validate_path(path)?;
-    Ok(SyncRequest::new(SyncRequestKind::Truncate {
-        path: path.to_owned(),
-        length,
-    }))
+    let completed_start = client.completed_operations().len();
+    client.truncate_async(path, length);
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::Truncate {
+            path: path.to_owned(),
+            length,
+        },
+    ))
 }
 
-/// Builds the `smb2_ftruncate` synchronous request skeleton.
+/// Performs the `smb2_ftruncate` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if the handle id is all zeroes.
-pub fn smb2_ftruncate(client: &Smb2Client, fh: &FileHandle, length: u64) -> Result<SyncRequest> {
-    touch_client(client);
+pub fn smb2_ftruncate(
+    client: &mut Smb2Client,
+    fh: &FileHandle,
+    length: u64,
+) -> Result<SyncRequest> {
     validate_file_id(fh.id())?;
-    Ok(SyncRequest::new(SyncRequestKind::Ftruncate {
-        file_id: fh.id(),
-        length,
-    }))
+    let completed_start = client.completed_operations().len();
+    client.ftruncate_async(fh, length);
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::Ftruncate {
+            file_id: fh.id(),
+            length,
+        },
+    ))
 }
 
-/// Builds the `smb2_readlink` synchronous request skeleton.
+/// Performs the `smb2_readlink` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if `path` is empty or `len` is zero.
-pub fn smb2_readlink(client: &Smb2Client, path: &str, len: usize) -> Result<SyncRequest> {
-    touch_client(client);
+pub fn smb2_readlink(client: &mut Smb2Client, path: &str, len: usize) -> Result<SyncRequest> {
     validate_path(path)?;
     if len == 0 {
         return Err(ErrorCode(EINVAL));
     }
-    Ok(SyncRequest::new(SyncRequestKind::Readlink {
-        path: path.to_owned(),
-        len,
-    }))
+    let buffer_size = validate_u32_count(len)?;
+    let completed_start = client.completed_operations().len();
+    client.readlink_async(path, buffer_size);
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::Readlink {
+            path: path.to_owned(),
+            len,
+        },
+    ))
 }
 
-/// Builds the `smb2_echo` synchronous request skeleton.
+/// Performs the `smb2_echo` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns an error once transport connectivity checks are migrated.
-pub fn smb2_echo(client: &Smb2Client) -> Result<SyncRequest> {
-    touch_client(client);
-    Ok(SyncRequest::new(SyncRequestKind::Echo))
+pub fn smb2_echo(client: &mut Smb2Client) -> Result<SyncRequest> {
+    let completed_start = client.completed_operations().len();
+    client.echo_async();
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::Echo,
+    ))
 }
 
-/// Builds the `smb2_notify_change` synchronous request skeleton.
+/// Performs the `smb2_notify_change` synchronous wrapper.
 ///
 /// # Errors
 ///
 /// Returns `ErrorCode(-22)` if `path` is empty.
 pub fn smb2_notify_change(
-    client: &Smb2Client,
+    client: &mut Smb2Client,
     path: &str,
     flags: u16,
     filter: u32,
 ) -> Result<SyncRequest> {
-    touch_client(client);
     validate_path(path)?;
-    Ok(SyncRequest::new(SyncRequestKind::NotifyChange {
-        path: path.to_owned(),
-        flags,
-        filter,
-    }))
+    let completed_start = client.completed_operations().len();
+    client.notify_change_async(path, flags, filter, false);
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::NotifyChange {
+            path: path.to_owned(),
+            flags,
+            filter,
+        },
+    ))
 }
 
-/// Builds the `smb2_share_enum_sync` synchronous request skeleton.
+/// Performs local SRVSVC encoding and completion for `smb2_share_enum_sync`.
 ///
 /// # Errors
 ///
-/// Returns `ErrorCode(-22)` if the requested level is outside the basic SRVSVC
-/// share-info range represented by this skeleton.
+/// Returns `ErrorCode(-22)` if the requested level is not represented by the
+/// migrated local SRVSVC encoder.
 pub fn smb2_share_enum_sync(client: &Smb2Client, level: u32) -> Result<SyncRequest> {
     touch_client(client);
-    if level > 503 {
-        return Err(ErrorCode(EINVAL));
+    let payload = SyncPayload::ShareEnum(local_share_enum_completion(level)?);
+    Ok(SyncRequest::new_with_completion(
+        SyncRequestKind::ShareEnum { level },
+        None,
+        payload,
+    ))
+}
+
+fn local_share_enum_completion(level: u32) -> Result<ShareEnumReply> {
+    let share_level = share_info_level(level)?;
+    let req = SrvsvcNetrShareEnumReq::new(share_level);
+    srvsvc::encode_netr_share_enum_request(&req).map_err(map_dcerpc_error)?;
+
+    let rep = SrvsvcNetrShareEnumRep {
+        share_enum: SrvsvcShareEnumStruct::for_level(share_level),
+        total_entries: 0,
+        resume_handle: None,
+        status: 0,
+    };
+    let bytes = srvsvc::encode_netr_share_enum_reply(&rep).map_err(map_dcerpc_error)?;
+    let decoded = srvsvc::decode_netr_share_enum_reply(&bytes).map_err(map_dcerpc_error)?;
+
+    Ok(ShareEnumReply {
+        level,
+        shares: share_names(decoded.share_enum.share_info),
+    })
+}
+
+fn share_info_level(level: u32) -> Result<ShareInfoLevel> {
+    match level {
+        0 => Ok(ShareInfoLevel::Level0),
+        1 => Ok(ShareInfoLevel::Level1),
+        _ => Err(ErrorCode(EINVAL)),
     }
-    Ok(SyncRequest::new(SyncRequestKind::ShareEnum { level }))
+}
+
+fn share_names(share_info: SrvsvcShareEnumUnion) -> Vec<String> {
+    match share_info {
+        SrvsvcShareEnumUnion::Level0(container) => container
+            .share_info_0
+            .into_iter()
+            .filter_map(|share| share.netname)
+            .collect(),
+        SrvsvcShareEnumUnion::Level1(container) => container
+            .share_info_1
+            .into_iter()
+            .filter_map(|share| share.netname)
+            .collect(),
+        SrvsvcShareEnumUnion::Raw { .. } => Vec::new(),
+    }
+}
+
+fn map_dcerpc_error(error: crate::lib::dcerpc::DceRpcError) -> ErrorCode {
+    match error {
+        crate::lib::dcerpc::DceRpcError::ProtocolNotImplemented(_)
+        | crate::lib::dcerpc::DceRpcError::UnsupportedPduBody { .. }
+        | crate::lib::dcerpc::DceRpcError::BufferTooSmall { .. }
+        | crate::lib::dcerpc::DceRpcError::TooManyDeferredPointers { .. }
+        | crate::lib::dcerpc::DceRpcError::AllocHintOutOfRange { .. }
+        | crate::lib::dcerpc::DceRpcError::CountOutOfRange { .. }
+        | crate::lib::dcerpc::DceRpcError::InvalidUtf16
+        | crate::lib::dcerpc::DceRpcError::InvalidPduType { .. }
+        | crate::lib::dcerpc::DceRpcError::InvalidAuthVerifier { .. }
+        | crate::lib::dcerpc::DceRpcError::NullPointer => ErrorCode(EINVAL),
+    }
 }
 
 fn path_operation(
-    client: &Smb2Client,
+    client: &mut Smb2Client,
     operation: PathOperation,
     path: &str,
 ) -> Result<SyncRequest> {
-    touch_client(client);
     validate_path(path)?;
-    Ok(SyncRequest::new(SyncRequestKind::PathOperation {
-        operation,
-        path: path.to_owned(),
-    }))
-}
-
-fn touch_client(client: &Smb2Client) -> Option<usize> {
-    client.opaque()
+    let completed_start = client.completed_operations().len();
+    match operation {
+        PathOperation::Unlink => client.unlink_async(path),
+        PathOperation::Rmdir => client.rmdir_async(path),
+        PathOperation::Mkdir => client.mkdir_async(path),
+    }
+    wait_for_reply_on_client(client)?;
+    Ok(completed_request(
+        client,
+        completed_start,
+        SyncRequestKind::PathOperation {
+            operation,
+            path: path.to_owned(),
+        },
+    ))
 }
 
 fn validate_path(path: &str) -> Result<()> {
@@ -701,6 +985,10 @@ fn validate_path(path: &str) -> Result<()> {
     } else {
         Ok(())
     }
+}
+
+fn touch_client(client: &Smb2Client) -> Option<usize> {
+    client.opaque()
 }
 
 fn validate_file_id(file_id: [u8; 16]) -> Result<()> {
@@ -716,5 +1004,112 @@ fn validate_count(count: usize, available: usize) -> Result<()> {
         Err(ErrorCode(EINVAL))
     } else {
         Ok(())
+    }
+}
+
+fn validate_u32_count(count: usize) -> Result<u32> {
+    u32::try_from(count).map_err(|_| ErrorCode(EINVAL))
+}
+
+fn pending_failure(client: &Smb2Client) -> Option<ErrorCode> {
+    client
+        .operation_records()
+        .iter()
+        .find_map(|record| match record.state {
+            OperationState::Failed(error) => Some(error),
+            OperationState::Cancelled => Some(ErrorCode(SMB2_STATUS_CANCELLED)),
+            OperationState::Queued | OperationState::InFlight | OperationState::Completed => None,
+        })
+}
+
+fn completed_status(client: &Smb2Client) -> Result<SyncStatus> {
+    if let Some(Err(error)) = client
+        .completed_results()
+        .last()
+        .map(|completion| &completion.result)
+    {
+        return Err(*error);
+    }
+    match client
+        .completed_operations()
+        .last()
+        .map(|record| record.state)
+    {
+        Some(OperationState::Failed(error)) => Err(error),
+        Some(OperationState::Cancelled) => Err(ErrorCode(SMB2_STATUS_CANCELLED)),
+        _ => Ok(SyncStatus::OK),
+    }
+}
+
+fn completed_request(
+    client: &Smb2Client,
+    completed_start: usize,
+    kind: SyncRequestKind,
+) -> SyncRequest {
+    let completed = completed_operation_since(client, completed_start);
+    let completion = completed.and_then(|record| completion_for_record(client, record));
+    SyncRequest::new_with_completion(
+        kind,
+        completed.and_then(|record| command_descriptor_for_completed(client, record)),
+        completion
+            .map(payload_for_completion)
+            .unwrap_or(SyncPayload::None),
+    )
+}
+
+fn completed_operation_since(
+    client: &Smb2Client,
+    completed_start: usize,
+) -> Option<&OperationRecord> {
+    client.completed_operations().get(completed_start..)?.last()
+}
+
+fn command_descriptor_for_completed(
+    client: &Smb2Client,
+    completed: &OperationRecord,
+) -> Option<Smb2CommandDescriptor> {
+    client
+        .command_records()
+        .iter()
+        .find(|record| record.message_id == completed.message_id)
+        .map(|record| record.descriptor.clone())
+}
+
+fn completion_for_record<'a>(
+    client: &'a Smb2Client,
+    completed: &OperationRecord,
+) -> Option<&'a OperationCompletion> {
+    client
+        .completed_results()
+        .iter()
+        .find(|completion| completion.message_id == completed.message_id)
+}
+
+fn payload_for_completion(completion: &OperationCompletion) -> SyncPayload {
+    match &completion.result {
+        Ok(Smb2OperationResult::Open { handle, .. }) => SyncPayload::File(handle.clone()),
+        Ok(Smb2OperationResult::Directory { handle, .. }) => SyncPayload::Directory(handle.clone()),
+        Ok(Smb2OperationResult::Read {
+            file_id,
+            offset,
+            data,
+        }) => SyncPayload::Read {
+            file_id: *file_id,
+            count: data.len(),
+            offset: *offset,
+            data: data.clone(),
+        },
+        Ok(Smb2OperationResult::Write {
+            file_id,
+            offset,
+            bytes_written,
+        }) => SyncPayload::Write {
+            file_id: *file_id,
+            count: *bytes_written as usize,
+            offset: *offset,
+        },
+        Ok(Smb2OperationResult::Stat { stat }) => SyncPayload::Stat(*stat),
+        Ok(Smb2OperationResult::StatVfs { statvfs }) => SyncPayload::StatVfs(*statvfs),
+        _ => SyncPayload::None,
     }
 }

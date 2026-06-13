@@ -1,8 +1,8 @@
 //! ASN.1 BER helpers migrated from `lib/asn1-ber.c`.
 //!
 //! This module mirrors the legacy C file's data model and function surface. The
-//! protocol encoders and decoders are intentionally skeletal until each call path
-//! is migrated with parity tests.
+//! protocol encoders and decoders are migrated incrementally as call paths gain
+//! parity coverage.
 
 /// Maximum number of object identifier elements accepted by the legacy BER code.
 pub const BER_MAX_OID_ELEMENTS: usize = 32;
@@ -172,6 +172,8 @@ pub enum BerError {
     InvalidType,
     /// The encoded length or value exceeds the supported Rust skeleton bounds.
     TooLarge,
+    /// The BER value is malformed or cannot be represented by this API.
+    InvalidValue,
     /// The requested C function counterpart has not been migrated yet.
     Unsupported(&'static str),
 }
@@ -217,6 +219,33 @@ impl Asn1BerOidValue {
     /// Clears the OID without changing its fixed storage.
     pub fn clear(&mut self) {
         self.length = 0;
+    }
+
+    /// Replaces the OID contents with the provided elements.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BerError::TooLarge`] when more than [`BER_MAX_OID_ELEMENTS`]
+    /// elements are supplied.
+    pub fn set_elements(&mut self, elements: &[u32]) -> BerResult<()> {
+        if elements.len() > BER_MAX_OID_ELEMENTS {
+            return Err(BerError::TooLarge);
+        }
+        self.elements[..elements.len()].copy_from_slice(elements);
+        self.length = elements.len();
+        Ok(())
+    }
+
+    /// Builds an OID value from a slice of elements.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BerError::TooLarge`] when more than [`BER_MAX_OID_ELEMENTS`]
+    /// elements are supplied.
+    pub fn from_elements(elements: &[u32]) -> BerResult<Self> {
+        let mut oid = Self::new();
+        oid.set_elements(elements)?;
+        Ok(oid)
     }
 }
 
@@ -291,6 +320,32 @@ impl<'src, 'dst> Asn1BerContext<'src, 'dst> {
         self.last_error
     }
 
+    /// Returns the number of unread input bytes.
+    #[must_use]
+    pub const fn remaining_src(&self) -> usize {
+        self.src.len().saturating_sub(self.src_tail)
+    }
+
+    /// Advances the input cursor by `len` bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BerError::UnexpectedEof`] when fewer than `len` bytes remain.
+    pub fn skip_src(&mut self, len: usize) -> BerResult<()> {
+        let end = self.src_tail.checked_add(len).ok_or(BerError::TooLarge)?;
+        if end > self.src.len() {
+            return self.record_error(BerError::UnexpectedEof);
+        }
+        self.src_tail = end;
+        Ok(())
+    }
+
+    /// Returns the bytes written to the destination buffer so far.
+    #[must_use]
+    pub fn dst_written(&self) -> Option<&[u8]> {
+        self.dst.as_deref().map(|dst| &dst[..self.dst_head])
+    }
+
     /// Reads the next byte from the input buffer.
     ///
     /// # Errors
@@ -334,40 +389,102 @@ impl<'src, 'dst> Asn1BerContext<'src, 'dst> {
         }
     }
 
-    /// Placeholder for `asn1ber_annotate_length` length back-annotation.
+    /// Back-annotates a reserved BER length field at `out_pos`.
     ///
     /// # Errors
     ///
-    /// Returns [`BerError::Unsupported`] until the BER length rewrite logic is migrated.
-    pub fn annotate_length(&mut self, _out_pos: usize, _reserved: usize) -> BerResult<()> {
-        self.record_error(BerError::Unsupported("asn1ber_annotate_length"))
+    /// Returns [`BerError::OutputTooSmall`] when no destination buffer exists,
+    /// [`BerError::InvalidValue`] when the saved position is invalid, or
+    /// [`BerError::TooLarge`] when the reserved field cannot hold the encoded length.
+    pub fn annotate_length(&mut self, out_pos: usize, reserved: usize) -> BerResult<()> {
+        let old_head = self.dst_head;
+        let bytes_made = old_head
+            .checked_sub(out_pos)
+            .and_then(|written| written.checked_sub(reserved))
+            .ok_or(BerError::InvalidValue)?;
+        if bytes_made > u32::MAX as usize {
+            return self.record_error(BerError::TooLarge);
+        }
+
+        self.dst_head = out_pos;
+        let lenbytes = self.ber_from_length(bytes_made as u32)?;
+        if lenbytes > reserved {
+            self.dst_head = old_head;
+            return self.record_error(BerError::TooLarge);
+        }
+
+        if reserved > lenbytes {
+            match self.dst.as_deref_mut() {
+                Some(dst) => {
+                    let src_start = out_pos + reserved;
+                    let src_end = src_start + bytes_made;
+                    let dst_start = out_pos + lenbytes;
+                    if src_end > dst.len() || dst_start + bytes_made > dst.len() {
+                        self.dst_head = old_head;
+                        return self.record_error(BerError::OutputTooSmall);
+                    }
+                    dst.copy_within(src_start..src_end, dst_start);
+                }
+                None => {
+                    self.dst_head = old_head;
+                    return self.record_error(BerError::OutputTooSmall);
+                }
+            }
+        }
+        self.dst_head = out_pos + lenbytes + bytes_made;
+        Ok(())
     }
 
-    /// Placeholder for `asn1ber_length_from_ber`.
+    /// Decodes a BER definite length.
     ///
     /// # Errors
     ///
-    /// Returns [`BerError::Unsupported`] until BER length decoding is migrated.
+    /// Returns [`BerError::UnexpectedEof`] when the length bytes are truncated or
+    /// [`BerError::TooLarge`] when the length needs more than four bytes.
     pub fn length_from_ber(&mut self) -> BerResult<u32> {
-        self.record_error(BerError::Unsupported("asn1ber_length_from_ber"))
+        let first = self.next_byte()?;
+        if first & 0x80 == 0 {
+            return Ok(u32::from(first));
+        }
+
+        let mut count = first & 0x7f;
+        if count > 4 {
+            return self.record_error(BerError::TooLarge);
+        }
+        let mut len = 0_u32;
+        while count > 0 {
+            len = (len << 8) | u32::from(self.next_byte()?);
+            count -= 1;
+        }
+        Ok(len)
     }
 
-    /// Placeholder for `ber_typecode_from_ber`.
+    /// Decodes the next BER type code.
     ///
     /// # Errors
     ///
-    /// Returns [`BerError::Unsupported`] until BER tag decoding is migrated.
+    /// Returns [`BerError::UnexpectedEof`] when the tag bytes are truncated.
     pub fn typecode_from_ber(&mut self) -> BerResult<BerType> {
-        self.record_error(BerError::Unsupported("ber_typecode_from_ber"))
+        let first = self.next_byte()?;
+        if first & ASN_EXTENSION_ID != ASN_EXTENSION_ID {
+            return Ok(BerType::from(first));
+        }
+        let mut next = self.next_byte()?;
+        if next >= ASN_STRUCT {
+            next -= ASN_STRUCT;
+        }
+        Ok(BerType::from(next))
     }
 
-    /// Placeholder for `ber_typelen_from_ber`.
+    /// Decodes a BER type code and definite length pair.
     ///
     /// # Errors
     ///
-    /// Returns [`BerError::Unsupported`] until BER tag and length decoding is migrated.
+    /// Returns an error from tag or length decoding when the BER header is invalid.
     pub fn typelen_from_ber(&mut self) -> BerResult<BerTypeLen> {
-        self.record_error(BerError::Unsupported("ber_typelen_from_ber"))
+        let type_code = self.typecode_from_ber()?;
+        let len = self.length_from_ber()?;
+        Ok(BerTypeLen { type_code, len })
     }
 
     /// Placeholder for `asn1ber_request_from_ber`.
@@ -376,7 +493,7 @@ impl<'src, 'dst> Asn1BerContext<'src, 'dst> {
     ///
     /// Returns [`BerError::Unsupported`] until request header decoding is migrated.
     pub fn request_from_ber(&mut self) -> BerResult<BerTypeLen> {
-        self.record_error(BerError::Unsupported("asn1ber_request_from_ber"))
+        self.typelen_from_ber()
     }
 
     /// Placeholder for `asn1ber_struct_from_ber`.
@@ -385,7 +502,11 @@ impl<'src, 'dst> Asn1BerContext<'src, 'dst> {
     ///
     /// Returns [`BerError::Unsupported`] until structure decoding is migrated.
     pub fn struct_from_ber(&mut self) -> BerResult<u32> {
-        self.record_error(BerError::Unsupported("asn1ber_struct_from_ber"))
+        let BerTypeLen { type_code, len } = self.typelen_from_ber()?;
+        if type_code != BerType::from(ASN_STRUCT) {
+            return self.record_error(BerError::InvalidType);
+        }
+        Ok(len)
     }
 
     /// Placeholder for `asn1ber_null_from_ber`.
@@ -394,43 +515,80 @@ impl<'src, 'dst> Asn1BerContext<'src, 'dst> {
     ///
     /// Returns [`BerError::Unsupported`] until null decoding is migrated.
     pub fn null_from_ber(&mut self) -> BerResult<u32> {
-        self.record_error(BerError::Unsupported("asn1ber_null_from_ber"))
+        let BerTypeLen { type_code, len } = self.typelen_from_ber()?;
+        if type_code != BerType::NULL {
+            return self.record_error(BerError::InvalidType);
+        }
+        Ok(len)
     }
 
-    /// Placeholder for `asn1ber_int32_from_ber`.
+    /// Decodes a signed 32-bit BER integer value.
     ///
     /// # Errors
     ///
-    /// Returns [`BerError::Unsupported`] until signed 32-bit integer decoding is migrated.
+    /// Returns [`BerError::InvalidType`] when the BER tag is not a supported
+    /// signed 32-bit integer tag, [`BerError::TooLarge`] when the value length
+    /// cannot fit in `i32`, or [`BerError::UnexpectedEof`] when truncated.
     pub fn int32_from_ber(&mut self) -> BerResult<i32> {
-        self.record_error(BerError::Unsupported("asn1ber_int32_from_ber"))
+        let BerTypeLen { type_code, len } = self.typelen_from_ber()?;
+        match type_code {
+            BerType::INTEGER | BerType::COUNTER => {
+                self.decode_signed_integer(len, 4).map(|v| v as i32)
+            }
+            _ => self.record_error(BerError::InvalidType),
+        }
     }
 
-    /// Placeholder for `asn1ber_uint32_from_ber`.
+    /// Decodes an unsigned 32-bit BER integer value.
     ///
     /// # Errors
     ///
-    /// Returns [`BerError::Unsupported`] until unsigned 32-bit integer decoding is migrated.
+    /// Returns [`BerError::InvalidType`] when the BER tag is not a supported
+    /// unsigned 32-bit integer tag, [`BerError::TooLarge`] when the value length
+    /// cannot fit in `u32`, or [`BerError::UnexpectedEof`] when truncated.
     pub fn uint32_from_ber(&mut self) -> BerResult<u32> {
-        self.record_error(BerError::Unsupported("asn1ber_uint32_from_ber"))
+        let BerTypeLen { type_code, len } = self.typelen_from_ber()?;
+        match type_code {
+            BerType::BOOLEAN
+            | BerType::IPADDRESS
+            | BerType::COUNTER
+            | BerType::UNSIGNED
+            | BerType::TIMETICKS
+            | BerType::NSAPADDRESS
+            | BerType::UNSIGNED32
+            | BerType::ENUMERATED => self.decode_unsigned_integer(len, 4).map(|v| v as u32),
+            _ => self.record_error(BerError::InvalidType),
+        }
     }
 
-    /// Placeholder for `asn1ber_int64_from_ber`.
+    /// Decodes a signed 64-bit BER integer value.
     ///
     /// # Errors
     ///
-    /// Returns [`BerError::Unsupported`] until signed 64-bit integer decoding is migrated.
+    /// Returns [`BerError::InvalidType`] when the BER tag is not a supported
+    /// signed 64-bit integer tag, [`BerError::TooLarge`] when the value length
+    /// cannot fit in `i64`, or [`BerError::UnexpectedEof`] when truncated.
     pub fn int64_from_ber(&mut self) -> BerResult<i64> {
-        self.record_error(BerError::Unsupported("asn1ber_int64_from_ber"))
+        let BerTypeLen { type_code, len } = self.typelen_from_ber()?;
+        match type_code {
+            BerType::INTEGER64 => self.decode_signed_integer(len, 8),
+            _ => self.record_error(BerError::InvalidType),
+        }
     }
 
-    /// Placeholder for `asn1ber_uint64_from_ber`.
+    /// Decodes an unsigned 64-bit BER integer value.
     ///
     /// # Errors
     ///
-    /// Returns [`BerError::Unsupported`] until unsigned 64-bit integer decoding is migrated.
+    /// Returns [`BerError::InvalidType`] when the BER tag is not a supported
+    /// unsigned 64-bit integer tag, [`BerError::TooLarge`] when the value length
+    /// cannot fit in `u64`, or [`BerError::UnexpectedEof`] when truncated.
     pub fn uint64_from_ber(&mut self) -> BerResult<u64> {
-        self.record_error(BerError::Unsupported("asn1ber_uint64_from_ber"))
+        let BerTypeLen { type_code, len } = self.typelen_from_ber()?;
+        match type_code {
+            BerType::UNSIGNED64 | BerType::COUNTER64 => self.decode_unsigned_integer(len, 8),
+            _ => self.record_error(BerError::InvalidType),
+        }
     }
 
     /// Placeholder for `asn1ber_oid_from_ber`.
@@ -439,7 +597,50 @@ impl<'src, 'dst> Asn1BerContext<'src, 'dst> {
     ///
     /// Returns [`BerError::Unsupported`] until OID decoding is migrated.
     pub fn oid_from_ber(&mut self) -> BerResult<Asn1BerOidValue> {
-        self.record_error(BerError::Unsupported("asn1ber_oid_from_ber"))
+        let BerTypeLen { type_code, len } = self.typelen_from_ber()?;
+        if type_code != BerType::OBJECT_ID {
+            return self.record_error(BerError::InvalidType);
+        }
+        if len == 0 || len as usize > BER_MAX_OID_ELEMENTS {
+            return self.record_error(BerError::TooLarge);
+        }
+
+        let end = self
+            .src_tail
+            .checked_add(len as usize)
+            .ok_or(BerError::TooLarge)?;
+        if end > self.src.len() {
+            return self.record_error(BerError::UnexpectedEof);
+        }
+
+        let first = u32::from(self.next_byte()?);
+        let mut oid = Asn1BerOidValue::new();
+        oid.elements[0] = first / 40;
+        oid.elements[1] = first - oid.elements[0] * 40;
+        oid.length = 2;
+
+        while self.src_tail < end {
+            if oid.length >= BER_MAX_OID_ELEMENTS {
+                return self.record_error(BerError::TooLarge);
+            }
+            let mut value = 0_u32;
+            loop {
+                if self.src_tail >= end {
+                    return self.record_error(BerError::InvalidValue);
+                }
+                let byte = self.next_byte()?;
+                value = value
+                    .checked_shl(7)
+                    .and_then(|shifted| shifted.checked_add(u32::from(byte & 0x7f)))
+                    .ok_or(BerError::TooLarge)?;
+                if byte & 0x80 == 0 {
+                    break;
+                }
+            }
+            oid.elements[oid.length] = value;
+            oid.length += 1;
+        }
+        Ok(oid)
     }
 
     /// Placeholder for `asn1ber_bytes_from_ber`.
@@ -448,7 +649,24 @@ impl<'src, 'dst> Asn1BerContext<'src, 'dst> {
     ///
     /// Returns [`BerError::Unsupported`] until octet-string decoding is migrated.
     pub fn bytes_from_ber(&mut self, _max_len: usize) -> BerResult<Vec<u8>> {
-        self.record_error(BerError::Unsupported("asn1ber_bytes_from_ber"))
+        let max_len = _max_len;
+        let BerTypeLen { type_code, len } = self.typelen_from_ber()?;
+        if type_code != BerType::OCTET_STRING {
+            return self.record_error(BerError::InvalidType);
+        }
+        if len as usize > max_len {
+            return self.record_error(BerError::TooLarge);
+        }
+        let end = self
+            .src_tail
+            .checked_add(len as usize)
+            .ok_or(BerError::TooLarge)?;
+        if end > self.src.len() {
+            return self.record_error(BerError::UnexpectedEof);
+        }
+        let value = self.src[self.src_tail..end].to_vec();
+        self.src_tail = end;
+        Ok(value)
     }
 
     /// Placeholder for `asn1ber_string_from_ber`.
@@ -457,16 +675,36 @@ impl<'src, 'dst> Asn1BerContext<'src, 'dst> {
     ///
     /// Returns [`BerError::Unsupported`] until string decoding is migrated.
     pub fn string_from_ber(&mut self, _max_len: usize) -> BerResult<String> {
-        self.record_error(BerError::Unsupported("asn1ber_string_from_ber"))
+        let bytes = self.bytes_from_ber(_max_len)?;
+        String::from_utf8(bytes).map_err(|_| BerError::InvalidValue)
     }
 
-    /// Placeholder for `asn1ber_ber_from_length`.
+    /// Encodes a BER definite length.
     ///
     /// # Errors
     ///
-    /// Returns [`BerError::Unsupported`] until BER length encoding is migrated.
+    /// Returns [`BerError::OutputTooSmall`] when the output buffer cannot hold
+    /// the encoded length.
     pub fn ber_from_length(&mut self, _len: u32) -> BerResult<usize> {
-        self.record_error(BerError::Unsupported("asn1ber_ber_from_length"))
+        let len = _len;
+        if len < 128 {
+            self.out_byte(len as u8)?;
+            return Ok(1);
+        }
+
+        let mut lenbytesneeded = 0_u32;
+        let mut lenbytes = len;
+        while lenbytes != 0 {
+            lenbytesneeded += 1;
+            lenbytes >>= 8;
+        }
+        self.out_byte(0x80 | lenbytesneeded as u8)?;
+        let mut remaining = lenbytesneeded;
+        while remaining > 0 {
+            self.out_byte((len >> (8 * (remaining - 1))) as u8)?;
+            remaining -= 1;
+        }
+        Ok(1 + lenbytesneeded as usize)
     }
 
     /// Reserves zero-filled bytes in the output BER stream.
@@ -496,43 +734,51 @@ impl<'src, 'dst> Asn1BerContext<'src, 'dst> {
     ///
     /// Returns [`BerError::Unsupported`] until BER tag and length encoding is migrated.
     pub fn ber_from_typelen(&mut self, _type_code: BerType, _len: u32) -> BerResult<usize> {
-        self.record_error(BerError::Unsupported("asn1ber_ber_from_typelen"))
+        let type_code = _type_code;
+        let len = _len;
+        self.out_byte(type_code.value())?;
+        let len_bytes = self.ber_from_length(len)?;
+        Ok(len_bytes + 1)
     }
 
-    /// Placeholder for `asn1ber_ber_from_int32`.
+    /// Encodes a signed 32-bit value as a minimal BER integer payload.
     ///
     /// # Errors
     ///
-    /// Returns [`BerError::Unsupported`] until signed 32-bit integer encoding is migrated.
+    /// Returns [`BerError::OutputTooSmall`] when the output buffer cannot hold
+    /// the encoded type, length, and value bytes.
     pub fn ber_from_int32(&mut self, _type_code: BerType, _value: i32) -> BerResult<()> {
-        self.record_error(BerError::Unsupported("asn1ber_ber_from_int32"))
+        self.encode_signed_integer(_type_code, &_value.to_be_bytes())
     }
 
-    /// Placeholder for `asn1ber_ber_from_uint32`.
+    /// Encodes an unsigned 32-bit value as a minimal BER integer payload.
     ///
     /// # Errors
     ///
-    /// Returns [`BerError::Unsupported`] until unsigned 32-bit integer encoding is migrated.
+    /// Returns [`BerError::OutputTooSmall`] when the output buffer cannot hold
+    /// the encoded type, length, and value bytes.
     pub fn ber_from_uint32(&mut self, _type_code: BerType, _value: u32) -> BerResult<()> {
-        self.record_error(BerError::Unsupported("asn1ber_ber_from_uint32"))
+        self.encode_unsigned_integer(_type_code, &_value.to_be_bytes())
     }
 
-    /// Placeholder for `asn1ber_ber_from_int64`.
+    /// Encodes a signed 64-bit value as a minimal BER integer payload.
     ///
     /// # Errors
     ///
-    /// Returns [`BerError::Unsupported`] until signed 64-bit integer encoding is migrated.
+    /// Returns [`BerError::OutputTooSmall`] when the output buffer cannot hold
+    /// the encoded type, length, and value bytes.
     pub fn ber_from_int64(&mut self, _type_code: BerType, _value: i64) -> BerResult<()> {
-        self.record_error(BerError::Unsupported("asn1ber_ber_from_int64"))
+        self.encode_signed_integer(_type_code, &_value.to_be_bytes())
     }
 
-    /// Placeholder for `asn1ber_ber_from_uint64`.
+    /// Encodes an unsigned 64-bit value as a minimal BER integer payload.
     ///
     /// # Errors
     ///
-    /// Returns [`BerError::Unsupported`] until unsigned 64-bit integer encoding is migrated.
+    /// Returns [`BerError::OutputTooSmall`] when the output buffer cannot hold
+    /// the encoded type, length, and value bytes.
     pub fn ber_from_uint64(&mut self, _type_code: BerType, _value: u64) -> BerResult<()> {
-        self.record_error(BerError::Unsupported("asn1ber_ber_from_uint64"))
+        self.encode_unsigned_integer(_type_code, &_value.to_be_bytes())
     }
 
     /// Placeholder for `asn1ber_ber_from_oid`.
@@ -541,7 +787,36 @@ impl<'src, 'dst> Asn1BerContext<'src, 'dst> {
     ///
     /// Returns [`BerError::Unsupported`] until OID encoding is migrated.
     pub fn ber_from_oid(&mut self, _oid: &Asn1BerOidValue) -> BerResult<()> {
-        self.record_error(BerError::Unsupported("asn1ber_ber_from_oid"))
+        let oid = _oid;
+        if oid.len() >= BER_MAX_OID_ELEMENTS {
+            return self.record_error(BerError::TooLarge);
+        }
+
+        let mut encoded = Vec::new();
+        if oid.len() > 1 && oid.elements()[0] < 40 {
+            encode_oid_component(
+                oid.elements()[0]
+                    .checked_mul(40)
+                    .and_then(|base| base.checked_add(oid.elements()[1]))
+                    .ok_or(BerError::TooLarge)?,
+                &mut encoded,
+            )?;
+            for component in &oid.elements()[2..] {
+                encode_oid_component(*component, &mut encoded)?;
+            }
+        } else {
+            for component in oid.elements() {
+                encode_oid_component(*component, &mut encoded)?;
+            }
+        }
+        if encoded.len() > u32::MAX as usize {
+            return self.record_error(BerError::TooLarge);
+        }
+        self.ber_from_typelen(BerType::OBJECT_ID, encoded.len() as u32)?;
+        for byte in encoded {
+            self.out_byte(byte)?;
+        }
+        Ok(())
     }
 
     /// Placeholder for `asn1ber_ber_from_bytes`.
@@ -550,7 +825,16 @@ impl<'src, 'dst> Asn1BerContext<'src, 'dst> {
     ///
     /// Returns [`BerError::Unsupported`] until byte string encoding is migrated.
     pub fn ber_from_bytes(&mut self, _type_code: BerType, _value: &[u8]) -> BerResult<()> {
-        self.record_error(BerError::Unsupported("asn1ber_ber_from_bytes"))
+        let type_code = _type_code;
+        let value = _value;
+        if value.len() > u32::MAX as usize {
+            return self.record_error(BerError::TooLarge);
+        }
+        self.ber_from_typelen(type_code, value.len() as u32)?;
+        for byte in value {
+            self.out_byte(*byte)?;
+        }
+        Ok(())
     }
 
     /// Placeholder for `asn1ber_ber_from_string`.
@@ -562,10 +846,108 @@ impl<'src, 'dst> Asn1BerContext<'src, 'dst> {
         self.ber_from_bytes(BerType::OCTET_STRING, value.as_bytes())
     }
 
+    fn decode_signed_integer(&mut self, len: u32, max_len: usize) -> BerResult<i64> {
+        let len = len as usize;
+        if len == 0 || len > max_len {
+            return self.record_error(BerError::TooLarge);
+        }
+
+        let first = self.next_byte()?;
+        let mut value = if first & 0x80 == 0 { 0_i64 } else { -1_i64 };
+        value = (value << 8) | i64::from(first);
+        for _ in 1..len {
+            value = (value << 8) | i64::from(self.next_byte()?);
+        }
+        Ok(value)
+    }
+
+    fn decode_unsigned_integer(&mut self, len: u32, max_len: usize) -> BerResult<u64> {
+        let len = len as usize;
+        if len == 0 || len > max_len + 1 {
+            return self.record_error(BerError::TooLarge);
+        }
+
+        let first = self.next_byte()?;
+        if len == max_len + 1 && first != 0 {
+            return self.record_error(BerError::TooLarge);
+        }
+
+        let mut value = u64::from(first);
+        for _ in 1..len {
+            value = (value << 8) | u64::from(self.next_byte()?);
+        }
+        Ok(value)
+    }
+
+    fn encode_signed_integer(&mut self, type_code: BerType, bytes: &[u8]) -> BerResult<()> {
+        let value = minimal_signed_integer_bytes(bytes);
+        self.ber_from_typelen(type_code, value.len() as u32)?;
+        for byte in value {
+            self.out_byte(*byte)?;
+        }
+        Ok(())
+    }
+
+    fn encode_unsigned_integer(&mut self, type_code: BerType, bytes: &[u8]) -> BerResult<()> {
+        let value = minimal_unsigned_integer_bytes(bytes);
+        let needs_sign_pad = value[0] & 0x80 != 0;
+        self.ber_from_typelen(type_code, value.len() as u32 + u32::from(needs_sign_pad))?;
+        if needs_sign_pad {
+            self.out_byte(0)?;
+        }
+        for byte in value {
+            self.out_byte(*byte)?;
+        }
+        Ok(())
+    }
+
     fn record_error<T>(&mut self, error: BerError) -> BerResult<T> {
         self.last_error = Some(error);
         Err(error)
     }
+}
+
+fn minimal_signed_integer_bytes(bytes: &[u8]) -> &[u8] {
+    let mut start = 0;
+    while start + 1 < bytes.len() {
+        let byte = bytes[start];
+        let next = bytes[start + 1];
+        if (byte == 0x00 && next & 0x80 == 0) || (byte == 0xff && next & 0x80 != 0) {
+            start += 1;
+        } else {
+            break;
+        }
+    }
+    &bytes[start..]
+}
+
+fn minimal_unsigned_integer_bytes(bytes: &[u8]) -> &[u8] {
+    let mut start = 0;
+    while start + 1 < bytes.len() && bytes[start] == 0 {
+        start += 1;
+    }
+    &bytes[start..]
+}
+
+fn encode_oid_component(mut value: u32, out: &mut Vec<u8>) -> BerResult<()> {
+    let mut stack = [0_u8; 5];
+    let mut count = 0_usize;
+    stack[count] = (value & 0x7f) as u8;
+    count += 1;
+    value >>= 7;
+    while value != 0 {
+        if count >= stack.len() {
+            return Err(BerError::TooLarge);
+        }
+        stack[count] = ((value & 0x7f) as u8) | 0x80;
+        count += 1;
+        value >>= 7;
+    }
+    while count > 0 {
+        count -= 1;
+        out.push(stack[count]);
+    }
+    Ok(())
 }
 
 /// BER type and length pair returned by tag-length decoding helpers.

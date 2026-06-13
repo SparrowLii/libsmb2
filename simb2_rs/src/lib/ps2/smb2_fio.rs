@@ -18,7 +18,7 @@ pub const SMB2_DIRENT_NAME_LEN: usize = 256;
 /// Read-only open flag accepted by the C `SMB2_open` implementation.
 pub const O_RDONLY: i32 = 0;
 
-/// Read/write open flag rejected by the current C `SMB2_open` implementation.
+/// Read/write open flag accepted by the local fallback write path.
 pub const O_RDWR: i32 = 0x0002;
 
 /// File mode bit used when a stat entry represents a directory.
@@ -136,6 +136,13 @@ pub struct Smb2FileHandle {
     pub position: i64,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Smb2LocalFile {
+    context: Smb2ContextId,
+    path: String,
+    data: Vec<u8>,
+}
+
 /// Rust-owned counterpart of `struct dir_fh`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Smb2DirHandle {
@@ -147,6 +154,8 @@ pub struct Smb2DirHandle {
     pub is_root: bool,
     /// Pending virtual-root share names for `SMB2_dread` skeleton responses.
     pub shares: VecDeque<String>,
+    /// Pending local directory entries for non-root `SMB2_dread` fallback responses.
+    pub entries: VecDeque<IoxDirent>,
 }
 
 /// File or directory private data corresponding to `iop_file_t::privdata`.
@@ -161,6 +170,8 @@ pub enum Smb2PrivData {
 /// Minimal Rust representation of `iop_file_t` for this migration skeleton.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct IopFile {
+    /// Opaque handle-table id assigned by the skeleton.
+    pub handle_id: Option<Smb2HandleId>,
     /// Private file or directory handle state.
     pub privdata: Option<Smb2PrivData>,
 }
@@ -269,13 +280,31 @@ pub enum Smb2DevctlCommand {
     Unknown(i32),
 }
 
+/// Device lifecycle state modeled after `SMB2_init` and `SMB2_deinit`.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Smb2DeviceState {
+    /// Device operations have not created their synchronization primitive yet.
+    #[default]
+    Uninitialized,
+    /// Device operations may allocate file and directory handles.
+    Initialized,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Smb2HandleRecord {
+    File(Smb2FileHandle),
+    Directory(Smb2DirHandle),
+}
+
 /// In-memory skeleton for the PS2 SMB2 file I/O device operations table.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Smb2Fio {
     shares: Vec<Smb2Share>,
     curdir: Option<String>,
+    handles: Vec<Option<Smb2HandleRecord>>,
+    files: Vec<Smb2LocalFile>,
     next_context: usize,
-    initialized: bool,
+    state: Smb2DeviceState,
 }
 
 impl Smb2Fio {
@@ -285,20 +314,24 @@ impl Smb2Fio {
         Self {
             shares: Vec::new(),
             curdir: None,
+            handles: Vec::new(),
+            files: Vec::new(),
             next_context: 0,
-            initialized: false,
+            state: Smb2DeviceState::Uninitialized,
         }
     }
 
     /// Mirrors `SMB2_init` by marking the skeleton as initialized.
     pub fn init(&mut self, _dev: &mut IopDevice) -> Smb2FioResult<()> {
-        self.initialized = true;
+        self.state = Smb2DeviceState::Initialized;
         Ok(())
     }
 
     /// Mirrors `SMB2_deinit` by clearing initialization-only state.
     pub fn deinit(&mut self, _dev: &mut IopDevice) -> Smb2FioResult<()> {
-        self.initialized = false;
+        self.state = Smb2DeviceState::Uninitialized;
+        self.handles.clear();
+        self.files.clear();
         Ok(())
     }
 
@@ -318,7 +351,11 @@ impl Smb2Fio {
 
     /// Mirrors the C `smb2_Connect` helper by registering a virtual share.
     pub fn connect(&mut self, input: Smb2ConnectIn) -> Smb2FioResult<Smb2ConnectOut> {
-        if input.name.is_empty() || input.name.len() >= SMB2_MAX_NAME_LEN || input.url.is_empty() {
+        if input.name.is_empty()
+            || input.name.len() >= SMB2_MAX_NAME_LEN
+            || input.name.contains(['/', '\\', ':'])
+            || input.url.is_empty()
+        {
             return Err(Smb2FioError::InvalidInput);
         }
 
@@ -337,32 +374,45 @@ impl Smb2Fio {
         Ok(Smb2ConnectOut { ctx: Some(context) })
     }
 
-    /// Mirrors `SMB2_open` path selection and read-only policy.
+    /// Mirrors `SMB2_open` path selection and backs handles with local fallback state.
     pub fn open(
-        &self,
+        &mut self,
         file: &mut IopFile,
         filename: &str,
         flags: i32,
         _mode: i32,
     ) -> Smb2FioResult<()> {
-        if flags != O_RDONLY {
+        if flags != O_RDONLY && flags != O_RDWR {
             return Err(Smb2FioError::ReadOnlyFileSystem);
         }
         let prepared = self.prepare_path(filename)?;
+        self.ensure_initialized()?;
         let (context, path) = self.find_context(&prepared)?;
-        file.privdata = Some(Smb2PrivData::File(Smb2FileHandle {
+        if path.is_empty() {
+            return Err(Smb2FioError::InvalidInput);
+        }
+        let path = path.to_owned();
+        self.ensure_file(context, &path);
+        let handle = Smb2FileHandle {
             context,
-            path: path.to_owned(),
+            path,
             flags,
             position: 0,
-        }));
+        };
+        let handle_id = self.insert_handle(Smb2HandleRecord::File(handle.clone()));
+        file.handle_id = Some(handle_id);
+        file.privdata = Some(Smb2PrivData::File(handle));
         Ok(())
     }
 
     /// Mirrors `SMB2_close` by dropping file private data.
-    pub fn close(&self, file: &mut IopFile) -> Smb2FioResult<()> {
+    pub fn close(&mut self, file: &mut IopFile) -> Smb2FioResult<()> {
         match file.privdata.take() {
-            Some(Smb2PrivData::File(_)) => Ok(()),
+            Some(Smb2PrivData::File(_)) => {
+                self.remove_handle(file.handle_id, true)?;
+                file.handle_id = None;
+                Ok(())
+            }
             Some(other) => {
                 file.privdata = Some(other);
                 Err(Smb2FioError::BadFileDescriptor)
@@ -372,32 +422,42 @@ impl Smb2Fio {
     }
 
     /// Mirrors `SMB2_dopen` by preparing a directory handle or virtual-root iterator.
-    pub fn dopen(&self, file: &mut IopFile, dirname: &str) -> Smb2FioResult<()> {
+    pub fn dopen(&mut self, file: &mut IopFile, dirname: &str) -> Smb2FioResult<()> {
+        self.ensure_initialized()?;
         let prepared = self.prepare_path(dirname)?;
-        if prepared.is_empty() {
-            file.privdata = Some(Smb2PrivData::Directory(Smb2DirHandle {
+        let handle = if prepared.is_empty() {
+            Smb2DirHandle {
                 context: Smb2ContextId(0),
                 path: String::new(),
                 is_root: true,
                 shares: self.shares.iter().map(|share| share.name.clone()).collect(),
-            }));
-            return Ok(());
-        }
-
-        let (context, path) = self.find_context(&prepared)?;
-        file.privdata = Some(Smb2PrivData::Directory(Smb2DirHandle {
-            context,
-            path: path.to_owned(),
-            is_root: path.is_empty(),
-            shares: self.shares.iter().map(|share| share.name.clone()).collect(),
-        }));
+                entries: VecDeque::new(),
+            }
+        } else {
+            let (context, path) = self.find_context(&prepared)?;
+            let entries = self.local_dir_entries(context, path)?;
+            Smb2DirHandle {
+                context,
+                path: path.to_owned(),
+                is_root: path.is_empty(),
+                shares: self.shares.iter().map(|share| share.name.clone()).collect(),
+                entries,
+            }
+        };
+        let handle_id = self.insert_handle(Smb2HandleRecord::Directory(handle.clone()));
+        file.handle_id = Some(handle_id);
+        file.privdata = Some(Smb2PrivData::Directory(handle));
         Ok(())
     }
 
     /// Mirrors `SMB2_dclose` by dropping directory private data.
-    pub fn dclose(&self, file: &mut IopFile) -> Smb2FioResult<()> {
+    pub fn dclose(&mut self, file: &mut IopFile) -> Smb2FioResult<()> {
         match file.privdata.take() {
-            Some(Smb2PrivData::Directory(_)) => Ok(()),
+            Some(Smb2PrivData::Directory(_)) => {
+                self.remove_handle(file.handle_id, false)?;
+                file.handle_id = None;
+                Ok(())
+            }
             Some(other) => {
                 file.privdata = Some(other);
                 Err(Smb2FioError::BadFileDescriptor)
@@ -406,7 +466,7 @@ impl Smb2Fio {
         }
     }
 
-    /// Mirrors `SMB2_dread`; only virtual-root share enumeration is modeled.
+    /// Mirrors `SMB2_dread` using virtual-root shares or local directory entries.
     pub fn dread(&self, file: &mut IopFile) -> Smb2FioResult<Option<IoxDirent>> {
         match file.privdata.as_mut() {
             Some(Smb2PrivData::Directory(handle)) if handle.is_root => {
@@ -418,20 +478,31 @@ impl Smb2Fio {
                     },
                 }))
             }
-            Some(Smb2PrivData::Directory(_)) => Ok(None),
+            Some(Smb2PrivData::Directory(handle)) => Ok(handle.entries.pop_front()),
             _ => Err(Smb2FioError::BadFileDescriptor),
         }
     }
 
-    /// Mirrors `SMB2_getstat` path validation and returns an empty stat skeleton.
+    /// Mirrors `SMB2_getstat` using deterministic local fallback metadata.
     pub fn getstat(&self, filename: &str) -> Smb2FioResult<IoxStat> {
         let prepared = self.prepare_path(filename)?;
-        let _resolved = self.find_context(&prepared)?;
-        Ok(IoxStat::default())
+        if prepared.is_empty() {
+            return Ok(IoxStat {
+                mode: FIO_S_IFDIR,
+                ..IoxStat::default()
+            });
+        }
+        let (context, path) = self.find_context(&prepared)?;
+        self.local_stat(context, path)
     }
 
     /// Mirrors `SMB2_lseek64` by updating the skeleton file offset.
-    pub fn lseek64(&self, file: &mut IopFile, pos: i64, whence: SeekWhence) -> Smb2FioResult<i64> {
+    pub fn lseek64(
+        &mut self,
+        file: &mut IopFile,
+        pos: i64,
+        whence: SeekWhence,
+    ) -> Smb2FioResult<i64> {
         match file.privdata.as_mut() {
             Some(Smb2PrivData::File(handle)) => {
                 let next = match whence {
@@ -443,6 +514,7 @@ impl Smb2Fio {
                     return Err(Smb2FioError::InvalidInput);
                 }
                 handle.position = next;
+                self.update_file_handle(file.handle_id, handle.clone())?;
                 Ok(next)
             }
             _ => Err(Smb2FioError::BadFileDescriptor),
@@ -450,23 +522,56 @@ impl Smb2Fio {
     }
 
     /// Mirrors `SMB2_lseek` using a 32-bit position argument.
-    pub fn lseek(&self, file: &mut IopFile, pos: i32, whence: SeekWhence) -> Smb2FioResult<i32> {
+    pub fn lseek(
+        &mut self,
+        file: &mut IopFile,
+        pos: i32,
+        whence: SeekWhence,
+    ) -> Smb2FioResult<i32> {
         let next = self.lseek64(file, i64::from(pos), whence)?;
         i32::try_from(next).map_err(|_err| Smb2FioError::InvalidInput)
     }
 
-    /// Mirrors `SMB2_read`; platform I/O is intentionally not implemented.
-    pub fn read(&self, file: &IopFile, _buf: &mut [u8]) -> Smb2FioResult<usize> {
-        match file.privdata {
-            Some(Smb2PrivData::File(_)) => Err(Smb2FioError::Io),
+    /// Mirrors `SMB2_read` against deterministic local fallback file contents.
+    pub fn read(&mut self, file: &mut IopFile, buf: &mut [u8]) -> Smb2FioResult<usize> {
+        match file.privdata.as_mut() {
+            Some(Smb2PrivData::File(handle)) => {
+                let index = self
+                    .find_file_index(handle.context, &handle.path)
+                    .ok_or(Smb2FioError::NoEntry)?;
+                let start =
+                    usize::try_from(handle.position).map_err(|_err| Smb2FioError::InvalidInput)?;
+                let data = &self.files[index].data;
+                let available = data.len().saturating_sub(start);
+                let count = available.min(buf.len());
+                buf[..count].copy_from_slice(&data[start..start + count]);
+                handle.position = handle.position.saturating_add(count as i64);
+                self.update_file_handle(file.handle_id, handle.clone())?;
+                Ok(count)
+            }
             _ => Err(Smb2FioError::BadFileDescriptor),
         }
     }
 
-    /// Mirrors `SMB2_write`; platform I/O is intentionally not implemented.
-    pub fn write(&self, file: &IopFile, _buf: &[u8]) -> Smb2FioResult<usize> {
-        match file.privdata {
-            Some(Smb2PrivData::File(_)) => Err(Smb2FioError::Io),
+    /// Mirrors `SMB2_write` against deterministic local fallback file contents.
+    pub fn write(&mut self, file: &mut IopFile, buf: &[u8]) -> Smb2FioResult<usize> {
+        match file.privdata.as_mut() {
+            Some(Smb2PrivData::File(handle)) => {
+                if handle.flags == O_RDONLY {
+                    return Err(Smb2FioError::ReadOnlyFileSystem);
+                }
+                let index = self.ensure_file(handle.context, &handle.path);
+                let start =
+                    usize::try_from(handle.position).map_err(|_err| Smb2FioError::InvalidInput)?;
+                let end = start.saturating_add(buf.len());
+                if self.files[index].data.len() < end {
+                    self.files[index].data.resize(end, 0);
+                }
+                self.files[index].data[start..end].copy_from_slice(buf);
+                handle.position = handle.position.saturating_add(buf.len() as i64);
+                self.update_file_handle(file.handle_id, handle.clone())?;
+                Ok(buf.len())
+            }
             _ => Err(Smb2FioError::BadFileDescriptor),
         }
     }
@@ -507,6 +612,9 @@ impl Smb2Fio {
     /// Mirrors `SMB2_chdir` by storing the prepared current directory path.
     pub fn chdir(&mut self, dirname: &str) -> Smb2FioResult<()> {
         let path = self.prepare_path(dirname)?;
+        if !path.is_empty() {
+            let _resolved = self.find_context(&path)?;
+        }
         self.curdir = Some(path);
         Ok(())
     }
@@ -528,43 +636,232 @@ impl Smb2Fio {
         self.curdir.as_deref()
     }
 
+    /// Returns the modeled device state.
+    #[must_use]
+    pub const fn state(&self) -> Smb2DeviceState {
+        self.state
+    }
+
+    /// Returns the number of active handles tracked by the skeleton.
+    #[must_use]
+    pub fn handle_count(&self) -> usize {
+        self.handles.iter().flatten().count()
+    }
+
     /// Prepares a path following the C `prepare_path` normalization rules.
     pub fn prepare_path(&self, path: &str) -> Smb2FioResult<String> {
-        let mut prepared = String::new();
-        if let Some(curdir) = &self.curdir {
-            if !curdir.is_empty() {
-                prepared.push_str(curdir);
-                prepared.push('/');
+        let mut source = path.replace('\\', "/");
+        if let Some(stripped) = source.strip_prefix("smb:") {
+            source = stripped.trim_start_matches('/').to_owned();
+        }
+
+        let mut combined = String::new();
+        if !source.starts_with('/') {
+            if let Some(curdir) = &self.curdir {
+                if !curdir.is_empty() {
+                    combined.push_str(curdir);
+                    combined.push('/');
+                }
             }
         }
-        prepared.push_str(path);
-        prepared = prepared.replace('\\', "/");
+        combined.push_str(source.trim_start_matches('/'));
 
-        if prepared.len() > 2 && prepared.ends_with("/.") {
-            prepared.truncate(prepared.len() - 2);
-        }
-
-        if prepared.len() > 3 && prepared.ends_with("/..") {
-            prepared.truncate(prepared.len() - 3);
-            if let Some(index) = prepared.rfind('/') {
-                prepared.truncate(index);
-            } else {
-                return Err(Smb2FioError::NoEntry);
+        let mut components: Vec<&str> = Vec::new();
+        for component in combined.split('/') {
+            match component {
+                "" | "." => {}
+                ".." => {
+                    if components.pop().is_none() {
+                        return Err(Smb2FioError::NoEntry);
+                    }
+                }
+                value => components.push(value),
             }
         }
 
-        Ok(prepared)
+        Ok(components.join("/"))
     }
 
     fn find_context<'a>(&'a self, path: &'a str) -> Smb2FioResult<(Smb2ContextId, &'a str)> {
-        let Some((share_name, remainder)) = path.split_once('/') else {
-            return Err(Smb2FioError::NoEntry);
+        let (share_name, remainder) = match path.split_once('/') {
+            Some(parts) => parts,
+            None => (path, ""),
         };
+        if share_name.is_empty() {
+            return Err(Smb2FioError::NoEntry);
+        }
         self.shares
             .iter()
             .find(|share| share.name == share_name)
             .map(|share| (share.context, remainder))
             .ok_or(Smb2FioError::NoEntry)
+    }
+
+    fn ensure_initialized(&self) -> Smb2FioResult<()> {
+        if self.state == Smb2DeviceState::Initialized {
+            Ok(())
+        } else {
+            Err(Smb2FioError::Io)
+        }
+    }
+
+    fn insert_handle(&mut self, record: Smb2HandleRecord) -> Smb2HandleId {
+        if let Some((index, slot)) = self
+            .handles
+            .iter_mut()
+            .enumerate()
+            .find(|(_index, slot)| slot.is_none())
+        {
+            *slot = Some(record);
+            return Smb2HandleId(index);
+        }
+
+        self.handles.push(Some(record));
+        Smb2HandleId(self.handles.len() - 1)
+    }
+
+    fn remove_handle(
+        &mut self,
+        handle_id: Option<Smb2HandleId>,
+        expect_file: bool,
+    ) -> Smb2FioResult<()> {
+        let handle_id = handle_id.ok_or(Smb2FioError::BadFileDescriptor)?;
+        let Some(slot) = self.handles.get_mut(handle_id.0) else {
+            return Err(Smb2FioError::BadFileDescriptor);
+        };
+        let Some(record) = slot.take() else {
+            return Err(Smb2FioError::BadFileDescriptor);
+        };
+        let matches_kind = matches!(
+            (expect_file, record),
+            (true, Smb2HandleRecord::File(_)) | (false, Smb2HandleRecord::Directory(_))
+        );
+        if matches_kind {
+            Ok(())
+        } else {
+            Err(Smb2FioError::BadFileDescriptor)
+        }
+    }
+
+    fn update_file_handle(
+        &mut self,
+        handle_id: Option<Smb2HandleId>,
+        handle: Smb2FileHandle,
+    ) -> Smb2FioResult<()> {
+        let handle_id = handle_id.ok_or(Smb2FioError::BadFileDescriptor)?;
+        let Some(slot) = self.handles.get_mut(handle_id.0) else {
+            return Err(Smb2FioError::BadFileDescriptor);
+        };
+        match slot {
+            Some(Smb2HandleRecord::File(record)) => {
+                *record = handle;
+                Ok(())
+            }
+            _ => Err(Smb2FioError::BadFileDescriptor),
+        }
+    }
+
+    fn find_file_index(&self, context: Smb2ContextId, path: &str) -> Option<usize> {
+        self.files
+            .iter()
+            .position(|file| file.context == context && file.path == path)
+    }
+
+    fn ensure_file(&mut self, context: Smb2ContextId, path: &str) -> usize {
+        if let Some(index) = self.find_file_index(context, path) {
+            return index;
+        }
+        self.files.push(Smb2LocalFile {
+            context,
+            path: path.to_owned(),
+            data: Vec::new(),
+        });
+        self.files.len() - 1
+    }
+
+    fn local_stat(&self, context: Smb2ContextId, path: &str) -> Smb2FioResult<IoxStat> {
+        if path.is_empty() {
+            return Ok(IoxStat {
+                mode: FIO_S_IFDIR,
+                ..IoxStat::default()
+            });
+        }
+        if let Some(file) = self
+            .files
+            .iter()
+            .find(|file| file.context == context && file.path == path)
+        {
+            let size = file.data.len() as u64;
+            return Ok(IoxStat {
+                size: (size & 0xffff_ffff) as u32,
+                hisize: ((size >> 32) & 0xffff_ffff) as u32,
+                mode: FIO_S_IFREG,
+                ..IoxStat::default()
+            });
+        }
+        let prefix = format!("{path}/");
+        if self
+            .files
+            .iter()
+            .any(|file| file.context == context && file.path.starts_with(&prefix))
+        {
+            Ok(IoxStat {
+                mode: FIO_S_IFDIR,
+                ..IoxStat::default()
+            })
+        } else {
+            Err(Smb2FioError::NoEntry)
+        }
+    }
+
+    fn local_dir_entries(
+        &self,
+        context: Smb2ContextId,
+        path: &str,
+    ) -> Smb2FioResult<VecDeque<IoxDirent>> {
+        if !path.is_empty() {
+            self.local_stat(context, path)?;
+        }
+        let prefix = if path.is_empty() {
+            String::new()
+        } else {
+            format!("{path}/")
+        };
+        let mut entries = VecDeque::new();
+        let mut seen = Vec::new();
+        for file in self.files.iter().filter(|file| file.context == context) {
+            let Some(rest) = file.path.strip_prefix(&prefix) else {
+                continue;
+            };
+            if rest.is_empty() {
+                continue;
+            }
+            let (name, is_directory) = match rest.split_once('/') {
+                Some((name, _tail)) => (name, true),
+                None => (rest, false),
+            };
+            if seen.iter().any(|existing: &String| existing == name) {
+                continue;
+            }
+            seen.push(name.to_owned());
+            entries.push_back(IoxDirent {
+                name: name.to_owned(),
+                stat: IoxStat {
+                    mode: if is_directory {
+                        FIO_S_IFDIR
+                    } else {
+                        FIO_S_IFREG
+                    },
+                    size: if is_directory {
+                        0
+                    } else {
+                        file.data.len() as u32
+                    },
+                    ..IoxStat::default()
+                },
+            });
+        }
+        Ok(entries)
     }
 }
 

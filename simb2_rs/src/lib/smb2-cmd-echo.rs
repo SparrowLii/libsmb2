@@ -98,6 +98,9 @@ pub fn smb2_cmd_echo_async(callback: Option<CommandCallback>) -> Result<Pdu> {
         input: IoVectors::default(),
         callback,
         compound: false,
+        next_compound: None,
+        prev_compound_mid: 0,
+        payload: None,
         timeout: None,
     })
 }
@@ -116,6 +119,9 @@ pub fn smb2_cmd_echo_reply_async(callback: Option<CommandCallback>) -> Result<Pd
         input: IoVectors::default(),
         callback,
         compound: false,
+        next_compound: None,
+        prev_compound_mid: 0,
+        payload: None,
         timeout: None,
     })
 }

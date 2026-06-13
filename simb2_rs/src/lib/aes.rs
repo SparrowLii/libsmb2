@@ -130,12 +130,9 @@ impl Aes128Ecb {
 
     /// Encrypts one AES block using the configured backend.
     ///
-    /// This is a migration skeleton for `AES128_ECB_encrypt`; backend-specific encryption logic
-    /// still belongs in the Rust counterparts of `lib/aes_apple.c` and `lib/aes_reference.c`.
-    ///
     /// # Errors
     ///
-    /// Returns [`AesError::BackendNotImplemented`] until the selected backend is migrated.
+    /// Returns an error only if a selected backend is unavailable in a future platform adapter.
     pub fn encrypt_block(&self, input: AesBlock) -> Result<AesBlock, AesError> {
         aes128_ecb_encrypt_with_backend(input, self.key, self.backend)
     }
@@ -143,12 +140,11 @@ impl Aes128Ecb {
 
 /// Encrypts one AES block using the platform backend selected by `lib/aes.c`.
 ///
-/// This function mirrors the role of the C `AES128_ECB_encrypt` dispatcher without implementing
-/// the backend encryption algorithm yet.
+/// This function mirrors the role of the C `AES128_ECB_encrypt` dispatcher.
 ///
 /// # Errors
 ///
-/// Returns [`AesError::BackendNotImplemented`] until the platform backend is migrated.
+/// Returns an error only if a selected backend is unavailable in a future platform adapter.
 pub fn aes128_ecb_encrypt(input: AesBlock, key: Aes128Key) -> Result<AesBlock, AesError> {
     aes128_ecb_encrypt_with_backend(input, key, AesBackend::platform_default())
 }
@@ -159,7 +155,7 @@ pub fn aes128_ecb_encrypt(input: AesBlock, key: Aes128Key) -> Result<AesBlock, A
 ///
 /// # Errors
 ///
-/// Returns [`AesError::BackendNotImplemented`] until the selected backend is migrated.
+/// Returns an error only if a selected backend is unavailable in a future platform adapter.
 pub fn aes128_ecb_encrypt_with_backend(
     input: AesBlock,
     key: Aes128Key,
@@ -171,10 +167,15 @@ pub fn aes128_ecb_encrypt_with_backend(
     }
 }
 
-fn aes128_ecb_encrypt_apple(_input: AesBlock, _key: Aes128Key) -> Result<AesBlock, AesError> {
-    Err(AesError::BackendNotImplemented(AesBackend::Apple))
+fn aes128_ecb_encrypt_apple(input: AesBlock, key: Aes128Key) -> Result<AesBlock, AesError> {
+    Ok(AesBlock(super::aes_apple::aes128_ecb_encrypt_apple(
+        input.into_bytes(),
+        key.into_bytes(),
+    )))
 }
 
-fn aes128_ecb_encrypt_reference(_input: AesBlock, _key: Aes128Key) -> Result<AesBlock, AesError> {
-    Err(AesError::BackendNotImplemented(AesBackend::Reference))
+fn aes128_ecb_encrypt_reference(input: AesBlock, key: Aes128Key) -> Result<AesBlock, AesError> {
+    Ok(AesBlock(
+        super::aes_reference::aes128_ecb_encrypt_reference(input.into_bytes(), key.into_bytes()),
+    ))
 }

@@ -29,11 +29,14 @@ pub mod md5;
 pub mod ntlmssp;
 pub mod pdu;
 pub mod ps2;
+pub mod sha;
 pub mod sha1;
 #[path = "sha224-256.rs"]
 pub mod sha224_256;
 #[path = "sha384-512.rs"]
 pub mod sha384_512;
+#[path = "sha-private.rs"]
+pub mod sha_private;
 #[path = "smb2-cmd-close.rs"]
 pub mod smb2_cmd_close;
 #[path = "smb2-cmd-create.rs"]

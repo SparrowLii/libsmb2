@@ -25,7 +25,8 @@ fn test_timestamps_timeval_filetime() {
 // - **THEN** implementation MUST 将 `tv->tv_usec` 设置为 `(smb2_time / 10) % 1000000`，并将 `tv->tv_sec` 设置为 `(smb2_time - 116444736000000000) / 10000000`
 #[test]
 fn test_timestamps_filetime_timeval() {
-    let windows_time = 116_444_736_000_000_000 + (1_700_000_000_u64 * 10_000_000) + (123_456_u64 * 10);
+    let windows_time =
+        116_444_736_000_000_000 + (1_700_000_000_u64 * 10_000_000) + (123_456_u64 * 10);
 
     assert_eq!(
         timestamps::windows_time_to_timeval(windows_time),

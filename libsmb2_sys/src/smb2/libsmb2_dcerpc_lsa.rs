@@ -51,11 +51,62 @@ impl RpcSid {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TranslatedNameEx {
+    pub use_: u32,
+    pub name: Option<String>,
+    pub domain_index: u32,
+    pub flags: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TranslatedNamesEx {
+    pub names: Vec<TranslatedNameEx>,
+}
+
+impl TranslatedNamesEx {
+    pub fn entries(&self) -> u32 {
+        self.names.len().try_into().unwrap_or(u32::MAX)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SidEnumBuffer {
+    pub sid_info: Vec<RpcSid>,
+}
+
+impl SidEnumBuffer {
+    pub fn entries(&self) -> u32 {
+        self.sid_info.len().try_into().unwrap_or(u32::MAX)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrustInformation {
+    pub name: Option<String>,
+    pub sid: RpcSid,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReferencedDomainList {
+    pub domains: Vec<TrustInformation>,
+    pub max_entries: u32,
+}
+
+impl ReferencedDomainList {
+    pub fn entries(&self) -> u32 {
+        self.domains.len().try_into().unwrap_or(u32::MAX)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ObjectAttributes {
     pub length: u32,
     pub root_directory_is_null: bool,
     pub attributes: u32,
+    pub object_name_is_null: bool,
+    pub security_descriptor_is_null: bool,
+    pub security_quality_of_service_is_null: bool,
 }
 
 impl ObjectAttributes {
@@ -64,6 +115,54 @@ impl ObjectAttributes {
             length: 0,
             root_directory_is_null: true,
             attributes: 0,
+            object_name_is_null: true,
+            security_descriptor_is_null: true,
+            security_quality_of_service_is_null: true,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NdrContextHandle {
+    pub bytes: [u8; 20],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CloseRequest {
+    pub policy_handle: NdrContextHandle,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CloseResponse {
+    pub status: u32,
+    pub policy_handle: NdrContextHandle,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenPolicy2Request {
+    pub system_name: Option<String>,
+    pub object_attributes: ObjectAttributes,
+    pub desired_access: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenPolicy2Response {
+    pub status: u32,
+    pub policy_handle: NdrContextHandle,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LookupSids2Request {
+    pub policy_handle: NdrContextHandle,
+    pub sid_enum_buffer: SidEnumBuffer,
+    pub translated_names: TranslatedNamesEx,
+    pub lookup_level: LsapLookupLevel,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LookupSids2Response {
+    pub status: u32,
+    pub referenced_domains: ReferencedDomainList,
+    pub translated_names: TranslatedNamesEx,
+    pub mapped_count: u32,
 }

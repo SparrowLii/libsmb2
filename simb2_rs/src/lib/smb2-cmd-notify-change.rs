@@ -13,6 +13,8 @@ pub const SMB2_CHANGE_NOTIFY_COMMAND: u16 = 0x000f;
 
 /// Recursive watch flag used by CHANGE_NOTIFY requests.
 pub const SMB2_WATCH_TREE: u16 = 0x0001;
+/// Fixed FILE_NOTIFY_INFORMATION prefix size.
+pub const SMB2_FILE_NOTIFY_INFORMATION_SIZE: usize = 12;
 
 /// Notify on file name changes.
 pub const SMB2_NOTIFY_CHANGE_FILE_NAME: u32 = 0x0000_0001;
@@ -50,6 +52,8 @@ pub enum ChangeNotifyError {
     BufferOverlap,
     /// The fixed structure size field does not match the expected value.
     InvalidStructureSize,
+    /// A notify record has a malformed name or next-entry offset.
+    MalformedNotifyRecord,
     /// A length field does not fit in the destination integer type.
     LengthOverflow,
 }
@@ -61,6 +65,7 @@ impl core::fmt::Display for ChangeNotifyError {
             Self::BufferOutOfBounds => "variable CHANGE_NOTIFY buffer extends beyond the PDU",
             Self::BufferOverlap => "variable CHANGE_NOTIFY buffer overlaps the fixed header",
             Self::InvalidStructureSize => "unexpected CHANGE_NOTIFY structure size",
+            Self::MalformedNotifyRecord => "CHANGE_NOTIFY record is malformed",
             Self::LengthOverflow => "CHANGE_NOTIFY length does not fit in the wire field",
         };
         f.write_str(message)
@@ -120,6 +125,19 @@ pub struct ChangeNotifyReply {
     pub output: Vec<u8>,
 }
 
+/// Decoded FILE_NOTIFY_INFORMATION record from a CHANGE_NOTIFY reply buffer.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct FileNotifyInformation {
+    /// Offset to the next record in the output buffer.
+    pub next_entry_offset: u32,
+    /// File action code reported by the server.
+    pub action: u32,
+    /// UTF-16LE file name byte length as carried on the wire.
+    pub file_name_length: u32,
+    /// UTF-8 file name decoded from the record.
+    pub file_name: String,
+}
+
 impl ChangeNotifyReply {
     /// Creates an empty CHANGE_NOTIFY reply skeleton.
     #[must_use]
@@ -142,6 +160,15 @@ impl ChangeNotifyReply {
         self.output_buffer_length = len_to_u32(output.len())?;
         self.output = output;
         Ok(self)
+    }
+
+    /// Decodes the raw output buffer as FILE_NOTIFY_INFORMATION records.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any record is malformed or points outside the output buffer.
+    pub fn decode_records(&self) -> ChangeNotifyResult<Vec<FileNotifyInformation>> {
+        smb2_decode_file_notify_information_records(&self.output)
     }
 }
 
@@ -221,6 +248,63 @@ pub fn smb2_cmd_change_notify_reply_async(
         command: SMB2_CHANGE_NOTIFY_COMMAND,
         payload: smb2_encode_change_notify_reply(rep)?,
     })
+}
+
+/// Decodes chained FILE_NOTIFY_INFORMATION records from a CHANGE_NOTIFY output buffer.
+///
+/// # Errors
+///
+/// Returns an error if a fixed record, UTF-16LE name, or next-entry offset is malformed.
+pub fn smb2_decode_file_notify_information_records(
+    data: &[u8],
+) -> ChangeNotifyResult<Vec<FileNotifyInformation>> {
+    let mut records = Vec::new();
+    let mut offset = 0usize;
+    while offset < data.len() {
+        let remaining = slice_at(data, offset, data.len() - offset)?;
+        if remaining.len() < SMB2_FILE_NOTIFY_INFORMATION_SIZE {
+            return Err(ChangeNotifyError::BufferTooShort);
+        }
+
+        let next_entry_offset = read_u32(remaining, 0)?;
+        let file_name_length = read_u32(remaining, 8)?;
+        let name_len =
+            usize::try_from(file_name_length).map_err(|_| ChangeNotifyError::LengthOverflow)?;
+        if name_len % 2 != 0 {
+            return Err(ChangeNotifyError::MalformedNotifyRecord);
+        }
+        let record_len = SMB2_FILE_NOTIFY_INFORMATION_SIZE
+            .checked_add(name_len)
+            .ok_or(ChangeNotifyError::LengthOverflow)?;
+        if record_len > remaining.len() {
+            return Err(ChangeNotifyError::BufferTooShort);
+        }
+
+        records.push(FileNotifyInformation {
+            next_entry_offset,
+            action: read_u32(remaining, 4)?,
+            file_name_length,
+            file_name: decode_utf16le_lossy(slice_at(
+                remaining,
+                SMB2_FILE_NOTIFY_INFORMATION_SIZE,
+                name_len,
+            )?),
+        });
+
+        if next_entry_offset == 0 {
+            break;
+        }
+        let next =
+            usize::try_from(next_entry_offset).map_err(|_| ChangeNotifyError::LengthOverflow)?;
+        if next < record_len || next > remaining.len() {
+            return Err(ChangeNotifyError::MalformedNotifyRecord);
+        }
+        offset = offset
+            .checked_add(next)
+            .ok_or(ChangeNotifyError::LengthOverflow)?;
+    }
+
+    Ok(records)
 }
 
 /// Processes the fixed CHANGE_NOTIFY reply fields and returns the expected variable byte count.
@@ -351,6 +435,14 @@ fn slice_at(data: &[u8], offset: usize, len: usize) -> ChangeNotifyResult<&[u8]>
 
 fn len_to_u32(len: usize) -> ChangeNotifyResult<u32> {
     u32::try_from(len).map_err(|_| ChangeNotifyError::LengthOverflow)
+}
+
+fn decode_utf16le_lossy(bytes: &[u8]) -> String {
+    let units = bytes
+        .chunks_exact(2)
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect::<Vec<_>>();
+    String::from_utf16_lossy(&units)
 }
 
 const fn pad_to_32bit(value: usize) -> usize {

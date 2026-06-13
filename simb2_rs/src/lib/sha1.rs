@@ -1,8 +1,4 @@
 //! SHA-1 helpers migrated from `lib/sha1.c`.
-//!
-//! This module mirrors the public shape and state carried by the legacy C
-//! implementation. It intentionally keeps the hashing core as a skeleton so the
-//! migration can compile before the full SHA-1 transform is ported.
 
 /// Number of bytes in one SHA-1 message block.
 pub const SHA1_MESSAGE_BLOCK_SIZE: usize = 64;
@@ -142,9 +138,6 @@ impl Sha1Context {
 
     /// Returns the current 160-bit digest buffer for this context.
     ///
-    /// The current migration skeleton finalizes padding state but does not yet
-    /// implement the SHA-1 compression transform from `SHA1ProcessMessageBlock`.
-    ///
     /// # Errors
     ///
     /// Returns the stored [`Sha1Error`] if the context has entered a corrupted
@@ -242,7 +235,66 @@ impl Sha1Context {
     }
 
     fn process_message_block(&mut self) {
+        const K: [u32; 4] = [0x5A82_7999, 0x6ED9_EBA1, 0x8F1B_BCDC, 0xCA62_C1D6];
+
+        let mut w = [0u32; 80];
+        for (word, bytes) in w[..16].iter_mut().zip(self.message_block.chunks_exact(4)) {
+            *word = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        }
+        for t in 16..80 {
+            w[t] = (w[t - 3] ^ w[t - 8] ^ w[t - 14] ^ w[t - 16]).rotate_left(1);
+        }
+
+        let mut a = self.intermediate_hash[0];
+        let mut b = self.intermediate_hash[1];
+        let mut c = self.intermediate_hash[2];
+        let mut d = self.intermediate_hash[3];
+        let mut e = self.intermediate_hash[4];
+
+        for (t, word) in w.iter().enumerate() {
+            let (f, k) = match t {
+                0..=19 => (((b & c) ^ ((!b) & d)), K[0]),
+                20..=39 => (b ^ c ^ d, K[1]),
+                40..=59 => (((b & c) ^ (b & d) ^ (c & d)), K[2]),
+                _ => (b ^ c ^ d, K[3]),
+            };
+            let temp = a
+                .rotate_left(5)
+                .wrapping_add(f)
+                .wrapping_add(e)
+                .wrapping_add(*word)
+                .wrapping_add(k);
+            e = d;
+            d = c;
+            c = b.rotate_left(30);
+            b = a;
+            a = temp;
+        }
+
+        self.intermediate_hash[0] = self.intermediate_hash[0].wrapping_add(a);
+        self.intermediate_hash[1] = self.intermediate_hash[1].wrapping_add(b);
+        self.intermediate_hash[2] = self.intermediate_hash[2].wrapping_add(c);
+        self.intermediate_hash[3] = self.intermediate_hash[3].wrapping_add(d);
+        self.intermediate_hash[4] = self.intermediate_hash[4].wrapping_add(e);
         self.message_block_index = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sha1_known_vector() {
+        let mut ctx = Sha1Context::new();
+        assert_eq!(ctx.input(b"abc"), Ok(()));
+        assert_eq!(
+            ctx.result(),
+            Ok([
+                0xa9, 0x99, 0x3e, 0x36, 0x47, 0x06, 0x81, 0x6a, 0xba, 0x3e, 0x25, 0x71, 0x78, 0x50,
+                0xc2, 0x6c, 0x9c, 0xd0, 0xd8, 0x9d,
+            ])
+        );
     }
 }
 

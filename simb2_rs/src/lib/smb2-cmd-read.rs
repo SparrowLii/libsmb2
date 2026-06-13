@@ -31,8 +31,6 @@ pub enum ReadCommandError {
     ReadLengthExceedsMaximum { requested: u32, maximum: u32 },
     /// A reply buffer was required by the C async path but was not supplied.
     MissingReplyBuffer,
-    /// Channel information is only represented in passthrough skeleton mode.
-    ChannelInfoUnsupported,
 }
 
 /// Convenient result alias for READ command skeleton operations.
@@ -140,15 +138,11 @@ impl Default for Smb2ReadRequest {
 }
 
 impl Smb2ReadRequest {
-    /// Encodes the fixed READ request fields and optional passthrough channel info.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when channel info is present but passthrough mode is disabled.
+    /// Encodes the fixed READ request fields and optional raw channel info.
     pub fn encode_request(
         &mut self,
         supports_multi_credit: bool,
-        passthrough: bool,
+        _passthrough: bool,
     ) -> ReadCommandResult<Vec<Smb2IoVector>> {
         if !supports_multi_credit && self.length > 64 * 1024 {
             self.length = 64 * 1024;
@@ -168,10 +162,6 @@ impl Smb2ReadRequest {
 
         let mut vectors = vec![Smb2IoVector::new(fixed)];
         if self.read_channel_info_length > 0 && !self.read_channel_info.is_empty() {
-            if !passthrough {
-                return Err(ReadCommandError::ChannelInfoUnsupported);
-            }
-
             self.read_channel_info_offset = (READ_REQUEST_FIXED_LEN + SMB2_HEADER_SIZE) as u16;
             put_u16(&mut vectors[0].data, 44, self.read_channel_info_offset);
 
@@ -194,8 +184,7 @@ impl Smb2ReadRequest {
     ///
     /// # Errors
     ///
-    /// Returns an error when a non-empty READ has no reply buffer marker or
-    /// channel info cannot be encoded in the selected mode.
+    /// Returns an error when a non-empty READ has no reply buffer marker.
     pub fn cmd_read_async(
         &mut self,
         supports_multi_credit: bool,
@@ -294,9 +283,32 @@ impl Smb2ReadRequest {
     }
 
     /// Attaches variable READ channel info bytes parsed after the fixed request body.
-    pub fn process_request_variable(&mut self, variable: &[u8]) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `variable` is shorter than the declared channel-info length.
+    pub fn process_request_variable(&mut self, variable: &[u8]) -> ReadCommandResult<()> {
+        let needed = usize::from(self.read_channel_info_length);
+        if needed == 0 {
+            self.read_channel_info.clear();
+            return Ok(());
+        }
+
+        let minimum_offset = SMB2_HEADER_SIZE + READ_REQUEST_FIXED_LEN;
+        let channel_offset = usize::from(self.read_channel_info_offset)
+            .checked_sub(minimum_offset)
+            .ok_or(ReadCommandError::ChannelInfoOverlapsRequest)?;
+        let required_len = channel_offset + needed;
+        if variable.len() < required_len {
+            return Err(ReadCommandError::ShortFixedPayload {
+                expected: required_len,
+                actual: variable.len(),
+            });
+        }
         self.read_channel_info.clear();
-        self.read_channel_info.extend_from_slice(variable);
+        self.read_channel_info
+            .extend_from_slice(&variable[channel_offset..required_len]);
+        Ok(())
     }
 }
 
@@ -390,9 +402,25 @@ impl Smb2ReadReply {
     }
 
     /// Attaches variable READ reply data bytes parsed after the fixed reply body.
-    pub fn process_reply_variable(&mut self, variable: &[u8]) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `variable` is shorter than the declared data length.
+    pub fn process_reply_variable(&mut self, variable: &[u8]) -> ReadCommandResult<()> {
+        let needed =
+            usize::try_from(self.data_length).map_err(|_| ReadCommandError::ShortFixedPayload {
+                expected: usize::MAX,
+                actual: variable.len(),
+            })?;
+        if variable.len() < needed {
+            return Err(ReadCommandError::ShortFixedPayload {
+                expected: needed,
+                actual: variable.len(),
+            });
+        }
         self.data.clear();
-        self.data.extend_from_slice(variable);
+        self.data.extend_from_slice(&variable[..needed]);
+        Ok(())
     }
 }
 

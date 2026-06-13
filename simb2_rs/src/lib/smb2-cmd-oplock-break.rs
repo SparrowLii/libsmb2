@@ -571,6 +571,9 @@ fn pdu_from_fixed(fixed: Vec<u8>, callback: Option<CommandCallback>) -> Pdu {
         input: IoVectors::default(),
         callback,
         compound: false,
+        next_compound: None,
+        prev_compound_mid: 0,
+        payload: None,
         timeout: None,
     }
 }

@@ -2,6 +2,36 @@
 
 use crate::include::libsmb2_private::SMB2_HEADER_SIZE;
 
+use super::smb2_data_file_info::{
+    smb2_decode_file_all_info, smb2_decode_file_basic_info, smb2_decode_file_network_open_info,
+    smb2_decode_file_normalized_name_info, smb2_decode_file_position_info,
+    smb2_decode_file_standard_info, smb2_decode_file_stream_info, smb2_encode_file_all_info,
+    smb2_encode_file_basic_info, smb2_encode_file_network_open_info,
+    smb2_encode_file_normalized_name_info, smb2_encode_file_position_info,
+    smb2_encode_file_standard_info, smb2_encode_file_stream_info, FileInfoError, Smb2FileAllInfo,
+    Smb2FileBasicInfo, Smb2FileNameInfo, Smb2FileNetworkOpenInfo, Smb2FilePositionInfo,
+    Smb2FileStandardInfo, Smb2FileStreamInfo, FILE_ALL_INFO_PREFIX_SIZE, FILE_BASIC_INFO_SIZE,
+    FILE_NAME_INFO_PREFIX_SIZE, FILE_NETWORK_OPEN_INFO_SIZE, FILE_POSITION_INFO_SIZE,
+    FILE_STANDARD_INFO_SIZE, FILE_STREAM_INFO_HEADER_SIZE,
+};
+use super::smb2_data_filesystem_info::{
+    smb2_decode_file_fs_attribute_info, smb2_decode_file_fs_control_info,
+    smb2_decode_file_fs_device_info, smb2_decode_file_fs_full_size_info,
+    smb2_decode_file_fs_object_id_info, smb2_decode_file_fs_sector_size_info,
+    smb2_decode_file_fs_size_info, smb2_decode_file_fs_volume_info, FilesystemInfoError,
+    Smb2FileFsAttributeInfo, Smb2FileFsControlInfo, Smb2FileFsDeviceInfo, Smb2FileFsFullSizeInfo,
+    Smb2FileFsObjectIdInfo, Smb2FileFsSectorSizeInfo, Smb2FileFsSizeInfo, Smb2FileFsVolumeInfo,
+};
+use super::smb2_data_security_descriptor::{
+    smb2_decode_security_descriptor, smb2_encode_security_descriptor, SecurityDescriptorCodecError,
+    Smb2Ace, Smb2Acl, Smb2SecurityDescriptor, Smb2Sid, SMB2_ACCESS_ALLOWED_ACE_TYPE,
+    SMB2_ACCESS_ALLOWED_CALLBACK_ACE_TYPE, SMB2_ACCESS_ALLOWED_OBJECT_ACE_TYPE,
+    SMB2_ACCESS_DENIED_ACE_TYPE, SMB2_ACCESS_DENIED_CALLBACK_ACE_TYPE,
+    SMB2_ACCESS_DENIED_OBJECT_ACE_TYPE, SMB2_SYSTEM_AUDIT_ACE_TYPE,
+    SMB2_SYSTEM_AUDIT_OBJECT_ACE_TYPE, SMB2_SYSTEM_MANDATORY_LABEL_ACE_TYPE,
+    SMB2_SYSTEM_RESOURCE_ATTRIBUTE_ACE_TYPE, SMB2_SYSTEM_SCOPED_POLICY_ID_ACE_TYPE,
+};
+
 /// SMB2 command id for QUERY_INFO.
 pub const SMB2_QUERY_INFO: u16 = 16;
 /// SMB2 file id size in bytes.
@@ -92,7 +122,7 @@ pub const SMB2_SACL_SECURITY_INFORMATION: u32 = 0x0000_0008;
 pub const SMB2_LABEL_SECURITY_INFORMATION: u32 = 0x0000_0010;
 
 /// Errors returned by the QUERY_INFO migration skeleton.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QueryInfoError {
     /// A fixed or variable buffer is shorter than the requested field.
     BufferTooShort,
@@ -104,15 +134,19 @@ pub enum QueryInfoError {
     InvalidStructureSize,
     /// A checked offset or length calculation overflowed.
     LengthOverflow,
-    /// The C request encoder rejects non-empty input buffers.
-    UnsupportedInputBuffer,
-    /// The skeleton intentionally does not decode this info type/class pair.
-    UnsupportedInfoClass {
+    /// A typed payload was paired with a different QUERY_INFO type/class.
+    PayloadClassMismatch {
         /// QUERY_INFO info type.
         info_type: u8,
         /// QUERY_INFO file or filesystem information class.
         info_class: u8,
     },
+    /// File information typed payload codec failed.
+    FileInfo(FileInfoError),
+    /// Filesystem information typed payload codec failed.
+    FilesystemInfo(FilesystemInfoError),
+    /// Security descriptor typed payload codec failed.
+    SecurityDescriptor(SecurityDescriptorCodecError),
 }
 
 impl core::fmt::Display for QueryInfoError {
@@ -131,17 +165,39 @@ impl core::fmt::Display for QueryInfoError {
             Self::LengthOverflow => {
                 f.write_str("QUERY_INFO offset or length calculation overflowed")
             }
-            Self::UnsupportedInputBuffer => {
-                f.write_str("QUERY_INFO request input buffers are not encoded by this skeleton")
+            Self::PayloadClassMismatch { .. } => {
+                f.write_str("QUERY_INFO payload does not match the requested info type/class")
             }
-            Self::UnsupportedInfoClass { .. } => {
-                f.write_str("QUERY_INFO info type/class is not decoded by this skeleton")
+            Self::FileInfo(error) => write!(f, "file information payload error: {error}"),
+            Self::FilesystemInfo(error) => {
+                write!(f, "filesystem information payload error: {error}")
+            }
+            Self::SecurityDescriptor(error) => {
+                write!(f, "security descriptor payload error: {error}")
             }
         }
     }
 }
 
 impl std::error::Error for QueryInfoError {}
+
+impl From<FileInfoError> for QueryInfoError {
+    fn from(error: FileInfoError) -> Self {
+        Self::FileInfo(error)
+    }
+}
+
+impl From<FilesystemInfoError> for QueryInfoError {
+    fn from(error: FilesystemInfoError) -> Self {
+        Self::FilesystemInfo(error)
+    }
+}
+
+impl From<SecurityDescriptorCodecError> for QueryInfoError {
+    fn from(error: SecurityDescriptorCodecError) -> Self {
+        Self::SecurityDescriptor(error)
+    }
+}
 
 /// Result type for QUERY_INFO skeleton helpers.
 pub type QueryInfoResult<T> = core::result::Result<T, QueryInfoError>;
@@ -186,7 +242,7 @@ pub enum QueryInfoPayloadKind {
     SecurityDescriptor,
 }
 
-/// Decoded or passthrough QUERY_INFO variable payload placeholder.
+/// Decoded or passthrough QUERY_INFO variable payload.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub enum QueryInfoPayload {
     /// No output buffer is present.
@@ -194,13 +250,38 @@ pub enum QueryInfoPayload {
     None,
     /// Raw bytes used for passthrough or not-yet-translated encoders.
     Raw(Vec<u8>),
-    /// Bytes tagged with the legacy decoder that would eventually handle them.
-    Decoded {
-        /// Recognized payload kind from the C switch statement.
-        kind: QueryInfoPayloadKind,
-        /// Wire bytes retained until the concrete data-info migration exists.
-        bytes: Vec<u8>,
-    },
+    /// FILE_ALL_INFORMATION payload.
+    FileAllInformation(Smb2FileAllInfo),
+    /// FILE_BASIC_INFORMATION payload.
+    FileBasicInformation(Smb2FileBasicInfo),
+    /// FILE_NETWORK_OPEN_INFORMATION payload.
+    FileNetworkOpenInformation(Smb2FileNetworkOpenInfo),
+    /// FILE_NORMALIZED_NAME_INFORMATION payload.
+    FileNormalizedNameInformation(Smb2FileNameInfo),
+    /// FILE_POSITION_INFORMATION payload.
+    FilePositionInformation(Smb2FilePositionInfo),
+    /// FILE_STANDARD_INFORMATION payload.
+    FileStandardInformation(Smb2FileStandardInfo),
+    /// FILE_STREAM_INFORMATION payload.
+    FileStreamInformation(Vec<Smb2FileStreamInfo>),
+    /// FILE_FS_ATTRIBUTE_INFORMATION payload.
+    FileFsAttributeInformation(Smb2FileFsAttributeInfo),
+    /// FILE_FS_CONTROL_INFORMATION payload.
+    FileFsControlInformation(Smb2FileFsControlInfo),
+    /// FILE_FS_DEVICE_INFORMATION payload.
+    FileFsDeviceInformation(Smb2FileFsDeviceInfo),
+    /// FILE_FS_FULL_SIZE_INFORMATION payload.
+    FileFsFullSizeInformation(Smb2FileFsFullSizeInfo),
+    /// FILE_FS_OBJECT_ID_INFORMATION payload.
+    FileFsObjectIdInformation(Smb2FileFsObjectIdInfo),
+    /// FILE_FS_SECTOR_SIZE_INFORMATION payload.
+    FileFsSectorSizeInformation(Smb2FileFsSectorSizeInfo),
+    /// FILE_FS_SIZE_INFORMATION payload.
+    FileFsSizeInformation(Smb2FileFsSizeInfo),
+    /// FILE_FS_VOLUME_INFORMATION payload.
+    FileFsVolumeInformation(Smb2FileFsVolumeInfo),
+    /// SECURITY_DESCRIPTOR payload.
+    SecurityDescriptor(Smb2SecurityDescriptor),
 }
 
 impl QueryInfoPayload {
@@ -209,7 +290,32 @@ impl QueryInfoPayload {
     pub fn len(&self) -> usize {
         match self {
             Self::None => 0,
-            Self::Raw(bytes) | Self::Decoded { bytes, .. } => bytes.len(),
+            Self::Raw(bytes) => bytes.len(),
+            Self::FileAllInformation(info) => {
+                FILE_ALL_INFO_PREFIX_SIZE + utf16_name_len(&info.name)
+            }
+            Self::FileBasicInformation(_) => FILE_BASIC_INFO_SIZE,
+            Self::FileNetworkOpenInformation(_) => FILE_NETWORK_OPEN_INFO_SIZE,
+            Self::FileNormalizedNameInformation(info) => {
+                FILE_NAME_INFO_PREFIX_SIZE
+                    + (info.file_name_length as usize).max(utf16_name_len(&info.name))
+            }
+            Self::FilePositionInformation(_) => FILE_POSITION_INFO_SIZE,
+            Self::FileStandardInformation(_) => FILE_STANDARD_INFO_SIZE,
+            Self::FileStreamInformation(entries) => file_stream_info_len(entries),
+            Self::FileFsAttributeInformation(info) => {
+                Smb2FileFsAttributeInfo::fixed_wire_len() + info.filesystem_name.len()
+            }
+            Self::FileFsControlInformation(_) => Smb2FileFsControlInfo::fixed_wire_len(),
+            Self::FileFsDeviceInformation(_) => Smb2FileFsDeviceInfo::fixed_wire_len(),
+            Self::FileFsFullSizeInformation(_) => Smb2FileFsFullSizeInfo::fixed_wire_len(),
+            Self::FileFsObjectIdInformation(_) => Smb2FileFsObjectIdInfo::fixed_wire_len(),
+            Self::FileFsSectorSizeInformation(_) => Smb2FileFsSectorSizeInfo::fixed_wire_len(),
+            Self::FileFsSizeInformation(_) => Smb2FileFsSizeInfo::fixed_wire_len(),
+            Self::FileFsVolumeInformation(info) => {
+                Smb2FileFsVolumeInfo::fixed_wire_len() + info.volume_label.len()
+            }
+            Self::SecurityDescriptor(info) => security_descriptor_len(info),
         }
     }
 
@@ -224,8 +330,19 @@ impl QueryInfoPayload {
     pub fn as_bytes(&self) -> &[u8] {
         match self {
             Self::None => &[],
-            Self::Raw(bytes) | Self::Decoded { bytes, .. } => bytes,
+            Self::Raw(bytes) => bytes,
+            _ => &[],
         }
+    }
+
+    /// Encodes a typed payload to SMB2 wire bytes, or returns raw bytes unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a typed payload cannot be encoded or does not match the requested
+    /// QUERY_INFO type/class pair.
+    pub fn encode_for(&self, info_type: u8, file_info_class: u8) -> QueryInfoResult<Vec<u8>> {
+        encode_payload_for(self, info_type, file_info_class)
     }
 }
 
@@ -387,23 +504,23 @@ pub struct QueryInfoEncodePlan {
     pub status: Option<u32>,
 }
 
-/// Encodes fixed QUERY_INFO request fields.
+/// Encodes fixed QUERY_INFO request fields and raw input bytes.
 ///
 /// # Errors
 ///
-/// Returns an error for non-empty input buffers, matching the current C encoder limitation.
+/// Returns an error if declared lengths cannot fit in SMB2 fields.
 pub fn smb2_encode_query_info_request(req: &QueryInfoRequest) -> QueryInfoResult<Vec<u8>> {
-    if req.input_buffer_length > 0 || !req.input.is_empty() {
-        return Err(QueryInfoError::UnsupportedInputBuffer);
-    }
-
-    let mut buf = vec![0; QueryInfoRequest::fixed_wire_len()];
+    let input_len = req.input.len();
+    let mut buf = vec![0; QueryInfoRequest::fixed_wire_len() + pad_to_64bit(input_len)];
     write_u16(&mut buf, 0, SMB2_QUERY_INFO_REQUEST_SIZE as u16)?;
     write_u8(&mut buf, 2, req.info_type)?;
     write_u8(&mut buf, 3, req.file_info_class)?;
     write_u32(&mut buf, 4, req.output_buffer_length)?;
     write_u16(&mut buf, 8, request_payload_offset() as u16)?;
-    write_u32(&mut buf, 12, 0)?;
+    write_u32(&mut buf, 12, len_to_u32(input_len)?)?;
+    if input_len > 0 {
+        write_bytes(&mut buf, QueryInfoRequest::fixed_wire_len(), &req.input)?;
+    }
     write_u32(&mut buf, 16, req.additional_information)?;
     write_u32(&mut buf, 20, req.flags)?;
     write_bytes(&mut buf, 24, &req.file_id)?;
@@ -435,17 +552,10 @@ pub fn smb2_encode_query_info_reply(
     rep: &QueryInfoReply,
     passthrough: bool,
 ) -> QueryInfoResult<(Vec<u8>, Option<u32>)> {
-    let available = rep.output_buffer.as_bytes();
-    let encoded = if rep.output_buffer.is_empty() {
-        &[][..]
-    } else if passthrough || recognized_payload_kind(req.info_type, req.file_info_class).is_some() {
-        available
-    } else {
-        return Err(QueryInfoError::UnsupportedInfoClass {
-            info_type: req.info_type,
-            info_class: req.file_info_class,
-        });
-    };
+    let _ = passthrough;
+    let encoded = rep
+        .output_buffer
+        .encode_for(req.info_type, req.file_info_class)?;
 
     let requested_len = req.output_buffer_length as usize;
     let created_len = encoded.len().min(requested_len);
@@ -539,7 +649,7 @@ pub fn smb2_process_query_info_fixed(
 ///
 /// # Errors
 ///
-/// Returns an error if the output slice does not fit or no decoder exists without passthrough.
+/// Returns an error if the output slice does not fit.
 pub fn smb2_process_query_info_variable(
     rep: &mut QueryInfoReply,
     info_type: u8,
@@ -556,15 +666,10 @@ pub fn smb2_process_query_info_variable(
     let len =
         usize::try_from(rep.output_buffer_length).map_err(|_| QueryInfoError::LengthOverflow)?;
     let bytes = slice_at(variable, offset, len)?.to_vec();
+    let _ = passthrough;
     rep.output_buffer = match recognized_payload_kind(info_type, file_info_class) {
-        Some(kind) => QueryInfoPayload::Decoded { kind, bytes },
-        None if passthrough => QueryInfoPayload::Raw(bytes),
-        None => {
-            return Err(QueryInfoError::UnsupportedInfoClass {
-                info_type,
-                info_class: file_info_class,
-            })
-        }
+        Some(kind) => decode_payload(kind, &bytes)?,
+        None => QueryInfoPayload::Raw(bytes),
     };
     Ok(())
 }
@@ -718,6 +823,239 @@ fn recognized_payload_kind(info_type: u8, file_info_class: u8) -> Option<QueryIn
         }
         (SMB2_0_INFO_SECURITY, _) => Some(QueryInfoPayloadKind::SecurityDescriptor),
         _ => None,
+    }
+}
+
+fn decode_payload(kind: QueryInfoPayloadKind, bytes: &[u8]) -> QueryInfoResult<QueryInfoPayload> {
+    match kind {
+        QueryInfoPayloadKind::FileAllInformation => Ok(QueryInfoPayload::FileAllInformation(
+            smb2_decode_file_all_info(bytes)?,
+        )),
+        QueryInfoPayloadKind::FileBasicInformation => Ok(QueryInfoPayload::FileBasicInformation(
+            smb2_decode_file_basic_info(bytes)?,
+        )),
+        QueryInfoPayloadKind::FileNetworkOpenInformation => {
+            Ok(QueryInfoPayload::FileNetworkOpenInformation(
+                smb2_decode_file_network_open_info(bytes)?,
+            ))
+        }
+        QueryInfoPayloadKind::FileNormalizedNameInformation => {
+            Ok(QueryInfoPayload::FileNormalizedNameInformation(
+                smb2_decode_file_normalized_name_info(bytes)?,
+            ))
+        }
+        QueryInfoPayloadKind::FilePositionInformation => Ok(
+            QueryInfoPayload::FilePositionInformation(smb2_decode_file_position_info(bytes)?),
+        ),
+        QueryInfoPayloadKind::FileStandardInformation => Ok(
+            QueryInfoPayload::FileStandardInformation(smb2_decode_file_standard_info(bytes)?),
+        ),
+        QueryInfoPayloadKind::FileStreamInformation => Ok(QueryInfoPayload::FileStreamInformation(
+            smb2_decode_file_stream_info(bytes)?,
+        )),
+        QueryInfoPayloadKind::FileFsAttributeInformation => {
+            Ok(QueryInfoPayload::FileFsAttributeInformation(
+                smb2_decode_file_fs_attribute_info(bytes)?,
+            ))
+        }
+        QueryInfoPayloadKind::FileFsControlInformation => Ok(
+            QueryInfoPayload::FileFsControlInformation(smb2_decode_file_fs_control_info(bytes)?),
+        ),
+        QueryInfoPayloadKind::FileFsDeviceInformation => Ok(
+            QueryInfoPayload::FileFsDeviceInformation(smb2_decode_file_fs_device_info(bytes)?),
+        ),
+        QueryInfoPayloadKind::FileFsFullSizeInformation => Ok(
+            QueryInfoPayload::FileFsFullSizeInformation(smb2_decode_file_fs_full_size_info(bytes)?),
+        ),
+        QueryInfoPayloadKind::FileFsObjectIdInformation => Ok(
+            QueryInfoPayload::FileFsObjectIdInformation(smb2_decode_file_fs_object_id_info(bytes)?),
+        ),
+        QueryInfoPayloadKind::FileFsSectorSizeInformation => {
+            Ok(QueryInfoPayload::FileFsSectorSizeInformation(
+                smb2_decode_file_fs_sector_size_info(bytes)?,
+            ))
+        }
+        QueryInfoPayloadKind::FileFsSizeInformation => Ok(QueryInfoPayload::FileFsSizeInformation(
+            smb2_decode_file_fs_size_info(bytes)?,
+        )),
+        QueryInfoPayloadKind::FileFsVolumeInformation => Ok(
+            QueryInfoPayload::FileFsVolumeInformation(smb2_decode_file_fs_volume_info(bytes)?),
+        ),
+        QueryInfoPayloadKind::SecurityDescriptor => Ok(QueryInfoPayload::SecurityDescriptor(
+            smb2_decode_security_descriptor(bytes).map_err(SecurityDescriptorCodecError::from)?,
+        )),
+    }
+}
+
+fn encode_payload_for(
+    payload: &QueryInfoPayload,
+    info_type: u8,
+    file_info_class: u8,
+) -> QueryInfoResult<Vec<u8>> {
+    let Some(kind) = recognized_payload_kind(info_type, file_info_class) else {
+        return match payload {
+            QueryInfoPayload::Raw(bytes) => Ok(bytes.clone()),
+            QueryInfoPayload::None => Ok(Vec::new()),
+            _ => Err(QueryInfoError::PayloadClassMismatch {
+                info_type,
+                info_class: file_info_class,
+            }),
+        };
+    };
+
+    match (kind, payload) {
+        (_, QueryInfoPayload::None) => Ok(Vec::new()),
+        (_, QueryInfoPayload::Raw(bytes)) => Ok(bytes.clone()),
+        (QueryInfoPayloadKind::FileAllInformation, QueryInfoPayload::FileAllInformation(info)) => {
+            encode_with_len(payload.len(), |buf| smb2_encode_file_all_info(info, buf))
+        }
+        (
+            QueryInfoPayloadKind::FileBasicInformation,
+            QueryInfoPayload::FileBasicInformation(info),
+        ) => encode_with_len(FILE_BASIC_INFO_SIZE, |buf| {
+            smb2_encode_file_basic_info(info, buf)
+        }),
+        (
+            QueryInfoPayloadKind::FileNetworkOpenInformation,
+            QueryInfoPayload::FileNetworkOpenInformation(info),
+        ) => encode_with_len(FILE_NETWORK_OPEN_INFO_SIZE, |buf| {
+            smb2_encode_file_network_open_info(info, buf)
+        }),
+        (
+            QueryInfoPayloadKind::FileNormalizedNameInformation,
+            QueryInfoPayload::FileNormalizedNameInformation(info),
+        ) => encode_with_len(payload.len(), |buf| {
+            smb2_encode_file_normalized_name_info(info, buf)
+        }),
+        (
+            QueryInfoPayloadKind::FilePositionInformation,
+            QueryInfoPayload::FilePositionInformation(info),
+        ) => encode_with_len(FILE_POSITION_INFO_SIZE, |buf| {
+            smb2_encode_file_position_info(info, buf)
+        }),
+        (
+            QueryInfoPayloadKind::FileStandardInformation,
+            QueryInfoPayload::FileStandardInformation(info),
+        ) => encode_with_len(FILE_STANDARD_INFO_SIZE, |buf| {
+            smb2_encode_file_standard_info(info, buf)
+        }),
+        (
+            QueryInfoPayloadKind::FileStreamInformation,
+            QueryInfoPayload::FileStreamInformation(info),
+        ) => encode_with_len(payload.len(), |buf| smb2_encode_file_stream_info(info, buf)),
+        (
+            QueryInfoPayloadKind::FileFsAttributeInformation,
+            QueryInfoPayload::FileFsAttributeInformation(info),
+        ) => info.encode().map_err(QueryInfoError::from),
+        (
+            QueryInfoPayloadKind::FileFsControlInformation,
+            QueryInfoPayload::FileFsControlInformation(info),
+        ) => Ok(info.encode()),
+        (
+            QueryInfoPayloadKind::FileFsDeviceInformation,
+            QueryInfoPayload::FileFsDeviceInformation(info),
+        ) => Ok(info.encode()),
+        (
+            QueryInfoPayloadKind::FileFsFullSizeInformation,
+            QueryInfoPayload::FileFsFullSizeInformation(info),
+        ) => Ok(info.encode()),
+        (
+            QueryInfoPayloadKind::FileFsObjectIdInformation,
+            QueryInfoPayload::FileFsObjectIdInformation(info),
+        ) => Ok(info.encode()),
+        (
+            QueryInfoPayloadKind::FileFsSectorSizeInformation,
+            QueryInfoPayload::FileFsSectorSizeInformation(info),
+        ) => Ok(info.encode()),
+        (
+            QueryInfoPayloadKind::FileFsSizeInformation,
+            QueryInfoPayload::FileFsSizeInformation(info),
+        ) => Ok(info.encode()),
+        (
+            QueryInfoPayloadKind::FileFsVolumeInformation,
+            QueryInfoPayload::FileFsVolumeInformation(info),
+        ) => info.encode().map_err(QueryInfoError::from),
+        (QueryInfoPayloadKind::SecurityDescriptor, QueryInfoPayload::SecurityDescriptor(info)) => {
+            smb2_encode_security_descriptor(info).map_err(QueryInfoError::from)
+        }
+        _ => Err(QueryInfoError::PayloadClassMismatch {
+            info_type,
+            info_class: file_info_class,
+        }),
+    }
+}
+
+fn encode_with_len(
+    len: usize,
+    encode: impl FnOnce(&mut [u8]) -> Result<usize, FileInfoError>,
+) -> QueryInfoResult<Vec<u8>> {
+    let mut buf = vec![0; len];
+    let written = encode(&mut buf)?;
+    buf.truncate(written);
+    Ok(buf)
+}
+
+fn utf16_name_len(name: &Option<String>) -> usize {
+    name.as_deref()
+        .map_or(0, |name| name.encode_utf16().count().saturating_mul(2))
+}
+
+fn file_stream_info_len(entries: &[Smb2FileStreamInfo]) -> usize {
+    let mut total = 0usize;
+    for (index, entry) in entries.iter().enumerate() {
+        let name_len = utf16_name_len(&entry.stream_name);
+        let entry_len = FILE_STREAM_INFO_HEADER_SIZE.saturating_add(name_len);
+        if index + 1 == entries.len() {
+            total = total.saturating_add(entry_len);
+        } else {
+            total = total.saturating_add(pad_to_64bit(entry_len));
+        }
+    }
+    total
+}
+
+fn security_descriptor_len(info: &Smb2SecurityDescriptor) -> usize {
+    20usize
+        .saturating_add(info.owner.as_ref().map_or(0, sid_len))
+        .saturating_add(info.group.as_ref().map_or(0, sid_len))
+        .saturating_add(info.sacl.as_ref().map_or(0, acl_len))
+        .saturating_add(info.dacl.as_ref().map_or(0, acl_len))
+}
+
+fn sid_len(sid: &Smb2Sid) -> usize {
+    8usize.saturating_add(sid.sub_auth.len().saturating_mul(4))
+}
+
+fn acl_len(acl: &Smb2Acl) -> usize {
+    acl.aces
+        .iter()
+        .fold(8usize, |total, ace| total.saturating_add(ace_len(ace)))
+}
+
+fn ace_len(ace: &Smb2Ace) -> usize {
+    4usize.saturating_add(ace_payload_len(ace))
+}
+
+fn ace_payload_len(ace: &Smb2Ace) -> usize {
+    match ace.ace_type {
+        SMB2_ACCESS_ALLOWED_ACE_TYPE
+        | SMB2_ACCESS_DENIED_ACE_TYPE
+        | SMB2_SYSTEM_AUDIT_ACE_TYPE
+        | SMB2_SYSTEM_MANDATORY_LABEL_ACE_TYPE
+        | SMB2_SYSTEM_SCOPED_POLICY_ID_ACE_TYPE => {
+            4usize.saturating_add(ace.sid.as_ref().map_or(0, sid_len))
+        }
+        SMB2_ACCESS_ALLOWED_OBJECT_ACE_TYPE
+        | SMB2_ACCESS_DENIED_OBJECT_ACE_TYPE
+        | SMB2_SYSTEM_AUDIT_OBJECT_ACE_TYPE => {
+            40usize.saturating_add(ace.sid.as_ref().map_or(0, sid_len))
+        }
+        SMB2_ACCESS_ALLOWED_CALLBACK_ACE_TYPE
+        | SMB2_ACCESS_DENIED_CALLBACK_ACE_TYPE
+        | SMB2_SYSTEM_RESOURCE_ATTRIBUTE_ACE_TYPE => 4usize
+            .saturating_add(ace.sid.as_ref().map_or(0, sid_len))
+            .saturating_add(ace.application_data.len()),
+        _ => ace.raw_data.len(),
     }
 }
 

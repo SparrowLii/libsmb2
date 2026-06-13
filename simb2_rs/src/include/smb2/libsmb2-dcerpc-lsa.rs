@@ -1,4 +1,6 @@
-//! LSA DCERPC skeleton from `include/smb2/libsmb2-dcerpc-lsa.h`.
+//! LSA DCERPC public surface from `include/smb2/libsmb2-dcerpc-lsa.h`.
+
+use crate::lib::dcerpc_lsa as lib_lsa;
 
 /// LSA `Close` operation number.
 pub const LSA_CLOSE: u16 = 0x00;
@@ -103,10 +105,11 @@ pub struct LsaprSidEnumBuffer {
 }
 
 /// Lookup level used by LSA SID and name translation operations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[repr(u32)]
 pub enum LsapLookupLevel {
     /// Workstation lookup.
+    #[default]
     Wksta = 1,
     /// Primary domain controller lookup.
     Pdc = 2,
@@ -120,12 +123,6 @@ pub enum LsapLookupLevel {
     XForestResolve = 6,
     /// Read-only domain controller referral to a full domain controller.
     RodcReferralToFullDc = 7,
-}
-
-impl Default for LsapLookupLevel {
-    fn default() -> Self {
-        Self::Wksta
-    }
 }
 
 /// Trust information entry in an LSA referenced domain list.
@@ -229,13 +226,21 @@ pub struct LsaLookupSids2Rep {
 #[derive(Debug, Default)]
 pub struct DceRpcContext;
 
-/// Placeholder DCERPC PDU for LSA coder skeletons.
-#[derive(Debug, Default)]
-pub struct DceRpcPdu;
+/// Minimal DCERPC PDU payload carrier for LSA public coders.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DceRpcPdu {
+    /// `0` decodes from `payload`; non-zero encodes into `payload`.
+    pub direction: i32,
+    /// Encoded or decoded LSA stub bytes.
+    pub payload: Vec<u8>,
+}
 
-/// Placeholder SMB2 iovec for LSA coder skeletons.
-#[derive(Debug, Default)]
-pub struct Smb2Iovec;
+/// Minimal SMB2 iovec payload carrier for LSA public coders.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Smb2Iovec {
+    /// Encoded or decoded LSA stub bytes.
+    pub buf: Vec<u8>,
+}
 
 /// Error returned by staged LSA coder skeletons.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -259,76 +264,280 @@ pub type LsaCoderResult = Result<(), LsaCoderError>;
 /// Decoder skeleton for an LSA `Close` response.
 pub fn lsa_close_rep_coder(
     _dce: &mut DceRpcContext,
-    _pdu: &mut DceRpcPdu,
-    _iov: &mut Smb2Iovec,
-    _offset: &mut usize,
-    _rep: &mut LsaCloseRep,
+    pdu: &mut DceRpcPdu,
+    iov: &mut Smb2Iovec,
+    offset: &mut usize,
+    rep: &mut LsaCloseRep,
 ) -> LsaCoderResult {
-    Err(LsaCoderError::not_implemented())
+    let decoded = lib_lsa::decode_lsa_close_reply(decode_bytes(pdu, iov, *offset))
+        .map_err(|_| LsaCoderError::not_implemented())?;
+    *rep = from_lib_close_reply(decoded);
+    *offset = input_len(pdu, iov);
+    Ok(())
 }
 
 /// Encoder skeleton for an LSA `Close` request.
 pub fn lsa_close_req_coder(
     _dce: &mut DceRpcContext,
-    _pdu: &mut DceRpcPdu,
-    _iov: &mut Smb2Iovec,
-    _offset: &mut usize,
-    _req: &LsaCloseReq,
+    pdu: &mut DceRpcPdu,
+    iov: &mut Smb2Iovec,
+    offset: &mut usize,
+    req: &LsaCloseReq,
 ) -> LsaCoderResult {
-    Err(LsaCoderError::not_implemented())
+    let bytes = lib_lsa::encode_lsa_close_request(&to_lib_close_request(req))
+        .map_err(|_| LsaCoderError::not_implemented())?;
+    store_bytes(pdu, iov, offset, bytes);
+    Ok(())
 }
 
 /// Decoder skeleton for an LSA `LookupSids2` response.
 pub fn lsa_lookup_sids2_rep_coder(
     _dce: &mut DceRpcContext,
-    _pdu: &mut DceRpcPdu,
-    _iov: &mut Smb2Iovec,
-    _offset: &mut usize,
-    _rep: &mut LsaLookupSids2Rep,
+    pdu: &mut DceRpcPdu,
+    iov: &mut Smb2Iovec,
+    offset: &mut usize,
+    rep: &mut LsaLookupSids2Rep,
 ) -> LsaCoderResult {
-    Err(LsaCoderError::not_implemented())
+    let decoded = lib_lsa::decode_lsa_lookup_sids2_reply(decode_bytes(pdu, iov, *offset))
+        .map_err(|_| LsaCoderError::not_implemented())?;
+    *rep = from_lib_lookup_sids2_reply(decoded);
+    *offset = input_len(pdu, iov);
+    Ok(())
 }
 
 /// Encoder skeleton for an LSA `LookupSids2` request.
 pub fn lsa_lookup_sids2_req_coder(
     _dce: &mut DceRpcContext,
-    _pdu: &mut DceRpcPdu,
-    _iov: &mut Smb2Iovec,
-    _offset: &mut usize,
-    _req: &LsaLookupSids2Req,
+    pdu: &mut DceRpcPdu,
+    iov: &mut Smb2Iovec,
+    offset: &mut usize,
+    req: &LsaLookupSids2Req,
 ) -> LsaCoderResult {
-    Err(LsaCoderError::not_implemented())
+    let bytes = lib_lsa::encode_lsa_lookup_sids2_request(&to_lib_lookup_sids2_request(req))
+        .map_err(|_| LsaCoderError::not_implemented())?;
+    store_bytes(pdu, iov, offset, bytes);
+    Ok(())
 }
 
 /// Decoder skeleton for an LSA `OpenPolicy2` response.
 pub fn lsa_open_policy2_rep_coder(
     _dce: &mut DceRpcContext,
-    _pdu: &mut DceRpcPdu,
-    _iov: &mut Smb2Iovec,
-    _offset: &mut usize,
-    _rep: &mut LsaOpenPolicy2Rep,
+    pdu: &mut DceRpcPdu,
+    iov: &mut Smb2Iovec,
+    offset: &mut usize,
+    rep: &mut LsaOpenPolicy2Rep,
 ) -> LsaCoderResult {
-    Err(LsaCoderError::not_implemented())
+    let decoded = lib_lsa::decode_lsa_open_policy2_reply(decode_bytes(pdu, iov, *offset))
+        .map_err(|_| LsaCoderError::not_implemented())?;
+    *rep = from_lib_open_policy2_reply(decoded);
+    *offset = input_len(pdu, iov);
+    Ok(())
 }
 
 /// Encoder skeleton for an LSA `OpenPolicy2` request.
 pub fn lsa_open_policy2_req_coder(
     _dce: &mut DceRpcContext,
-    _pdu: &mut DceRpcPdu,
-    _iov: &mut Smb2Iovec,
-    _offset: &mut usize,
-    _req: &LsaOpenPolicy2Req,
+    pdu: &mut DceRpcPdu,
+    iov: &mut Smb2Iovec,
+    offset: &mut usize,
+    req: &LsaOpenPolicy2Req,
 ) -> LsaCoderResult {
-    Err(LsaCoderError::not_implemented())
+    let bytes = lib_lsa::encode_lsa_open_policy2_request(&to_lib_open_policy2_request(req))
+        .map_err(|_| LsaCoderError::not_implemented())?;
+    store_bytes(pdu, iov, offset, bytes);
+    Ok(())
 }
 
 /// Encoder/decoder skeleton for an `RPC_SID` value.
 pub fn lsa_rpc_sid_coder(
     _dce: &mut DceRpcContext,
-    _pdu: &mut DceRpcPdu,
-    _iov: &mut Smb2Iovec,
-    _offset: &mut usize,
-    _sid: &mut RpcSid,
+    pdu: &mut DceRpcPdu,
+    iov: &mut Smb2Iovec,
+    offset: &mut usize,
+    sid: &mut RpcSid,
 ) -> LsaCoderResult {
-    Err(LsaCoderError::not_implemented())
+    let req = lib_lsa::LsaLookupSids2Request::new(
+        lib_lsa::ContextHandle::default(),
+        lib_lsa::LsaprSidEnumBuffer::new(vec![to_lib_sid(sid)]),
+        lib_lsa::LsapLookupLevel::Wksta,
+    );
+    let bytes = lib_lsa::encode_lsa_lookup_sids2_request(&req)
+        .map_err(|_| LsaCoderError::not_implemented())?;
+    store_bytes(pdu, iov, offset, bytes);
+    Ok(())
+}
+
+fn decode_bytes<'a>(pdu: &'a DceRpcPdu, iov: &'a Smb2Iovec, offset: usize) -> &'a [u8] {
+    let bytes = if pdu.payload.is_empty() {
+        &iov.buf
+    } else {
+        &pdu.payload
+    };
+    if offset >= bytes.len() {
+        &[]
+    } else {
+        &bytes[offset..]
+    }
+}
+
+fn input_len(pdu: &DceRpcPdu, iov: &Smb2Iovec) -> usize {
+    if pdu.payload.is_empty() {
+        iov.buf.len()
+    } else {
+        pdu.payload.len()
+    }
+}
+
+fn store_bytes(pdu: &mut DceRpcPdu, iov: &mut Smb2Iovec, offset: &mut usize, bytes: Vec<u8>) {
+    *offset = bytes.len();
+    pdu.payload = bytes.clone();
+    iov.buf = bytes;
+}
+
+fn to_lib_handle(handle: &NdrContextHandle) -> lib_lsa::ContextHandle {
+    let mut uuid = [0u8; 16];
+    uuid.copy_from_slice(&handle.bytes[4..20]);
+    lib_lsa::ContextHandle {
+        attributes: u32::from_le_bytes([
+            handle.bytes[0],
+            handle.bytes[1],
+            handle.bytes[2],
+            handle.bytes[3],
+        ]),
+        uuid,
+    }
+}
+
+fn from_lib_handle(handle: lib_lsa::ContextHandle) -> NdrContextHandle {
+    let mut bytes = [0u8; 20];
+    bytes[0..4].copy_from_slice(&handle.attributes.to_le_bytes());
+    bytes[4..20].copy_from_slice(&handle.uuid);
+    NdrContextHandle { bytes }
+}
+
+fn to_lib_sid(sid: &RpcSid) -> lib_lsa::RpcSid {
+    lib_lsa::RpcSid::new(
+        sid.revision,
+        sid.identifier_authority,
+        sid.sub_authority.clone(),
+    )
+}
+
+fn from_lib_sid(sid: lib_lsa::RpcSid) -> RpcSid {
+    RpcSid {
+        revision: sid.revision,
+        identifier_authority: sid.identifier_authority,
+        sub_authority: sid.sub_authority,
+    }
+}
+
+fn to_lib_close_request(req: &LsaCloseReq) -> lib_lsa::LsaCloseRequest {
+    lib_lsa::LsaCloseRequest {
+        policy_handle: to_lib_handle(&req.policy_handle),
+    }
+}
+
+fn from_lib_close_reply(rep: lib_lsa::LsaCloseReply) -> LsaCloseRep {
+    LsaCloseRep {
+        status: rep.status,
+        policy_handle: from_lib_handle(rep.policy_handle),
+    }
+}
+
+fn to_lib_open_policy2_request(req: &LsaOpenPolicy2Req) -> lib_lsa::LsaOpenPolicy2Request {
+    lib_lsa::LsaOpenPolicy2Request {
+        system_name: req.system_name.clone().map(lib_lsa::RpcUnicodeString::new),
+        object_attributes: lib_lsa::LsaprObjectAttributes {
+            length: req.object_attributes.length,
+            attributes: req.object_attributes.attributes,
+        },
+        desired_access: req.desired_access,
+    }
+}
+
+fn from_lib_open_policy2_reply(rep: lib_lsa::LsaOpenPolicy2Reply) -> LsaOpenPolicy2Rep {
+    LsaOpenPolicy2Rep {
+        status: rep.status,
+        policy_handle: from_lib_handle(rep.policy_handle),
+    }
+}
+
+fn to_lib_lookup_sids2_request(req: &LsaLookupSids2Req) -> lib_lsa::LsaLookupSids2Request {
+    lib_lsa::LsaLookupSids2Request::new(
+        to_lib_handle(&req.policy_handle),
+        lib_lsa::LsaprSidEnumBuffer::new(
+            req.sid_enum_buffer
+                .sid_info
+                .iter()
+                .map(to_lib_sid)
+                .collect(),
+        ),
+        to_lib_lookup_level(req.lookup_level),
+    )
+}
+
+fn from_lib_lookup_sids2_reply(rep: lib_lsa::LsaLookupSids2Reply) -> LsaLookupSids2Rep {
+    LsaLookupSids2Rep {
+        status: rep.status,
+        referenced_domains: rep
+            .referenced_domains
+            .map(from_lib_referenced_domains)
+            .map_or_else(LsaprReferencedDomainList::default, core::convert::identity),
+        translated_names: from_lib_translated_names(rep.translated_names),
+        mapped_count: rep.mapped_count,
+    }
+}
+
+fn from_lib_referenced_domains(
+    value: lib_lsa::LsaprReferencedDomainList,
+) -> LsaprReferencedDomainList {
+    LsaprReferencedDomainList {
+        domains: value
+            .domains
+            .into_iter()
+            .map(|domain| LsaprTrustInformation {
+                name: if domain.name.value.is_empty() {
+                    None
+                } else {
+                    Some(domain.name.value)
+                },
+                sid: domain
+                    .sid
+                    .map(from_lib_sid)
+                    .map_or_else(RpcSid::default, core::convert::identity),
+            })
+            .collect(),
+        max_entries: value.max_entries,
+    }
+}
+
+fn from_lib_translated_names(value: lib_lsa::LsaprTranslatedNamesEx) -> LsaprTranslatedNamesEx {
+    LsaprTranslatedNamesEx {
+        names: value
+            .names
+            .into_iter()
+            .map(|name| LsaprTranslatedNameEx {
+                use_: name.use_kind.as_raw(),
+                name: if name.name.value.is_empty() {
+                    None
+                } else {
+                    Some(name.name.value)
+                },
+                domain_index: name.domain_index,
+                flags: name.flags,
+            })
+            .collect(),
+    }
+}
+
+fn to_lib_lookup_level(level: LsapLookupLevel) -> lib_lsa::LsapLookupLevel {
+    match level {
+        LsapLookupLevel::Pdc => lib_lsa::LsapLookupLevel::Pdc,
+        LsapLookupLevel::Tdl => lib_lsa::LsapLookupLevel::Tdl,
+        LsapLookupLevel::Gc => lib_lsa::LsapLookupLevel::Gc,
+        LsapLookupLevel::XForestReferral => lib_lsa::LsapLookupLevel::XForestReferral,
+        LsapLookupLevel::XForestResolve => lib_lsa::LsapLookupLevel::XForestResolve,
+        LsapLookupLevel::RodcReferralToFullDc => lib_lsa::LsapLookupLevel::RodcReferral,
+        LsapLookupLevel::Wksta => lib_lsa::LsapLookupLevel::Wksta,
+    }
 }

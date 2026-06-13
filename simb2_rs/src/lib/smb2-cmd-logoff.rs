@@ -130,6 +130,9 @@ pub fn smb2_cmd_logoff_async(callback: Option<CommandCallback>) -> Result<Pdu> {
         input: IoVectors::default(),
         callback,
         compound: false,
+        next_compound: None,
+        prev_compound_mid: 0,
+        payload: None,
         timeout: None,
     })
 }
@@ -148,6 +151,9 @@ pub fn smb2_cmd_logoff_reply_async(callback: Option<CommandCallback>) -> Result<
         input: IoVectors::default(),
         callback,
         compound: false,
+        next_compound: None,
+        prev_compound_mid: 0,
+        payload: None,
         timeout: None,
     })
 }

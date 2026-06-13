@@ -14,6 +14,8 @@ pub const SMB2_HEADER_SIZE: u16 = 64;
 
 /// Share flag that asks clients to encrypt traffic for this tree.
 pub const SMB2_SHAREFLAG_ENCRYPT_DATA: u32 = 0x0000_8000;
+/// Maximum active tree-id nesting tracked by the skeleton context.
+pub const SMB2_MAX_TREE_NESTING: usize = 32;
 
 const GENERATED_TREE_ID_START: u32 = 0xfeed_face;
 
@@ -29,12 +31,14 @@ pub enum TreeConnectError {
     BufferTooShort { needed: usize, actual: usize },
     /// The variable request path length does not fit in the SMB2 length field.
     PathTooLong { length: usize },
+    /// The active tree-id stack reached the legacy nesting limit.
+    TreeNestingTooDeep,
 }
 
 /// Minimal context state touched by TREE_CONNECT handling in the C source.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Smb2TreeConnectContext {
-    tree_id: u32,
+    tree_ids: Vec<u32>,
     seal: bool,
     next_generated_tree_id: u32,
 }
@@ -42,7 +46,7 @@ pub struct Smb2TreeConnectContext {
 impl Default for Smb2TreeConnectContext {
     fn default() -> Self {
         Self {
-            tree_id: 0,
+            tree_ids: Vec::new(),
             seal: false,
             next_generated_tree_id: GENERATED_TREE_ID_START,
         }
@@ -57,7 +61,15 @@ impl Smb2TreeConnectContext {
 
     /// Returns the current connected tree id.
     pub fn tree_id(&self) -> u32 {
-        self.tree_id
+        match self.tree_ids.first().copied() {
+            Some(tree_id) => tree_id,
+            None => 0,
+        }
+    }
+
+    /// Returns the active tree-id stack, newest/current tree first.
+    pub fn tree_ids(&self) -> &[u32] {
+        &self.tree_ids
     }
 
     /// Returns whether sealing is enabled for the tree.
@@ -66,8 +78,12 @@ impl Smb2TreeConnectContext {
     }
 
     /// Records the active tree id like `smb2_connect_tree_id` in the C code.
-    pub fn connect_tree_id(&mut self, tree_id: u32) {
-        self.tree_id = tree_id;
+    pub fn connect_tree_id(&mut self, tree_id: u32) -> TreeConnectResult<()> {
+        if self.tree_ids.len() >= SMB2_MAX_TREE_NESTING {
+            return Err(TreeConnectError::TreeNestingTooDeep);
+        }
+        self.tree_ids.insert(0, tree_id);
+        Ok(())
     }
 
     /// Enables or keeps sealing according to the TREE_CONNECT reply flags.
@@ -220,7 +236,7 @@ pub fn smb2_cmd_tree_connect_reply_async(
     } else {
         tree_id
     };
-    context.connect_tree_id(connected_tree_id);
+    context.connect_tree_id(connected_tree_id)?;
     pdu.tree_id = context.tree_id();
     pdu.out.push(smb2_encode_tree_connect_reply(rep)?);
     pdu.pad_to_64bit();
@@ -241,7 +257,7 @@ pub fn smb2_process_tree_connect_fixed(
         capabilities: read_u32(fixed, 8)?,
         maximal_access: read_u32(fixed, 12)?,
     };
-    context.connect_tree_id(header_tree_id);
+    context.connect_tree_id(header_tree_id)?;
     context.apply_reply_flags(rep.share_flags);
     pdu.reply = Some(rep);
     Ok(())

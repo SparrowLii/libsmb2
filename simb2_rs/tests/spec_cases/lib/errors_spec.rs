@@ -40,7 +40,10 @@ fn test_errors_unknown_status_name_conversion() {
 // Note: The current safe binding exposes `SMB2_STATUS_SUCCESS`; `SMB2_STATUS_END_OF_FILE` is not exposed yet.
 #[test]
 fn test_errors_successful_and_eof_status_conversion() {
-    assert_eq!(errors::nt_error_to_errno(smb2_errors::SMB2_STATUS_SUCCESS), 0);
+    assert_eq!(
+        errors::nt_error_to_errno(smb2_errors::SMB2_STATUS_SUCCESS),
+        0
+    );
 }
 
 // Trace: `lib/errors.c:nterror_to_errno`, `include/smb2/libsmb2.h:nterror_to_errno`

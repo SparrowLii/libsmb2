@@ -1,8 +1,7 @@
 //! MD5 helpers migrated from `lib/md5.c`.
 //!
 //! This module mirrors the data shape and public operations of the legacy C
-//! implementation. The compression rounds are intentionally left as a skeleton
-//! for a later migration step.
+//! implementation and provides the full MD5 compression flow.
 
 /// Number of bytes in an MD5 digest.
 pub const MD5_DIGEST_LENGTH: usize = 16;
@@ -54,9 +53,6 @@ impl Md5Context {
     }
 
     /// Records additional input bytes using the shape of `MD5Update`.
-    ///
-    /// This skeleton updates byte counters and stages trailing block data, but
-    /// it does not yet run the MD5 compression transform.
     pub fn update(&mut self, data: &[Md5Byte]) {
         self.add_byte_count(data.len());
 
@@ -77,12 +73,32 @@ impl Md5Context {
 
     /// Finalizes the context using the shape of `MD5Final` and returns a digest buffer.
     ///
-    /// The returned digest is currently a placeholder because the compression
-    /// rounds have not been migrated. The context is cleared after finalization,
-    /// matching the C implementation's sensitivity cleanup step.
+    /// The context is cleared after finalization, matching the C implementation's
+    /// sensitivity cleanup step.
     #[must_use]
     pub fn finalize(&mut self) -> Md5Digest {
-        let digest = [0; MD5_DIGEST_LENGTH];
+        let bytes = self.bytes;
+        let count = (bytes[0] & 0x3f) as usize;
+        let pad_len = if count < 56 { 56 - count } else { 120 - count };
+        let mut padding = [0_u8; MD5_BLOCK_LENGTH];
+        padding[0] = 0x80;
+
+        self.update(&padding[..pad_len]);
+
+        let bit_count = [
+            bytes[0].wrapping_shl(3),
+            bytes[1].wrapping_shl(3) | (bytes[0] >> 29),
+        ];
+        let mut length = [0_u8; 8];
+        length[..4].copy_from_slice(&bit_count[0].to_le_bytes());
+        length[4..].copy_from_slice(&bit_count[1].to_le_bytes());
+        self.update(&length);
+
+        let mut digest = [0; MD5_DIGEST_LENGTH];
+        for (chunk, word) in digest.chunks_mut(4).zip(self.buf) {
+            chunk.copy_from_slice(&word.to_le_bytes());
+        }
+
         self.clear();
         digest
     }
@@ -90,8 +106,7 @@ impl Md5Context {
     /// Finalizes the context into a caller-provided digest buffer.
     ///
     /// This mirrors the output-buffer style of `MD5Final` while keeping Rust's
-    /// fixed-size array safety. The digest contents are placeholders until the
-    /// full transform is migrated.
+    /// fixed-size array safety.
     pub fn finalize_into(&mut self, digest: &mut Md5Digest) {
         let finalized = self.finalize();
         for (target, source) in digest.iter_mut().zip(finalized) {
@@ -173,23 +188,126 @@ pub fn md5_init(ctx: &mut Md5Context) {
 
 /// Updates an MD5 context with additional bytes, corresponding to `MD5Update`.
 ///
-/// This skeleton records byte counts and staged block words without performing
-/// the complete MD5 compression logic.
 pub fn md5_update(ctx: &mut Md5Context, data: &[Md5Byte]) {
     ctx.update(data);
 }
 
 /// Finalizes an MD5 context into `digest`, corresponding to `MD5Final`.
 ///
-/// The output is a placeholder until the full MD5 transform is migrated.
 pub fn md5_final(digest: &mut Md5Digest, ctx: &mut Md5Context) {
     ctx.finalize_into(digest);
 }
 
 /// Applies one MD5 compression block, corresponding to `MD5Transform`.
 ///
-/// This is intentionally a no-op skeleton; the 64 MD5 step rounds from the C
-/// source have not been migrated yet.
 pub fn md5_transform(buf: &mut [Uword32; 4], input: &[Uword32; MD5_BLOCK_WORDS]) {
-    let _ = (buf, input);
+    let mut a = buf[0];
+    let mut b = buf[1];
+    let mut c = buf[2];
+    let mut d = buf[3];
+
+    md5_step(f1, &mut a, b, c, d, input[0].wrapping_add(0xd76a_a478), 7);
+    md5_step(f1, &mut d, a, b, c, input[1].wrapping_add(0xe8c7_b756), 12);
+    md5_step(f1, &mut c, d, a, b, input[2].wrapping_add(0x2420_70db), 17);
+    md5_step(f1, &mut b, c, d, a, input[3].wrapping_add(0xc1bd_ceee), 22);
+    md5_step(f1, &mut a, b, c, d, input[4].wrapping_add(0xf57c_0faf), 7);
+    md5_step(f1, &mut d, a, b, c, input[5].wrapping_add(0x4787_c62a), 12);
+    md5_step(f1, &mut c, d, a, b, input[6].wrapping_add(0xa830_4613), 17);
+    md5_step(f1, &mut b, c, d, a, input[7].wrapping_add(0xfd46_9501), 22);
+    md5_step(f1, &mut a, b, c, d, input[8].wrapping_add(0x6980_98d8), 7);
+    md5_step(f1, &mut d, a, b, c, input[9].wrapping_add(0x8b44_f7af), 12);
+    md5_step(f1, &mut c, d, a, b, input[10].wrapping_add(0xffff_5bb1), 17);
+    md5_step(f1, &mut b, c, d, a, input[11].wrapping_add(0x895c_d7be), 22);
+    md5_step(f1, &mut a, b, c, d, input[12].wrapping_add(0x6b90_1122), 7);
+    md5_step(f1, &mut d, a, b, c, input[13].wrapping_add(0xfd98_7193), 12);
+    md5_step(f1, &mut c, d, a, b, input[14].wrapping_add(0xa679_438e), 17);
+    md5_step(f1, &mut b, c, d, a, input[15].wrapping_add(0x49b4_0821), 22);
+
+    md5_step(f2, &mut a, b, c, d, input[1].wrapping_add(0xf61e_2562), 5);
+    md5_step(f2, &mut d, a, b, c, input[6].wrapping_add(0xc040_b340), 9);
+    md5_step(f2, &mut c, d, a, b, input[11].wrapping_add(0x265e_5a51), 14);
+    md5_step(f2, &mut b, c, d, a, input[0].wrapping_add(0xe9b6_c7aa), 20);
+    md5_step(f2, &mut a, b, c, d, input[5].wrapping_add(0xd62f_105d), 5);
+    md5_step(f2, &mut d, a, b, c, input[10].wrapping_add(0x0244_1453), 9);
+    md5_step(f2, &mut c, d, a, b, input[15].wrapping_add(0xd8a1_e681), 14);
+    md5_step(f2, &mut b, c, d, a, input[4].wrapping_add(0xe7d3_fbc8), 20);
+    md5_step(f2, &mut a, b, c, d, input[9].wrapping_add(0x21e1_cde6), 5);
+    md5_step(f2, &mut d, a, b, c, input[14].wrapping_add(0xc337_07d6), 9);
+    md5_step(f2, &mut c, d, a, b, input[3].wrapping_add(0xf4d5_0d87), 14);
+    md5_step(f2, &mut b, c, d, a, input[8].wrapping_add(0x455a_14ed), 20);
+    md5_step(f2, &mut a, b, c, d, input[13].wrapping_add(0xa9e3_e905), 5);
+    md5_step(f2, &mut d, a, b, c, input[2].wrapping_add(0xfcef_a3f8), 9);
+    md5_step(f2, &mut c, d, a, b, input[7].wrapping_add(0x676f_02d9), 14);
+    md5_step(f2, &mut b, c, d, a, input[12].wrapping_add(0x8d2a_4c8a), 20);
+
+    md5_step(f3, &mut a, b, c, d, input[5].wrapping_add(0xfffa_3942), 4);
+    md5_step(f3, &mut d, a, b, c, input[8].wrapping_add(0x8771_f681), 11);
+    md5_step(f3, &mut c, d, a, b, input[11].wrapping_add(0x6d9d_6122), 16);
+    md5_step(f3, &mut b, c, d, a, input[14].wrapping_add(0xfde5_380c), 23);
+    md5_step(f3, &mut a, b, c, d, input[1].wrapping_add(0xa4be_ea44), 4);
+    md5_step(f3, &mut d, a, b, c, input[4].wrapping_add(0x4bde_cfa9), 11);
+    md5_step(f3, &mut c, d, a, b, input[7].wrapping_add(0xf6bb_4b60), 16);
+    md5_step(f3, &mut b, c, d, a, input[10].wrapping_add(0xbebf_bc70), 23);
+    md5_step(f3, &mut a, b, c, d, input[13].wrapping_add(0x289b_7ec6), 4);
+    md5_step(f3, &mut d, a, b, c, input[0].wrapping_add(0xeaa1_27fa), 11);
+    md5_step(f3, &mut c, d, a, b, input[3].wrapping_add(0xd4ef_3085), 16);
+    md5_step(f3, &mut b, c, d, a, input[6].wrapping_add(0x0488_1d05), 23);
+    md5_step(f3, &mut a, b, c, d, input[9].wrapping_add(0xd9d4_d039), 4);
+    md5_step(f3, &mut d, a, b, c, input[12].wrapping_add(0xe6db_99e5), 11);
+    md5_step(f3, &mut c, d, a, b, input[15].wrapping_add(0x1fa2_7cf8), 16);
+    md5_step(f3, &mut b, c, d, a, input[2].wrapping_add(0xc4ac_5665), 23);
+
+    md5_step(f4, &mut a, b, c, d, input[0].wrapping_add(0xf429_2244), 6);
+    md5_step(f4, &mut d, a, b, c, input[7].wrapping_add(0x432a_ff97), 10);
+    md5_step(f4, &mut c, d, a, b, input[14].wrapping_add(0xab94_23a7), 15);
+    md5_step(f4, &mut b, c, d, a, input[5].wrapping_add(0xfc93_a039), 21);
+    md5_step(f4, &mut a, b, c, d, input[12].wrapping_add(0x655b_59c3), 6);
+    md5_step(f4, &mut d, a, b, c, input[3].wrapping_add(0x8f0c_cc92), 10);
+    md5_step(f4, &mut c, d, a, b, input[10].wrapping_add(0xffef_f47d), 15);
+    md5_step(f4, &mut b, c, d, a, input[1].wrapping_add(0x8584_5dd1), 21);
+    md5_step(f4, &mut a, b, c, d, input[8].wrapping_add(0x6fa8_7e4f), 6);
+    md5_step(f4, &mut d, a, b, c, input[15].wrapping_add(0xfe2c_e6e0), 10);
+    md5_step(f4, &mut c, d, a, b, input[6].wrapping_add(0xa301_4314), 15);
+    md5_step(f4, &mut b, c, d, a, input[13].wrapping_add(0x4e08_11a1), 21);
+    md5_step(f4, &mut a, b, c, d, input[4].wrapping_add(0xf753_7e82), 6);
+    md5_step(f4, &mut d, a, b, c, input[11].wrapping_add(0xbd3a_f235), 10);
+    md5_step(f4, &mut c, d, a, b, input[2].wrapping_add(0x2ad7_d2bb), 15);
+    md5_step(f4, &mut b, c, d, a, input[9].wrapping_add(0xeb86_d391), 21);
+
+    buf[0] = buf[0].wrapping_add(a);
+    buf[1] = buf[1].wrapping_add(b);
+    buf[2] = buf[2].wrapping_add(c);
+    buf[3] = buf[3].wrapping_add(d);
+}
+
+const fn f1(x: Uword32, y: Uword32, z: Uword32) -> Uword32 {
+    z ^ (x & (y ^ z))
+}
+
+const fn f2(x: Uword32, y: Uword32, z: Uword32) -> Uword32 {
+    f1(z, x, y)
+}
+
+const fn f3(x: Uword32, y: Uword32, z: Uword32) -> Uword32 {
+    x ^ y ^ z
+}
+
+const fn f4(x: Uword32, y: Uword32, z: Uword32) -> Uword32 {
+    y ^ (x | !z)
+}
+
+fn md5_step(
+    func: impl Fn(Uword32, Uword32, Uword32) -> Uword32,
+    word: &mut Uword32,
+    x: Uword32,
+    y: Uword32,
+    z: Uword32,
+    input: Uword32,
+    shift: u32,
+) {
+    *word = word
+        .wrapping_add(func(x, y, z))
+        .wrapping_add(input)
+        .rotate_left(shift)
+        .wrapping_add(x);
 }

@@ -8,7 +8,20 @@ use std::ffi::CString;
 
 use crate::include::smb2::libsmb2::{CommandCallback, DirectoryEntry, ErrorCode, FileType, Stat};
 use crate::include::smb2::libsmb2_raw::FileId;
-use crate::include::smb2::smb2::Command;
+use crate::include::smb2::smb2::{
+    Command, SMB2_CANCEL_REQUEST_SIZE, SMB2_CHANGE_NOTIFY_REPLY_SIZE,
+    SMB2_CHANGE_NOTIFY_REQUEST_SIZE, SMB2_CLOSE_REPLY_SIZE, SMB2_CLOSE_REQUEST_SIZE,
+    SMB2_CREATE_REPLY_SIZE, SMB2_CREATE_REQUEST_SIZE, SMB2_ECHO_REPLY_SIZE, SMB2_ECHO_REQUEST_SIZE,
+    SMB2_ERROR_REPLY_SIZE, SMB2_FLUSH_REPLY_SIZE, SMB2_FLUSH_REQUEST_SIZE, SMB2_IOCTL_REPLY_SIZE,
+    SMB2_IOCTL_REQUEST_SIZE, SMB2_LOCK_REPLY_SIZE, SMB2_LOCK_REQUEST_SIZE, SMB2_LOGOFF_REPLY_SIZE,
+    SMB2_LOGOFF_REQUEST_SIZE, SMB2_NEGOTIATE_REPLY_SIZE, SMB2_NEGOTIATE_REQUEST_SIZE,
+    SMB2_QUERY_DIRECTORY_REPLY_SIZE, SMB2_QUERY_DIRECTORY_REQUEST_SIZE, SMB2_QUERY_INFO_REPLY_SIZE,
+    SMB2_QUERY_INFO_REQUEST_SIZE, SMB2_READ_REPLY_SIZE, SMB2_READ_REQUEST_SIZE,
+    SMB2_SESSION_SETUP_REPLY_SIZE, SMB2_SESSION_SETUP_REQUEST_SIZE, SMB2_SET_INFO_REPLY_SIZE,
+    SMB2_SET_INFO_REQUEST_SIZE, SMB2_TREE_CONNECT_REPLY_SIZE, SMB2_TREE_CONNECT_REQUEST_SIZE,
+    SMB2_TREE_DISCONNECT_REPLY_SIZE, SMB2_TREE_DISCONNECT_REQUEST_SIZE, SMB2_WRITE_REPLY_SIZE,
+    SMB2_WRITE_REQUEST_SIZE,
+};
 
 /// Maximum formatted error string size used by the C context.
 pub const MAX_ERROR_SIZE: usize = 256;
@@ -34,6 +47,14 @@ pub const SMB2_PREAUTH_HASH_SIZE: usize = 64;
 pub const SMB2_MAX_PDU_SIZE: usize = 16 * 1024 * 1024;
 /// Sentinel used by the C `smb2_tree_id` macro when no tree id is active.
 pub const DEAD_TREE_ID: u32 = 0xdead_beef;
+/// SMB2 protocol signature used by normal SMB2 headers.
+pub const SMB2_PROTOCOL_ID: [u8; 4] = [0xfe, b'S', b'M', b'B'];
+/// SMB1 signature accepted only for legacy negotiate requests.
+pub const SMB1_PROTOCOL_ID: [u8; 4] = [0xff, b'S', b'M', b'B'];
+/// SMB1 negotiate command byte.
+pub const SMB1_NEGOTIATE: u8 = 0x72;
+/// Header flag indicating an async SMB2 command.
+pub const SMB2_FLAGS_ASYNC_COMMAND: u32 = 0x0000_0002;
 
 /// Pads `len` to the next 32-bit boundary using the C `PAD_TO_32BIT` rule.
 #[must_use]
@@ -65,6 +86,10 @@ pub enum PrivateError {
     NoCurrentTreeId,
     /// A command-specific fixed payload size is not known by this skeleton.
     UnknownFixedSize,
+    /// The header signature is neither SMB2 nor an accepted SMB1 negotiate request.
+    BadSignature,
+    /// A requested PDU was not present.
+    MissingPdu,
 }
 
 impl PrivateError {
@@ -75,9 +100,28 @@ impl PrivateError {
             Self::ProtocolLogicUnavailable => -38,
             Self::BufferTooShort => -22,
             Self::TooManyVectors | Self::TooManyTreeIds => -75,
-            Self::NoCurrentTreeId | Self::UnknownFixedSize => -2,
+            Self::NoCurrentTreeId | Self::UnknownFixedSize | Self::MissingPdu => -2,
+            Self::BadSignature => -22,
         };
         ErrorCode(code)
+    }
+}
+
+impl From<crate::lib::pdu::PduError> for PrivateError {
+    fn from(error: crate::lib::pdu::PduError) -> Self {
+        match error {
+            crate::lib::pdu::PduError::OutOfBounds | crate::lib::pdu::PduError::HeaderTooSmall => {
+                Self::BufferTooShort
+            }
+            crate::lib::pdu::PduError::BadSignature => Self::BadSignature,
+            crate::lib::pdu::PduError::MissingTreeId
+            | crate::lib::pdu::PduError::TreeIdNotFound => Self::NoCurrentTreeId,
+            crate::lib::pdu::PduError::TreeNestingTooDeep => Self::TooManyTreeIds,
+            crate::lib::pdu::PduError::MissingPdu | crate::lib::pdu::PduError::UnknownCommand => {
+                Self::MissingPdu
+            }
+            crate::lib::pdu::PduError::TooManyVectors => Self::TooManyVectors,
+        }
     }
 }
 
@@ -282,7 +326,7 @@ pub struct Smb2Header {
 impl Default for Smb2Header {
     fn default() -> Self {
         Self {
-            protocol_id: [0; 4],
+            protocol_id: SMB2_PROTOCOL_ID,
             struct_size: SMB2_HEADER_SIZE as u16,
             credit_charge: 0,
             status: 0,
@@ -301,6 +345,15 @@ impl Default for Smb2Header {
 }
 
 impl Smb2Header {
+    /// Creates a normal SMB2 header for a command id.
+    #[must_use]
+    pub fn for_command(command: Command) -> Self {
+        Self {
+            command: command as u16,
+            ..Self::default()
+        }
+    }
+
     /// Returns an explicit sync/async union view for this flat Rust header.
     #[must_use]
     pub const fn id(&self, is_async: bool) -> HeaderId {
@@ -419,6 +472,12 @@ pub struct Pdu {
     pub callback: Option<CommandCallback>,
     /// Whether the PDU belongs to a compound chain.
     pub compound: bool,
+    /// Next PDU in a compound chain.
+    pub next_compound: Option<Box<Pdu>>,
+    /// Previous compound message id.
+    pub prev_compound_mid: u64,
+    /// Decoded or caller-owned payload placeholder.
+    pub payload: Option<Payload>,
     /// Timeout deadline placeholder as Unix timestamp seconds.
     pub timeout: Option<i64>,
 }
@@ -431,6 +490,9 @@ impl core::fmt::Debug for Pdu {
             .field("input", &self.input)
             .field("callback", &self.callback.as_ref().map(|_| "<callback>"))
             .field("compound", &self.compound)
+            .field("next_compound", &self.next_compound)
+            .field("prev_compound_mid", &self.prev_compound_mid)
+            .field("payload", &self.payload)
             .field("timeout", &self.timeout)
             .finish()
     }
@@ -440,17 +502,46 @@ impl Pdu {
     /// Creates a PDU skeleton for a command and optional completion callback.
     #[must_use]
     pub fn new(command: Command, callback: Option<CommandCallback>) -> Self {
+        Self::from_parts(Smb2Header::for_command(command), IoVectors::new(), callback)
+    }
+
+    /// Creates a PDU skeleton from an already prepared header and outgoing vectors.
+    #[must_use]
+    pub fn from_parts(
+        header: Smb2Header,
+        mut out: IoVectors,
+        callback: Option<CommandCallback>,
+    ) -> Self {
+        out.total_size = out.vectors.iter().map(IoVec::len).sum();
         Self {
-            header: Smb2Header {
-                command: command as u16,
-                ..Smb2Header::default()
-            },
-            out: IoVectors::new(),
+            header,
+            out,
             input: IoVectors::new(),
             callback,
             compound: false,
+            next_compound: None,
+            prev_compound_mid: 0,
+            payload: None,
             timeout: None,
         }
+    }
+
+    /// Creates a payload-only PDU; queueing adds or updates the SMB2 header vector.
+    #[must_use]
+    pub fn from_payload(
+        command: Command,
+        payload: Vec<u8>,
+        callback: Option<CommandCallback>,
+    ) -> Self {
+        Self::from_parts(
+            Smb2Header::for_command(command),
+            IoVectors {
+                done: 0,
+                total_size: payload.len(),
+                vectors: vec![IoVec::new(payload)],
+            },
+            callback,
+        )
     }
 
     /// Returns true when this PDU is marked as part of a compound command chain.
@@ -825,6 +916,32 @@ impl Context {
         self.tree_ids.remove(index);
         Ok(())
     }
+
+    /// Adds a PDU to the outgoing queue.
+    pub fn push_outqueue(&mut self, pdu: Pdu) {
+        self.outqueue.push(pdu);
+    }
+
+    /// Adds a PDU to the wait queue.
+    pub fn push_waitqueue(&mut self, pdu: Pdu) {
+        self.waitqueue.push(pdu);
+    }
+
+    /// Finds a PDU currently waiting for a reply by message id.
+    #[must_use]
+    pub fn find_waiting_pdu(&self, message_id: u64) -> Option<&Pdu> {
+        self.waitqueue
+            .iter()
+            .find(|pdu| pdu.header.message_id == message_id)
+    }
+
+    /// Removes matching PDUs from both queues.
+    pub fn remove_queued_pdu(&mut self, message_id: u64) {
+        self.outqueue
+            .retain(|queued| queued.header.message_id != message_id);
+        self.waitqueue
+            .retain(|queued| queued.header.message_id != message_id);
+    }
 }
 
 /// Truncates an error string to the C `MAX_ERROR_SIZE` storage size.
@@ -873,10 +990,7 @@ pub fn smb2_allocate_private_pdu(command: Command, callback: Option<CommandCallb
 /// Finds a waiting PDU by message id.
 #[must_use]
 pub fn smb2_find_pdu(context: &Context, message_id: u64) -> Option<&Pdu> {
-    context
-        .waitqueue
-        .iter()
-        .find(|pdu| pdu.header.message_id == message_id)
+    context.find_waiting_pdu(message_id)
 }
 
 /// Frees all IO vectors tracked by a vector list.
@@ -895,25 +1009,16 @@ pub fn smb2_oplock_break_notify(context: &mut Context, status: i32) {
 ///
 /// Returns [`PrivateError::BufferTooShort`] when the vector does not contain a full SMB2 header.
 pub fn smb2_decode_header(iov: &IoVec) -> PrivateResult<Smb2Header> {
-    if iov.buf.len() < SMB2_HEADER_SIZE {
-        return Err(PrivateError::BufferTooShort);
-    }
-    Ok(Smb2Header {
-        protocol_id: [iov.buf[0], iov.buf[1], iov.buf[2], iov.buf[3]],
-        struct_size: u16::from_le_bytes([iov.buf[4], iov.buf[5]]),
-        credit_charge: u16::from_le_bytes([iov.buf[6], iov.buf[7]]),
-        status: u32::from_le_bytes([iov.buf[8], iov.buf[9], iov.buf[10], iov.buf[11]]),
-        command: u16::from_le_bytes([iov.buf[12], iov.buf[13]]),
-        credit_request_response: u16::from_le_bytes([iov.buf[14], iov.buf[15]]),
-        flags: u32::from_le_bytes([iov.buf[16], iov.buf[17], iov.buf[18], iov.buf[19]]),
-        next_command: u32::from_le_bytes([iov.buf[20], iov.buf[21], iov.buf[22], iov.buf[23]]),
-        message_id: u64::from_le_bytes(read_fixed::<8>(&iov.buf, 24)?),
-        process_id: u32::from_le_bytes(read_fixed::<4>(&iov.buf, 32)?),
-        tree_id: u32::from_le_bytes(read_fixed::<4>(&iov.buf, 36)?),
-        async_id: u64::from_le_bytes(read_fixed::<8>(&iov.buf, 32)?),
-        session_id: u64::from_le_bytes(read_fixed::<8>(&iov.buf, 40)?),
-        signature: read_fixed::<SMB2_SIGNATURE_SIZE>(&iov.buf, 48)?,
-    })
+    crate::lib::pdu::smb2_decode_header_bytes(&iov.buf).map_err(PrivateError::from)
+}
+
+/// Encodes a header into an IO vector.
+///
+/// # Errors
+///
+/// Returns [`PrivateError::BufferTooShort`] when the vector cannot hold a full SMB2 header.
+pub fn smb2_encode_header(iov: &mut IoVec, header: &Smb2Header) -> PrivateResult<()> {
+    crate::lib::pdu::smb2_encode_header_bytes(&mut iov.buf, header).map_err(PrivateError::from)
 }
 
 /// Calculates an SMB2 signature placeholder.
@@ -1014,15 +1119,57 @@ pub fn smb2_get_uint64(iov: &IoVec, offset: usize) -> PrivateResult<u64> {
 /// Returns [`PrivateError::UnknownFixedSize`] for commands whose fixed size has not been mapped here.
 pub const fn smb2_get_fixed_size(command: Command) -> PrivateResult<usize> {
     match command {
-        Command::Negotiate => Ok(65),
-        Command::SessionSetup => Ok(9),
-        Command::TreeConnect => Ok(16),
-        Command::Close => Ok(60),
-        Command::Echo | Command::Flush | Command::Logoff | Command::TreeDisconnect => Ok(4),
-        Command::Read => Ok(17),
-        Command::QueryDirectory => Ok(9),
-        _ => Err(PrivateError::UnknownFixedSize),
+        Command::Negotiate => Ok(SMB2_NEGOTIATE_REPLY_SIZE as usize),
+        Command::SessionSetup => Ok(SMB2_SESSION_SETUP_REPLY_SIZE as usize),
+        Command::Logoff => Ok(SMB2_LOGOFF_REPLY_SIZE as usize),
+        Command::TreeConnect => Ok(SMB2_TREE_CONNECT_REPLY_SIZE as usize),
+        Command::TreeDisconnect => Ok(SMB2_TREE_DISCONNECT_REPLY_SIZE as usize),
+        Command::Create => Ok(SMB2_CREATE_REPLY_SIZE as usize),
+        Command::Close => Ok(SMB2_CLOSE_REPLY_SIZE as usize),
+        Command::Flush => Ok(SMB2_FLUSH_REPLY_SIZE as usize),
+        Command::Read => Ok(SMB2_READ_REPLY_SIZE as usize),
+        Command::Write => Ok(SMB2_WRITE_REPLY_SIZE as usize),
+        Command::Lock => Ok(SMB2_LOCK_REPLY_SIZE as usize),
+        Command::Ioctl => Ok(SMB2_IOCTL_REPLY_SIZE as usize),
+        Command::Echo => Ok(SMB2_ECHO_REPLY_SIZE as usize),
+        Command::QueryDirectory => Ok(SMB2_QUERY_DIRECTORY_REPLY_SIZE as usize),
+        Command::ChangeNotify => Ok(SMB2_CHANGE_NOTIFY_REPLY_SIZE as usize),
+        Command::QueryInfo => Ok(SMB2_QUERY_INFO_REPLY_SIZE as usize),
+        Command::SetInfo => Ok(SMB2_SET_INFO_REPLY_SIZE as usize),
+        Command::OplockBreak => Ok(core::mem::size_of::<u16>()),
+        Command::Cancel | Command::Smb1Negotiate => Err(PrivateError::UnknownFixedSize),
     }
+}
+
+/// Returns the fixed request payload size known for a command.
+pub const fn smb2_get_fixed_request_size(command: Command) -> PrivateResult<usize> {
+    match command {
+        Command::Negotiate => Ok(SMB2_NEGOTIATE_REQUEST_SIZE as usize),
+        Command::SessionSetup => Ok(SMB2_SESSION_SETUP_REQUEST_SIZE as usize),
+        Command::Logoff => Ok(SMB2_LOGOFF_REQUEST_SIZE as usize),
+        Command::TreeConnect => Ok(SMB2_TREE_CONNECT_REQUEST_SIZE as usize),
+        Command::TreeDisconnect => Ok(SMB2_TREE_DISCONNECT_REQUEST_SIZE as usize),
+        Command::Create => Ok(SMB2_CREATE_REQUEST_SIZE as usize),
+        Command::Close => Ok(SMB2_CLOSE_REQUEST_SIZE as usize),
+        Command::Flush => Ok(SMB2_FLUSH_REQUEST_SIZE as usize),
+        Command::Read => Ok(SMB2_READ_REQUEST_SIZE as usize),
+        Command::Write => Ok(SMB2_WRITE_REQUEST_SIZE as usize),
+        Command::Lock => Ok(SMB2_LOCK_REQUEST_SIZE as usize),
+        Command::Ioctl => Ok(SMB2_IOCTL_REQUEST_SIZE as usize),
+        Command::Cancel => Ok(SMB2_CANCEL_REQUEST_SIZE as usize),
+        Command::Echo => Ok(SMB2_ECHO_REQUEST_SIZE as usize),
+        Command::QueryDirectory => Ok(SMB2_QUERY_DIRECTORY_REQUEST_SIZE as usize),
+        Command::ChangeNotify => Ok(SMB2_CHANGE_NOTIFY_REQUEST_SIZE as usize),
+        Command::QueryInfo => Ok(SMB2_QUERY_INFO_REQUEST_SIZE as usize),
+        Command::SetInfo => Ok(SMB2_SET_INFO_REQUEST_SIZE as usize),
+        Command::OplockBreak => Ok(core::mem::size_of::<u16>()),
+        Command::Smb1Negotiate => Err(PrivateError::UnknownFixedSize),
+    }
+}
+
+/// Returns the fixed error reply payload size with the legacy even-size mask applied.
+pub const fn smb2_get_fixed_error_reply_size() -> usize {
+    (SMB2_ERROR_REPLY_SIZE & 0xfffe) as usize
 }
 
 /// Process the fixed part of a reply payload.

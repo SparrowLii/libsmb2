@@ -4283,17 +4283,23 @@ pub fn ntstatus_name(status: u32) -> Option<&'static str> {
         .map(|entry| entry.name)
 }
 
+/// Converts an NTSTATUS to the unified legacy error string.
+#[must_use]
+pub fn nterror_to_str(status: u32) -> &'static str {
+    crate::lib::errors::nterror_to_str(status)
+}
+
 /// Maps an NTSTATUS to a negative errno-style value.
 ///
-/// This is intentionally only a skeleton: success maps to `0`, pending maps to
-/// `-11`, and all other statuses keep the existing generic `-1` placeholder.
-/// Full protocol-specific errno translation belongs in the dedicated errors
-/// module rather than this header mirror.
+/// This is a header-facing adapter over the shared migration error table. It
+/// returns the negative `ErrorCode` convention used by the public libsmb2 API,
+/// while `crate::lib::errors::nterror_to_errno` keeps the positive errno value.
 #[must_use]
-pub const fn nterror_to_errno(status: u32) -> i32 {
-    match status {
-        SMB2_STATUS_SUCCESS => 0,
-        SMB2_STATUS_PENDING => -11,
-        _ => -1,
+pub fn nterror_to_errno(status: u32) -> i32 {
+    let errno = crate::lib::errors::nterror_to_errno(status);
+    if errno == 0 {
+        0
+    } else {
+        -errno
     }
 }

@@ -1,9 +1,14 @@
 //! NTLMSSP authentication helpers migrated from `lib/ntlmssp.c`.
 //!
-//! This module mirrors the responsibilities and naming of the legacy C file so
-//! future migration work has stable Rust types to fill in. The cryptographic
-//! NTLMv1/NTLMv2, SPNEGO wrapping, and SMB2 context integration logic is not
-//! implemented here yet.
+//! This module implements the raw NTLMSSP message structure layer used by the
+//! legacy C implementation: message-type parsing, security-buffer based field
+//! decoding, and the main NEGOTIATE, CHALLENGE, and AUTHENTICATE blob layouts.
+//! SPNEGO wrapping is kept out of this file; NTLM proof generation and
+//! verification use the migrated Rust MD4/MD5/HMAC-MD5 helpers.
+
+use super::hmac_md5::smb2_hmac_md5;
+use super::md4c::Md4Context;
+use super::spnego_wrapper::{SpnegoBlobKind, SpnegoError, SpnegoNegResult, SpnegoWrapper};
 
 /// Length in bytes of the SMB2 exported session key used by NTLMSSP.
 pub const SMB2_KEY_SIZE: usize = 16;
@@ -65,10 +70,20 @@ pub const NTLMSSP_NEGOTIATE_OEM: u32 = 0x0000_0002;
 /// NTLMSSP Unicode negotiation flag.
 pub const NTLMSSP_NEGOTIATE_UNICODE: u32 = 0x0000_0001;
 
-/// Result type used by NTLMSSP skeleton APIs.
+const NEGOTIATE_HEADER_LEN: usize = 32;
+const CHALLENGE_HEADER_LEN: usize = 56;
+const AUTHENTICATE_HEADER_LEN: usize = 72;
+const AV_ID_NB_COMPUTER_NAME: u16 = 0x0001;
+const AV_ID_NB_DOMAIN_NAME: u16 = 0x0002;
+const AV_ID_DNS_COMPUTER_NAME: u16 = 0x0003;
+const AV_ID_DNS_DOMAIN_NAME: u16 = 0x0004;
+const AV_ID_TIMESTAMP: u16 = 0x0007;
+const AV_ID_EOL: u16 = 0x0000;
+
+/// Result type used by NTLMSSP helpers.
 pub type NtlmResult<T> = core::result::Result<T, NtlmError>;
 
-/// Errors returned by NTLMSSP skeleton helpers.
+/// Errors returned by NTLMSSP helpers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum NtlmError {
@@ -76,8 +91,22 @@ pub enum NtlmError {
     InvalidMessage,
     /// The supplied buffer is too short for the requested field.
     BufferTooShort,
+    /// A security-buffer descriptor points outside the message.
+    FieldOutOfRange,
+    /// A length or offset cannot be represented in the NTLMSSP field size.
+    IntegerOverflow,
+    /// A UTF-16LE field could not be decoded as text.
+    InvalidUtf16,
+    /// The supplied SPNEGO wrapper could not be encoded or decoded.
+    InvalidSpnegoToken,
+    /// The operation requires MD4, MD5, or HMAC-MD5 support that is not present.
+    CryptoNotAvailable,
+    /// The supplied `ntlm:` password hash is not valid hexadecimal NT hash material.
+    InvalidPasswordHash,
     /// The requested operation depends on protocol logic not migrated yet.
     ProtocolLogicNotImplemented,
+    /// The peer negotiated an NTLMSSP flag that this implementation cannot honor safely.
+    UnsupportedNegotiatedFlag,
 }
 
 /// NTLMSSP negotiation state.
@@ -87,11 +116,13 @@ pub enum NtlmState {
     /// No exchange has started.
     #[default]
     Initial,
-    /// Negotiate message sent.
+    /// Negotiate message sent or received.
     Negotiated,
-    /// Challenge received.
+    /// Challenge sent or received.
     Challenged,
-    /// Authentication completed.
+    /// Authenticate message has been generated or received.
+    Authenticating,
+    /// Authentication completed successfully.
     Authenticated,
 }
 
@@ -105,7 +136,7 @@ pub enum NtlmMessageType {
     Challenge,
     /// NTLMSSP `AUTHENTICATION_MESSAGE`.
     Authenticate,
-    /// A message type not recognized by this skeleton.
+    /// A message type not recognized by this implementation.
     Unknown(u32),
 }
 
@@ -148,26 +179,24 @@ impl SecurityBuffer {
     ///
     /// Returns [`NtlmError::BufferTooShort`] when fewer than 8 bytes are available.
     pub fn from_le_bytes(input: &[u8]) -> NtlmResult<Self> {
-        let Some(length_bytes) = input.get(0..2) else {
-            return Err(NtlmError::BufferTooShort);
-        };
-        let Some(allocated_bytes) = input.get(2..4) else {
-            return Err(NtlmError::BufferTooShort);
-        };
-        let Some(offset_bytes) = input.get(4..8) else {
-            return Err(NtlmError::BufferTooShort);
-        };
-
+        let length = read_u16_le(input, 0)?;
+        let allocated = read_u16_le(input, 2)?;
+        let offset = read_u32_le(input, 4)?;
         Ok(Self {
-            length: u16::from_le_bytes([length_bytes[0], length_bytes[1]]),
-            allocated: u16::from_le_bytes([allocated_bytes[0], allocated_bytes[1]]),
-            offset: u32::from_le_bytes([
-                offset_bytes[0],
-                offset_bytes[1],
-                offset_bytes[2],
-                offset_bytes[3],
-            ]),
+            length,
+            allocated,
+            offset,
         })
+    }
+
+    /// Serializes this descriptor as little-endian bytes.
+    #[must_use]
+    pub fn to_le_bytes(self) -> [u8; 8] {
+        let mut output = [0; 8];
+        output[0..2].copy_from_slice(&self.length.to_le_bytes());
+        output[2..4].copy_from_slice(&self.allocated.to_le_bytes());
+        output[4..8].copy_from_slice(&self.offset.to_le_bytes());
+        output
     }
 }
 
@@ -213,6 +242,73 @@ impl NtlmBlob {
     }
 }
 
+/// Parsed NTLMSSP NEGOTIATE message fields.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NegotiateMessage {
+    /// Negotiation flags from the message.
+    pub flags: u32,
+    /// Optional domain name payload.
+    pub domain_name: Vec<u8>,
+    /// Optional workstation name payload.
+    pub workstation: Vec<u8>,
+    /// Optional 8-byte version field.
+    pub version: Option<[u8; 8]>,
+}
+
+/// Parsed NTLMSSP CHALLENGE message fields.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ChallengeMessage {
+    /// Target name security-buffer payload.
+    pub target_name: Vec<u8>,
+    /// Target name decoded as UTF-16LE when possible.
+    pub target_name_text: Option<String>,
+    /// Server negotiation flags.
+    pub flags: u32,
+    /// 8-byte server challenge.
+    pub server_challenge: [u8; 8],
+    /// Target-info AV pair payload.
+    pub target_info: Vec<u8>,
+    /// Optional 8-byte version field.
+    pub version: Option<[u8; 8]>,
+}
+
+/// Parsed NTLMSSP AUTHENTICATE message fields.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AuthenticateMessage {
+    /// LM challenge response payload.
+    pub lm_response: Vec<u8>,
+    /// NT challenge response payload.
+    pub nt_response: Vec<u8>,
+    /// Domain name decoded from UTF-16LE.
+    pub domain_name: Option<String>,
+    /// User name decoded from UTF-16LE.
+    pub user_name: Option<String>,
+    /// Workstation name decoded from UTF-16LE.
+    pub workstation: Option<String>,
+    /// Encrypted random session key payload.
+    pub encrypted_random_session_key: Vec<u8>,
+    /// Client negotiation flags.
+    pub flags: u32,
+    /// Optional 8-byte version field.
+    pub version: Option<[u8; 8]>,
+    /// Optional 16-byte MIC.
+    pub mic: Option<[u8; 16]>,
+}
+
+/// Parsed raw NTLMSSP message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum NtlmMessage {
+    /// NEGOTIATE message.
+    Negotiate(NegotiateMessage),
+    /// CHALLENGE message.
+    Challenge(ChallengeMessage),
+    /// AUTHENTICATE message.
+    Authenticate(AuthenticateMessage),
+    /// Unknown message type with its raw numeric value.
+    Unknown(u32),
+}
+
 /// Configuration values corresponding to `ntlmssp_init_context` inputs.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NtlmAuthConfig {
@@ -232,6 +328,7 @@ pub struct NtlmAuthConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthData {
     buffer: Vec<u8>,
+    negotiate_buffer: Vec<u8>,
     ntlm_buffer: Vec<u8>,
     neg_result: i32,
     user: Option<String>,
@@ -254,6 +351,7 @@ impl AuthData {
     pub fn init_context(config: NtlmAuthConfig) -> Self {
         Self {
             buffer: Vec::new(),
+            negotiate_buffer: Vec::new(),
             ntlm_buffer: Vec::new(),
             neg_result: 0,
             user: config.user,
@@ -274,6 +372,7 @@ impl AuthData {
     /// Clears transient buffers while preserving credentials and negotiated state.
     pub fn destroy_context(&mut self) {
         self.buffer.clear();
+        self.negotiate_buffer.clear();
         self.ntlm_buffer.clear();
         self.target_info.clear();
         self.target_name = None;
@@ -289,6 +388,11 @@ impl AuthData {
     /// Replaces the domain associated with this context.
     pub fn set_domain(&mut self, domain: Option<String>) {
         self.domain = domain;
+    }
+
+    /// Replaces the Windows timestamp used in generated challenge/authenticate blobs.
+    pub const fn set_wintime(&mut self, wintime: u64) {
+        self.wintime = wintime;
     }
 
     /// Enables or disables SPNEGO wrapping for generated blobs.
@@ -344,6 +448,12 @@ impl AuthData {
         self.target_name.as_deref()
     }
 
+    /// Returns the stored target-info AV pair payload.
+    #[must_use]
+    pub fn target_info(&self) -> &[u8] {
+        &self.target_info
+    }
+
     /// Appends bytes to the current output buffer.
     pub fn encoder(&mut self, bytes: &[u8]) {
         self.buffer.extend_from_slice(bytes);
@@ -361,32 +471,30 @@ impl AuthData {
         self.exported_session_key
     }
 
-    /// Stores challenge data for a later authenticate-message migration step.
+    /// Stores challenge data for a later authenticate-message generation step.
     ///
     /// # Errors
     ///
-    /// Returns [`NtlmError::InvalidMessage`] if `input` is not a raw NTLMSSP
-    /// challenge message.
-    pub fn decode_challenge_message(&mut self, input: &[u8]) -> NtlmResult<()> {
-        if get_message_type(input)? != NtlmMessageType::Challenge {
-            return Err(NtlmError::InvalidMessage);
-        }
-
+    /// Returns an error if `input` is not a raw NTLMSSP challenge message or if
+    /// any referenced field is outside the input buffer.
+    pub fn decode_challenge_message(&mut self, input: &[u8]) -> NtlmResult<ChallengeMessage> {
+        let mut challenge = parse_challenge_message(input)?;
+        challenge.flags &= !NTLMSSP_NEGOTIATE_KEY_EXCH;
         self.ntlm_buffer.clear();
         self.ntlm_buffer.extend_from_slice(input);
-        if let Some(challenge) = input.get(24..32) {
-            self.server_challenge.copy_from_slice(challenge);
-        }
+        self.server_challenge = challenge.server_challenge;
+        self.target_info = challenge.target_info.clone();
+        self.target_name = challenge.target_name_text.clone();
         self.state = NtlmState::Challenged;
-        Ok(())
+        Ok(challenge)
     }
 
-    /// Builds the NTLMSSP negotiate-message skeleton.
+    /// Builds a raw NTLMSSP NEGOTIATE message.
     ///
     /// # Errors
     ///
-    /// This skeleton currently has no fallible path, but returns [`NtlmResult`]
-    /// to match the legacy C function shape for future protocol migration.
+    /// Returns [`NtlmError::IntegerOverflow`] if configured payload lengths or
+    /// offsets cannot be represented by NTLMSSP security-buffer descriptors.
     pub fn encode_ntlm_negotiate_message(&mut self) -> NtlmResult<NtlmBlob> {
         self.buffer.clear();
         self.encoder(NTLMSSP_SIGNATURE);
@@ -400,54 +508,378 @@ impl AuthData {
             | NTLMSSP_NEGOTIATE_OEM
             | NTLMSSP_NEGOTIATE_UNICODE;
         self.encoder(&flags.to_le_bytes());
-        self.buffer.resize(32, 0);
+        self.encoder(&SecurityBuffer::default().to_le_bytes());
+        self.encoder(&SecurityBuffer::default().to_le_bytes());
         self.state = NtlmState::Negotiated;
+        self.negotiate_buffer = self.buffer.clone();
 
         Ok(NtlmBlob::from_bytes(self.buffer.clone(), self.spnego_wrap))
     }
 
-    /// Placeholder for NTLMSSP authenticate-message generation.
+    /// Builds a raw NTLMSSP CHALLENGE message with target-info AV pairs.
     ///
     /// # Errors
     ///
-    /// Always returns [`NtlmError::ProtocolLogicNotImplemented`] until NTLMv2
-    /// response generation and key derivation are migrated.
-    pub const fn encode_ntlm_auth(&self) -> NtlmResult<NtlmBlob> {
-        Err(NtlmError::ProtocolLogicNotImplemented)
+    /// Returns an error if UTF-16 payload sizes or offsets cannot be represented
+    /// by NTLMSSP security-buffer descriptors.
+    pub fn encode_ntlm_challenge(&mut self) -> NtlmResult<NtlmBlob> {
+        self.buffer = vec![0; CHALLENGE_HEADER_LEN];
+        self.buffer[0..8].copy_from_slice(NTLMSSP_SIGNATURE);
+        self.buffer[8..12].copy_from_slice(&CHALLENGE_MESSAGE.to_le_bytes());
+
+        let flags = NTLMSSP_NEGOTIATE_128
+            | NTLMSSP_NEGOTIATE_TARGET_INFO
+            | NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY
+            | NTLMSSP_NEGOTIATE_ALWAYS_SIGN
+            | NTLMSSP_NEGOTIATE_SIGN
+            | NTLMSSP_REQUEST_TARGET
+            | NTLMSSP_NEGOTIATE_OEM
+            | NTLMSSP_NEGOTIATE_VERSION
+            | NTLMSSP_NEGOTIATE_UNICODE
+            | NTLMSSP_NEGOTIATE_SEAL;
+        self.buffer[20..24].copy_from_slice(&flags.to_le_bytes());
+
+        if self.server_challenge == [0; 8] {
+            self.server_challenge = [1, 2, 3, 4, 5, 6, 7, 8];
+        }
+        self.buffer[24..32].copy_from_slice(&self.server_challenge);
+        self.buffer[48..52].copy_from_slice(&0x0000_0106_u32.to_le_bytes());
+        self.buffer[52..56].copy_from_slice(&0x0f00_0000_u32.to_le_bytes());
+
+        if let Some(workstation) = self.workstation.as_deref() {
+            let upper = workstation.to_uppercase();
+            let target_name = utf16le_bytes(&upper);
+            let descriptor = append_payload(&mut self.buffer, &target_name)?;
+            write_security_buffer(&mut self.buffer, 12, descriptor)?;
+        }
+
+        let target_info = self.build_target_info();
+        let target_info_descriptor = append_payload(&mut self.buffer, &target_info)?;
+        write_security_buffer(&mut self.buffer, 40, target_info_descriptor)?;
+        self.target_info = target_info;
+        self.state = NtlmState::Challenged;
+        self.ntlm_buffer = self.buffer.clone();
+
+        Ok(NtlmBlob::from_bytes(self.buffer.clone(), self.spnego_wrap))
     }
 
-    /// Placeholder for server challenge-message generation.
+    /// Builds a raw NTLMSSP AUTHENTICATE message.
     ///
     /// # Errors
     ///
-    /// Always returns [`NtlmError::ProtocolLogicNotImplemented`] until the
-    /// server-side target-info construction is migrated.
-    pub const fn encode_ntlm_challenge(&self) -> NtlmResult<NtlmBlob> {
-        Err(NtlmError::ProtocolLogicNotImplemented)
+    /// Returns an error when credential-derived fields or security buffers cannot
+    /// be encoded.
+    pub fn encode_ntlm_auth(&mut self) -> NtlmResult<NtlmBlob> {
+        let anonymous =
+            self.password.as_deref().is_none() || self.user.as_deref().is_none_or(str::is_empty);
+
+        self.buffer = vec![0; AUTHENTICATE_HEADER_LEN];
+        self.buffer[0..8].copy_from_slice(NTLMSSP_SIGNATURE);
+        self.buffer[8..12].copy_from_slice(&AUTHENTICATION_MESSAGE.to_le_bytes());
+
+        let flags = NTLMSSP_NEGOTIATE_128
+            | NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY
+            | NTLMSSP_NEGOTIATE_ALWAYS_SIGN
+            | NTLMSSP_NEGOTIATE_SIGN
+            | NTLMSSP_REQUEST_TARGET
+            | NTLMSSP_NEGOTIATE_OEM
+            | NTLMSSP_NEGOTIATE_UNICODE;
+
+        let flags = if anonymous {
+            flags | NTLMSSP_NEGOTIATE_ANONYMOUS
+        } else {
+            flags
+        };
+        self.buffer[60..64].copy_from_slice(&flags.to_le_bytes());
+
+        if anonymous {
+            self.exported_session_key = [0; SMB2_KEY_SIZE];
+        } else {
+            let nt_response = self.ntlm_v2_response()?;
+            let domain = utf16le_bytes(optional_str(self.domain.as_deref()));
+            let user = utf16le_bytes(optional_str(self.user.as_deref()));
+            let workstation = utf16le_bytes(optional_str(self.workstation.as_deref()));
+            self.buffer[60..64].copy_from_slice(&(flags | NTLMSSP_NEGOTIATE_SEAL).to_le_bytes());
+
+            let nt_descriptor = append_payload(&mut self.buffer, &nt_response)?;
+            write_security_buffer(&mut self.buffer, 20, nt_descriptor)?;
+
+            let domain_descriptor = append_payload(&mut self.buffer, &domain)?;
+            write_security_buffer(&mut self.buffer, 28, domain_descriptor)?;
+
+            let user_descriptor = append_payload(&mut self.buffer, &user)?;
+            write_security_buffer(&mut self.buffer, 36, user_descriptor)?;
+
+            let workstation_descriptor = append_payload(&mut self.buffer, &workstation)?;
+            write_security_buffer(&mut self.buffer, 44, workstation_descriptor)?;
+        }
+        self.state = NtlmState::Authenticating;
+
+        Ok(NtlmBlob::from_bytes(self.buffer.clone(), self.spnego_wrap))
     }
 
-    /// Placeholder matching `ntlmssp_generate_blob` from the C implementation.
+    /// Drives a raw NTLMSSP exchange for unwrapped blobs.
     ///
     /// # Errors
     ///
-    /// Returns [`NtlmError::ProtocolLogicNotImplemented`] for all exchanges
-    /// except an initial client negotiate-message skeleton.
+    /// Returns parse errors for malformed input, [`NtlmError::CryptoNotAvailable`]
+    /// for non-anonymous NTLMv2 authentication, or [`NtlmError::InvalidMessage`]
+    /// for unknown message types.
     pub fn generate_blob(&mut self, input: Option<&[u8]>) -> NtlmResult<NtlmBlob> {
         match input {
             None => self.encode_ntlm_negotiate_message(),
-            Some(_) => Err(NtlmError::ProtocolLogicNotImplemented),
+            Some(bytes) => match get_message_type(bytes)? {
+                NtlmMessageType::Negotiate => {
+                    self.negotiate_buffer.clear();
+                    self.negotiate_buffer.extend_from_slice(bytes);
+                    self.encode_ntlm_challenge()
+                }
+                NtlmMessageType::Challenge => {
+                    self.decode_challenge_message(bytes)?;
+                    self.encode_ntlm_auth()
+                }
+                NtlmMessageType::Authenticate => {
+                    self.authenticate_blob(bytes)?;
+                    self.buffer.clear();
+                    Ok(NtlmBlob::from_bytes(Vec::new(), self.spnego_wrap))
+                }
+                NtlmMessageType::Unknown(_) => Err(NtlmError::InvalidMessage),
+            },
         }
     }
 
-    /// Placeholder matching `ntlmssp_authenticate_blob` from the C implementation.
+    /// Drives an NTLMSSP exchange using raw or SPNEGO-wrapped SESSION_SETUP tokens.
     ///
     /// # Errors
     ///
-    /// Always returns [`NtlmError::ProtocolLogicNotImplemented`] until server-side
-    /// NT proof verification is migrated.
-    pub const fn authenticate_blob(&self, _input: &[u8]) -> NtlmResult<()> {
-        Err(NtlmError::ProtocolLogicNotImplemented)
+    /// Returns NTLMSSP parse/generation errors, or [`NtlmError::InvalidSpnegoToken`]
+    /// when a wrapped input or output cannot be represented as supported SPNEGO.
+    pub fn generate_session_setup_token(&mut self, input: Option<&[u8]>) -> NtlmResult<NtlmBlob> {
+        if !self.spnego_wrap {
+            return self.generate_blob(input);
+        }
+
+        let wrapper = SpnegoWrapper::new();
+        let raw_input = match input {
+            Some(bytes) => {
+                let unwrapped = wrapper.unwrap_blob(bytes, false)?;
+                if unwrapped.kind == SpnegoBlobKind::NegTokenTarg && unwrapped.token.is_empty() {
+                    return Err(NtlmError::InvalidMessage);
+                }
+                Some(unwrapped.token)
+            }
+            None => None,
+        };
+
+        let wrapped_output = match raw_input {
+            None => {
+                let raw_output = self.encode_ntlm_negotiate_message()?;
+                wrapper.wrap_gssapi(raw_output.as_bytes())?
+            }
+            Some(bytes) => match get_message_type(bytes)? {
+                NtlmMessageType::Negotiate => {
+                    self.negotiate_buffer.clear();
+                    self.negotiate_buffer.extend_from_slice(bytes);
+                    let raw_output = self.encode_ntlm_challenge()?;
+                    wrapper.wrap_ntlmssp_challenge(raw_output.as_bytes())?
+                }
+                NtlmMessageType::Challenge => {
+                    self.decode_challenge_message(bytes)?;
+                    let raw_output = self.encode_ntlm_auth()?;
+                    wrapper.wrap_ntlmssp_auth(raw_output.as_bytes())?
+                }
+                NtlmMessageType::Authenticate => {
+                    let result = match self.authenticate_blob(bytes) {
+                        Ok(_) => SpnegoNegResult::AcceptCompleted,
+                        Err(error) => {
+                            if error != NtlmError::CryptoNotAvailable {
+                                return Err(error);
+                            }
+                            SpnegoNegResult::Reject
+                        }
+                    };
+                    wrapper.wrap_authenticate_result(result)?
+                }
+                NtlmMessageType::Unknown(_) => return Err(NtlmError::InvalidMessage),
+            },
+        };
+        Ok(NtlmBlob::from_bytes(wrapped_output.into_bytes(), true))
     }
+
+    /// Parses and verifies an AUTHENTICATE message where possible.
+    ///
+    /// # Errors
+    ///
+    /// Anonymous authentication completes locally and exports an all-zero session
+    /// key. NTLMv2 authentication verifies the proof string and exports the
+    /// session base key.
+    pub fn authenticate_blob(&mut self, input: &[u8]) -> NtlmResult<AuthenticateMessage> {
+        let mut auth = parse_authenticate_message(input)?;
+        auth.flags &= !NTLMSSP_NEGOTIATE_KEY_EXCH;
+        self.domain = auth.domain_name.clone();
+        self.user = auth.user_name.clone();
+        self.workstation = auth.workstation.clone();
+        self.state = NtlmState::Authenticating;
+
+        let anonymous =
+            auth.nt_response.is_empty() && auth.user_name.as_deref().is_none_or(str::is_empty);
+        if anonymous || auth.flags & NTLMSSP_NEGOTIATE_ANONYMOUS != 0 {
+            self.exported_session_key = [0; SMB2_KEY_SIZE];
+            self.state = NtlmState::Authenticated;
+            return Ok(auth);
+        }
+
+        self.verify_ntlm_v2_response(&auth)?;
+        self.verify_mic_if_present(&auth, input)?;
+        self.state = NtlmState::Authenticated;
+        Ok(auth)
+    }
+
+    fn ntlm_v2_response(&mut self) -> NtlmResult<Vec<u8>> {
+        let response_key_nt = ntowfv2(
+            self.user.as_deref(),
+            self.password.as_deref(),
+            self.domain.as_deref(),
+        )?;
+        let client_challenge = self.client_challenge.ok_or(NtlmError::InvalidMessage)?;
+        let temp = encode_temp(self.wintime, &client_challenge, &self.target_info);
+        let proof_input = concat_slices(&self.server_challenge, &temp);
+        let nt_proof = smb2_hmac_md5(&proof_input, &response_key_nt).into_bytes();
+        self.exported_session_key = smb2_hmac_md5(&nt_proof, &response_key_nt).into_bytes();
+
+        let mut response = Vec::with_capacity(nt_proof.len() + temp.len());
+        response.extend_from_slice(&nt_proof);
+        response.extend_from_slice(&temp);
+        Ok(response)
+    }
+
+    fn verify_ntlm_v2_response(&mut self, auth: &AuthenticateMessage) -> NtlmResult<()> {
+        if auth.nt_response.len() <= 16 + 36 {
+            return Err(NtlmError::InvalidMessage);
+        }
+
+        let response_key_nt = ntowfv2(
+            self.user.as_deref(),
+            self.password.as_deref(),
+            self.domain.as_deref(),
+        )?;
+        let nt_proof = auth
+            .nt_response
+            .get(..16)
+            .ok_or(NtlmError::BufferTooShort)?;
+        let temp = auth
+            .nt_response
+            .get(16..)
+            .ok_or(NtlmError::BufferTooShort)?;
+        let proof_input = concat_slices(&self.server_challenge, temp);
+        let expected = smb2_hmac_md5(&proof_input, &response_key_nt).into_bytes();
+
+        if !constant_time_eq(&expected, nt_proof) {
+            return Err(NtlmError::InvalidMessage);
+        }
+
+        self.exported_session_key = smb2_hmac_md5(&expected, &response_key_nt).into_bytes();
+        if let Some(challenge) = temp.get(24..32) {
+            let mut client_challenge = [0; 8];
+            client_challenge.copy_from_slice(challenge);
+            self.client_challenge = Some(client_challenge);
+        }
+        Ok(())
+    }
+
+    fn verify_mic_if_present(&self, auth: &AuthenticateMessage, input: &[u8]) -> NtlmResult<()> {
+        let Some(mic) = auth.mic else {
+            return Ok(());
+        };
+        if self.negotiate_buffer.is_empty() || self.ntlm_buffer.is_empty() {
+            return Err(NtlmError::InvalidMessage);
+        }
+
+        let mut authenticate = input.to_vec();
+        let mic_bytes = authenticate
+            .get_mut(72..88)
+            .ok_or(NtlmError::BufferTooShort)?;
+        mic_bytes.fill(0);
+
+        let mut transcript = Vec::with_capacity(
+            self.negotiate_buffer.len() + self.ntlm_buffer.len() + authenticate.len(),
+        );
+        transcript.extend_from_slice(&self.negotiate_buffer);
+        transcript.extend_from_slice(&self.ntlm_buffer);
+        transcript.extend_from_slice(&authenticate);
+
+        let expected = smb2_hmac_md5(&transcript, &self.exported_session_key).into_bytes();
+        if constant_time_eq(&expected, &mic) {
+            Ok(())
+        } else {
+            Err(NtlmError::InvalidMessage)
+        }
+    }
+
+    fn build_target_info(&self) -> Vec<u8> {
+        let mut output = Vec::new();
+        if let Some(workstation) = self.workstation.as_deref() {
+            let upper = workstation.to_uppercase();
+            append_av_pair(&mut output, AV_ID_NB_DOMAIN_NAME, &utf16le_bytes(&upper));
+            append_av_pair(&mut output, AV_ID_NB_COMPUTER_NAME, &utf16le_bytes(&upper));
+            append_av_pair(&mut output, AV_ID_DNS_DOMAIN_NAME, &[]);
+            append_av_pair(
+                &mut output,
+                AV_ID_DNS_COMPUTER_NAME,
+                &utf16le_bytes(workstation),
+            );
+        }
+        append_av_pair(&mut output, AV_ID_TIMESTAMP, &self.wintime.to_le_bytes());
+        append_av_pair(&mut output, AV_ID_EOL, &[]);
+        output
+    }
+}
+
+impl From<SpnegoError> for NtlmError {
+    fn from(_error: SpnegoError) -> Self {
+        Self::InvalidSpnegoToken
+    }
+}
+
+/// Computes the NTLMv1 password hash, also called `NTOWFv1`.
+///
+/// # Errors
+///
+/// This function currently has no fallible path, but returns [`NtlmResult`] to
+/// mirror the legacy C entry point and keep callers uniform.
+pub fn ntowfv1(password: &str) -> NtlmResult<[u8; SMB2_KEY_SIZE]> {
+    let mut context = Md4Context::new();
+    context.update(&utf16le_bytes(password));
+    Ok(context.final_bytes())
+}
+
+/// Computes the NTLMv2 response key, also called `NTOWFv2`.
+///
+/// # Errors
+///
+/// Returns [`NtlmError::InvalidMessage`] when `user` or `password` is missing,
+/// or [`NtlmError::InvalidPasswordHash`] when an `ntlm:` password hash is not a
+/// 32-character hexadecimal NT hash.
+pub fn ntowfv2(
+    user: Option<&str>,
+    password: Option<&str>,
+    domain: Option<&str>,
+) -> NtlmResult<[u8; SMB2_KEY_SIZE]> {
+    let user = user.ok_or(NtlmError::InvalidMessage)?;
+    let password = password.ok_or(NtlmError::InvalidMessage)?;
+    let ntlm_hash = if let Some(hex) = password.strip_prefix("ntlm:") {
+        parse_ntlm_hash(hex)?
+    } else {
+        ntowfv1(password)?
+    };
+
+    let mut identity = String::with_capacity(user.len() + domain.map_or(0, str::len));
+    identity.push_str(&user.to_uppercase());
+    if let Some(domain) = domain {
+        identity.push_str(domain);
+    }
+
+    Ok(smb2_hmac_md5(&utf16le_bytes(&identity), &ntlm_hash).into_bytes())
 }
 
 /// Returns the raw NTLMSSP message type from an unwrapped NTLMSSP buffer.
@@ -465,35 +897,361 @@ pub fn get_message_type(buffer: &[u8]) -> NtlmResult<NtlmMessageType> {
         return Err(NtlmError::InvalidMessage);
     }
 
-    let Some(message_type) = buffer.get(8..12) else {
+    Ok(read_u32_le(buffer, 8)?.into())
+}
+
+/// Parses a raw NTLMSSP message into its main structure.
+///
+/// # Errors
+///
+/// Returns an error when the NTLMSSP signature, header, or any security-buffer
+/// referenced payload is invalid.
+pub fn parse_message(buffer: &[u8]) -> NtlmResult<NtlmMessage> {
+    match get_message_type(buffer)? {
+        NtlmMessageType::Negotiate => Ok(NtlmMessage::Negotiate(parse_negotiate_message(buffer)?)),
+        NtlmMessageType::Challenge => Ok(NtlmMessage::Challenge(parse_challenge_message(buffer)?)),
+        NtlmMessageType::Authenticate => Ok(NtlmMessage::Authenticate(parse_authenticate_message(
+            buffer,
+        )?)),
+        NtlmMessageType::Unknown(value) => Ok(NtlmMessage::Unknown(value)),
+    }
+}
+
+/// Parses a raw NTLMSSP NEGOTIATE message.
+///
+/// # Errors
+///
+/// Returns an error when the message type, fixed header, or referenced payloads
+/// are invalid.
+pub fn parse_negotiate_message(buffer: &[u8]) -> NtlmResult<NegotiateMessage> {
+    if get_message_type(buffer)? != NtlmMessageType::Negotiate {
+        return Err(NtlmError::InvalidMessage);
+    }
+    if buffer.len() < 16 {
         return Err(NtlmError::BufferTooShort);
+    }
+
+    let flags = read_u32_le(buffer, 12)?;
+    let domain_name = if buffer.len() >= 24 {
+        get_field(buffer, 16)?.to_vec()
+    } else {
+        Vec::new()
+    };
+    let workstation = if buffer.len() >= NEGOTIATE_HEADER_LEN {
+        get_field(buffer, 24)?.to_vec()
+    } else {
+        Vec::new()
+    };
+    let version = if buffer.len() >= 40 && flags & NTLMSSP_NEGOTIATE_VERSION != 0 {
+        Some(read_fixed_8(buffer, 32)?)
+    } else {
+        None
     };
 
-    Ok(u32::from_le_bytes([
-        message_type[0],
-        message_type[1],
-        message_type[2],
-        message_type[3],
-    ])
-    .into())
+    Ok(NegotiateMessage {
+        flags,
+        domain_name,
+        workstation,
+        version,
+    })
+}
+
+/// Parses a raw NTLMSSP CHALLENGE message.
+///
+/// # Errors
+///
+/// Returns an error when the message type, fixed header, or referenced payloads
+/// are invalid.
+pub fn parse_challenge_message(buffer: &[u8]) -> NtlmResult<ChallengeMessage> {
+    if get_message_type(buffer)? != NtlmMessageType::Challenge {
+        return Err(NtlmError::InvalidMessage);
+    }
+    if buffer.len() < 32 {
+        return Err(NtlmError::BufferTooShort);
+    }
+
+    let target_name = get_field(buffer, 12)?.to_vec();
+    let target_name_text = if target_name.is_empty() {
+        None
+    } else {
+        Some(utf16le_to_string(&target_name)?)
+    };
+    let flags = read_u32_le(buffer, 20)?;
+    let server_challenge = read_fixed_8(buffer, 24)?;
+    let target_info = if buffer.len() >= 48 {
+        get_field(buffer, 40)?.to_vec()
+    } else {
+        Vec::new()
+    };
+    let version = if buffer.len() >= CHALLENGE_HEADER_LEN {
+        Some(read_fixed_8(buffer, 48)?)
+    } else {
+        None
+    };
+
+    Ok(ChallengeMessage {
+        target_name,
+        target_name_text,
+        flags,
+        server_challenge,
+        target_info,
+        version,
+    })
+}
+
+/// Parses a raw NTLMSSP AUTHENTICATE message.
+///
+/// # Errors
+///
+/// Returns an error when the message type, fixed header, referenced payloads, or
+/// UTF-16LE text fields are invalid.
+pub fn parse_authenticate_message(buffer: &[u8]) -> NtlmResult<AuthenticateMessage> {
+    if get_message_type(buffer)? != NtlmMessageType::Authenticate {
+        return Err(NtlmError::InvalidMessage);
+    }
+    if buffer.len() < 64 {
+        return Err(NtlmError::BufferTooShort);
+    }
+
+    let lm_response = get_field(buffer, 12)?.to_vec();
+    let nt_response = get_field(buffer, 20)?.to_vec();
+    let domain_name = get_utf16_field(buffer, 28)?;
+    let user_name = get_utf16_field(buffer, 36)?;
+    let workstation = get_utf16_field(buffer, 44)?;
+    let encrypted_random_session_key = get_field(buffer, 52)?.to_vec();
+    let flags = read_u32_le(buffer, 60)?;
+    let version = if buffer.len() >= AUTHENTICATE_HEADER_LEN {
+        Some(read_fixed_8(buffer, 64)?)
+    } else {
+        None
+    };
+    let mic = if authenticate_has_mic(buffer)? {
+        Some(read_fixed_16(buffer, 72)?)
+    } else {
+        None
+    };
+
+    Ok(AuthenticateMessage {
+        lm_response,
+        nt_response,
+        domain_name,
+        user_name,
+        workstation,
+        encrypted_random_session_key,
+        flags,
+        version,
+        mic,
+    })
 }
 
 /// Extracts a security-buffer-described byte field from an NTLMSSP message.
 ///
 /// # Errors
 ///
-/// Returns [`NtlmError::BufferTooShort`] if the descriptor or described field is
-/// outside `input`.
+/// Returns [`NtlmError::BufferTooShort`] if the descriptor is outside `input`,
+/// or [`NtlmError::FieldOutOfRange`] if the described field is outside `input`.
 pub fn get_field(input: &[u8], descriptor_offset: usize) -> NtlmResult<&[u8]> {
-    let descriptor_end = descriptor_offset.saturating_add(8);
+    let descriptor_end = descriptor_offset
+        .checked_add(8)
+        .ok_or(NtlmError::IntegerOverflow)?;
     let Some(descriptor_bytes) = input.get(descriptor_offset..descriptor_end) else {
         return Err(NtlmError::BufferTooShort);
     };
     let descriptor = SecurityBuffer::from_le_bytes(descriptor_bytes)?;
-    let field_start = descriptor.offset as usize;
-    let field_end = field_start.saturating_add(descriptor.length as usize);
+    if descriptor.length == 0 {
+        return Ok(&[]);
+    }
+
+    let field_start = usize::try_from(descriptor.offset).map_err(|_| NtlmError::IntegerOverflow)?;
+    let field_len = usize::from(descriptor.length);
+    let field_end = field_start
+        .checked_add(field_len)
+        .ok_or(NtlmError::IntegerOverflow)?;
 
     input
         .get(field_start..field_end)
-        .ok_or(NtlmError::BufferTooShort)
+        .ok_or(NtlmError::FieldOutOfRange)
+}
+
+/// Decodes a UTF-16LE security-buffer-described field.
+///
+/// # Errors
+///
+/// Returns an error when the descriptor points outside the message or the field
+/// is not valid UTF-16LE.
+pub fn get_utf16_field(input: &[u8], descriptor_offset: usize) -> NtlmResult<Option<String>> {
+    let bytes = get_field(input, descriptor_offset)?;
+    if bytes.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(utf16le_to_string(bytes)?))
+}
+
+fn authenticate_has_mic(input: &[u8]) -> NtlmResult<bool> {
+    if input.len() < 88 {
+        return Ok(false);
+    }
+
+    let mut lowest_payload_offset: Option<usize> = None;
+    for descriptor_offset in [12, 20, 28, 36, 44, 52] {
+        let descriptor = SecurityBuffer::from_le_bytes(
+            input
+                .get(descriptor_offset..descriptor_offset + 8)
+                .ok_or(NtlmError::BufferTooShort)?,
+        )?;
+        if descriptor.length != 0 {
+            let offset =
+                usize::try_from(descriptor.offset).map_err(|_| NtlmError::IntegerOverflow)?;
+            lowest_payload_offset =
+                Some(lowest_payload_offset.map_or(offset, |current| current.min(offset)));
+        }
+    }
+
+    Ok(lowest_payload_offset.is_some_and(|offset| offset >= 88))
+}
+
+fn read_u16_le(input: &[u8], offset: usize) -> NtlmResult<u16> {
+    let end = offset.checked_add(2).ok_or(NtlmError::IntegerOverflow)?;
+    let Some(bytes) = input.get(offset..end) else {
+        return Err(NtlmError::BufferTooShort);
+    };
+    Ok(u16::from_le_bytes([bytes[0], bytes[1]]))
+}
+
+fn read_u32_le(input: &[u8], offset: usize) -> NtlmResult<u32> {
+    let end = offset.checked_add(4).ok_or(NtlmError::IntegerOverflow)?;
+    let Some(bytes) = input.get(offset..end) else {
+        return Err(NtlmError::BufferTooShort);
+    };
+    Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+}
+
+fn read_fixed_8(input: &[u8], offset: usize) -> NtlmResult<[u8; 8]> {
+    let end = offset.checked_add(8).ok_or(NtlmError::IntegerOverflow)?;
+    let Some(bytes) = input.get(offset..end) else {
+        return Err(NtlmError::BufferTooShort);
+    };
+    let mut output = [0; 8];
+    output.copy_from_slice(bytes);
+    Ok(output)
+}
+
+fn read_fixed_16(input: &[u8], offset: usize) -> NtlmResult<[u8; 16]> {
+    let end = offset.checked_add(16).ok_or(NtlmError::IntegerOverflow)?;
+    let Some(bytes) = input.get(offset..end) else {
+        return Err(NtlmError::BufferTooShort);
+    };
+    let mut output = [0; 16];
+    output.copy_from_slice(bytes);
+    Ok(output)
+}
+
+fn write_security_buffer(
+    output: &mut [u8],
+    descriptor_offset: usize,
+    descriptor: SecurityBuffer,
+) -> NtlmResult<()> {
+    let descriptor_end = descriptor_offset
+        .checked_add(8)
+        .ok_or(NtlmError::IntegerOverflow)?;
+    let Some(bytes) = output.get_mut(descriptor_offset..descriptor_end) else {
+        return Err(NtlmError::BufferTooShort);
+    };
+    bytes.copy_from_slice(&descriptor.to_le_bytes());
+    Ok(())
+}
+
+fn append_payload(output: &mut Vec<u8>, payload: &[u8]) -> NtlmResult<SecurityBuffer> {
+    let offset = u32::try_from(output.len()).map_err(|_| NtlmError::IntegerOverflow)?;
+    let length = u16::try_from(payload.len()).map_err(|_| NtlmError::IntegerOverflow)?;
+    output.extend_from_slice(payload);
+    Ok(SecurityBuffer::new(length, length, offset))
+}
+
+fn append_av_pair(output: &mut Vec<u8>, av_id: u16, value: &[u8]) {
+    output.extend_from_slice(&av_id.to_le_bytes());
+    let length = match u16::try_from(value.len()) {
+        Ok(value) => value,
+        Err(_) => u16::MAX,
+    };
+    output.extend_from_slice(&length.to_le_bytes());
+    output.extend_from_slice(&value[..usize::from(length)]);
+}
+
+fn optional_str(value: Option<&str>) -> &str {
+    match value {
+        Some(value) => value,
+        None => "",
+    }
+}
+
+fn encode_temp(wintime: u64, client_challenge: &[u8; 8], target_info: &[u8]) -> Vec<u8> {
+    let mut output = Vec::with_capacity(32 + target_info.len() + 4);
+    output.extend_from_slice(&[0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    output.extend_from_slice(&wintime.to_le_bytes());
+    output.extend_from_slice(client_challenge);
+    output.extend_from_slice(&[0; 4]);
+    output.extend_from_slice(target_info);
+    output.extend_from_slice(&[0; 4]);
+    output
+}
+
+fn concat_slices(first: &[u8], second: &[u8]) -> Vec<u8> {
+    let mut output = Vec::with_capacity(first.len() + second.len());
+    output.extend_from_slice(first);
+    output.extend_from_slice(second);
+    output
+}
+
+fn parse_ntlm_hash(hex: &str) -> NtlmResult<[u8; SMB2_KEY_SIZE]> {
+    if hex.len() != SMB2_KEY_SIZE * 2 {
+        return Err(NtlmError::InvalidPasswordHash);
+    }
+
+    let mut output = [0; SMB2_KEY_SIZE];
+    for (index, chunk) in hex.as_bytes().chunks_exact(2).enumerate() {
+        output[index] = (hex_nibble(chunk[0])? << 4) | hex_nibble(chunk[1])?;
+    }
+    Ok(output)
+}
+
+fn hex_nibble(value: u8) -> NtlmResult<u8> {
+    match value {
+        b'0'..=b'9' => Ok(value - b'0'),
+        b'a'..=b'f' => Ok(value - b'a' + 10),
+        b'A'..=b'F' => Ok(value - b'A' + 10),
+        _ => Err(NtlmError::InvalidPasswordHash),
+    }
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+
+    let mut diff = 0;
+    for (left, right) in left.iter().zip(right) {
+        diff |= left ^ right;
+    }
+    diff == 0
+}
+
+fn utf16le_bytes(value: &str) -> Vec<u8> {
+    let mut output = Vec::with_capacity(value.len() * 2);
+    for unit in value.encode_utf16() {
+        output.extend_from_slice(&unit.to_le_bytes());
+    }
+    output
+}
+
+fn utf16le_to_string(bytes: &[u8]) -> NtlmResult<String> {
+    if bytes.len() % 2 != 0 {
+        return Err(NtlmError::InvalidUtf16);
+    }
+
+    let mut units = Vec::with_capacity(bytes.len() / 2);
+    for chunk in bytes.chunks_exact(2) {
+        units.push(u16::from_le_bytes([chunk[0], chunk[1]]));
+    }
+    String::from_utf16(&units).map_err(|_| NtlmError::InvalidUtf16)
 }

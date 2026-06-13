@@ -2,6 +2,8 @@
 
 use crate::include::libsmb2_private::SMB2_HEADER_SIZE;
 
+use super::timestamps::{smb2_timeval_to_win, smb2_win_to_timeval};
+
 /// Fixed QUERY_DIRECTORY request structure size from the SMB2 wire format.
 pub const SMB2_QUERY_DIRECTORY_REQUEST_SIZE: usize = 33;
 /// Fixed QUERY_DIRECTORY reply structure size from the SMB2 wire format.
@@ -40,6 +42,8 @@ pub enum QueryDirectoryError {
     InvalidStructureSize,
     /// A directory entry name length does not fit in the provided buffer.
     MalformedName,
+    /// A chained directory entry offset is invalid.
+    MalformedEntryChain,
     /// A length field does not fit in the destination integer type.
     LengthOverflow,
 }
@@ -52,6 +56,7 @@ impl core::fmt::Display for QueryDirectoryError {
             Self::BufferOverlap => "variable QUERY_DIRECTORY buffer overlaps the fixed header",
             Self::InvalidStructureSize => "unexpected QUERY_DIRECTORY structure size",
             Self::MalformedName => "directory entry name length is malformed",
+            Self::MalformedEntryChain => "directory entry chain offset is malformed",
             Self::LengthOverflow => "QUERY_DIRECTORY length does not fit in the wire field",
         };
         f.write_str(message)
@@ -245,6 +250,9 @@ pub fn smb2_decode_fileidfulldirectoryinformation(
     data: &[u8],
 ) -> QueryDirectoryResult<FileIdFullDirectoryInformation> {
     let name_len = read_u32(data, 60)? as usize;
+    if name_len % 2 != 0 {
+        return Err(QueryDirectoryError::MalformedName);
+    }
     if name_len
         > data
             .len()
@@ -256,10 +264,10 @@ pub fn smb2_decode_fileidfulldirectoryinformation(
     Ok(FileIdFullDirectoryInformation {
         next_entry_offset: read_u32(data, 0)?,
         file_index: read_u32(data, 4)?,
-        creation_time: filetime_placeholder(read_u64(data, 8)?),
-        last_access_time: filetime_placeholder(read_u64(data, 16)?),
-        last_write_time: filetime_placeholder(read_u64(data, 24)?),
-        change_time: filetime_placeholder(read_u64(data, 32)?),
+        creation_time: decode_filetime(read_u64(data, 8)?),
+        last_access_time: decode_filetime(read_u64(data, 16)?),
+        last_write_time: decode_filetime(read_u64(data, 24)?),
+        change_time: decode_filetime(read_u64(data, 32)?),
         end_of_file: read_u64(data, 40)?,
         allocation_size: read_u64(data, 48)?,
         file_attributes: read_u32(data, 56)?,
@@ -272,6 +280,210 @@ pub fn smb2_decode_fileidfulldirectoryinformation(
             name_len,
         )?),
     })
+}
+
+/// Decodes a FILE_ID_BOTH_DIRECTORY_INFORMATION entry from a wire buffer.
+///
+/// # Errors
+///
+/// Returns an error if fixed fields or the trailing name do not fit in `data`.
+pub fn smb2_decode_fileidbothdirectoryinformation(
+    data: &[u8],
+) -> QueryDirectoryResult<FileIdBothDirectoryInformation> {
+    let name_len = read_u32(data, 60)? as usize;
+    if name_len % 2 != 0 {
+        return Err(QueryDirectoryError::MalformedName);
+    }
+    if name_len
+        > data
+            .len()
+            .saturating_sub(SMB2_FILEID_BOTH_DIRECTORY_INFORMATION_SIZE)
+    {
+        return Err(QueryDirectoryError::MalformedName);
+    }
+
+    let mut short_name = [0; 24];
+    short_name.copy_from_slice(slice_at(data, 70, 24)?);
+    Ok(FileIdBothDirectoryInformation {
+        next_entry_offset: read_u32(data, 0)?,
+        file_index: read_u32(data, 4)?,
+        creation_time: decode_filetime(read_u64(data, 8)?),
+        last_access_time: decode_filetime(read_u64(data, 16)?),
+        last_write_time: decode_filetime(read_u64(data, 24)?),
+        change_time: decode_filetime(read_u64(data, 32)?),
+        end_of_file: read_u64(data, 40)?,
+        allocation_size: read_u64(data, 48)?,
+        file_attributes: read_u32(data, 56)?,
+        file_name_length: read_u32(data, 60)?,
+        ea_size: read_u32(data, 64)?,
+        short_name_length: read_u8(data, 68)?,
+        short_name,
+        file_id: read_u64(data, 96)?,
+        name: decode_utf16le_lossy(slice_at(
+            data,
+            SMB2_FILEID_BOTH_DIRECTORY_INFORMATION_SIZE,
+            name_len,
+        )?),
+    })
+}
+
+/// Decodes a chained FILE_ID_FULL_DIRECTORY_INFORMATION buffer.
+///
+/// # Errors
+///
+/// Returns an error if any entry is malformed, out of bounds, or has an invalid next offset.
+pub fn smb2_decode_fileidfulldirectoryinformation_entries(
+    data: &[u8],
+) -> QueryDirectoryResult<Vec<FileIdFullDirectoryInformation>> {
+    decode_directory_entry_chain(
+        data,
+        SMB2_FILEID_FULL_DIRECTORY_INFORMATION_SIZE,
+        smb2_decode_fileidfulldirectoryinformation,
+    )
+}
+
+/// Decodes a chained FILE_ID_BOTH_DIRECTORY_INFORMATION buffer.
+///
+/// # Errors
+///
+/// Returns an error if any entry is malformed, out of bounds, or has an invalid next offset.
+pub fn smb2_decode_fileidbothdirectoryinformation_entries(
+    data: &[u8],
+) -> QueryDirectoryResult<Vec<FileIdBothDirectoryInformation>> {
+    decode_directory_entry_chain(
+        data,
+        SMB2_FILEID_BOTH_DIRECTORY_INFORMATION_SIZE,
+        smb2_decode_fileidbothdirectoryinformation,
+    )
+}
+
+/// Encodes one FILE_ID_FULL_DIRECTORY_INFORMATION entry.
+///
+/// # Errors
+///
+/// Returns an error if the encoded name or output buffer cannot fit.
+pub fn smb2_encode_fileidfulldirectoryinformation(
+    entry: &FileIdFullDirectoryInformation,
+    next_entry_offset: u32,
+    buf: &mut [u8],
+) -> QueryDirectoryResult<usize> {
+    let name = encode_utf16le(&entry.name);
+    let len = SMB2_FILEID_FULL_DIRECTORY_INFORMATION_SIZE
+        .checked_add(name.len())
+        .ok_or(QueryDirectoryError::LengthOverflow)?;
+    require_len(buf, len)?;
+    write_u32(buf, 0, next_entry_offset)?;
+    write_u32(buf, 4, entry.file_index)?;
+    write_u64(buf, 8, encode_filetime(entry.creation_time))?;
+    write_u64(buf, 16, encode_filetime(entry.last_access_time))?;
+    write_u64(buf, 24, encode_filetime(entry.last_write_time))?;
+    write_u64(buf, 32, encode_filetime(entry.change_time))?;
+    write_u64(buf, 40, entry.end_of_file)?;
+    write_u64(buf, 48, entry.allocation_size)?;
+    write_u32(buf, 56, entry.file_attributes)?;
+    write_u32(buf, 60, len_to_u32(name.len())?)?;
+    write_u32(buf, 64, entry.ea_size)?;
+    write_u32(buf, 68, 0)?;
+    write_u64(buf, 72, entry.file_id)?;
+    write_bytes(buf, SMB2_FILEID_FULL_DIRECTORY_INFORMATION_SIZE, &name)?;
+    Ok(len)
+}
+
+/// Encodes chained FILE_ID_FULL_DIRECTORY_INFORMATION entries into `buf`.
+///
+/// # Errors
+///
+/// Returns an error if the encoded entries cannot fit in `buf` or in wire length fields.
+pub fn smb2_encode_fileidfulldirectoryinformation_entries(
+    entries: &[FileIdFullDirectoryInformation],
+    buf: &mut [u8],
+) -> QueryDirectoryResult<usize> {
+    encode_directory_entry_chain(entries, buf, smb2_encode_fileidfulldirectoryinformation)
+}
+
+/// Encodes chained FILE_ID_FULL_DIRECTORY_INFORMATION entries into an owned buffer.
+///
+/// # Errors
+///
+/// Returns an error if the encoded entries cannot fit in wire length fields.
+pub fn smb2_encode_fileidfulldirectoryinformation_entries_vec(
+    entries: &[FileIdFullDirectoryInformation],
+) -> QueryDirectoryResult<Vec<u8>> {
+    let len = directory_entry_chain_len(
+        entries,
+        |entry| encode_utf16le(&entry.name).len(),
+        SMB2_FILEID_FULL_DIRECTORY_INFORMATION_SIZE,
+    )?;
+    let mut buf = vec![0; len];
+    let written = smb2_encode_fileidfulldirectoryinformation_entries(entries, &mut buf)?;
+    buf.truncate(written);
+    Ok(buf)
+}
+
+/// Encodes one FILE_ID_BOTH_DIRECTORY_INFORMATION entry.
+///
+/// # Errors
+///
+/// Returns an error if the encoded name or output buffer cannot fit.
+pub fn smb2_encode_fileidbothdirectoryinformation(
+    entry: &FileIdBothDirectoryInformation,
+    next_entry_offset: u32,
+    buf: &mut [u8],
+) -> QueryDirectoryResult<usize> {
+    let name = encode_utf16le(&entry.name);
+    let len = SMB2_FILEID_BOTH_DIRECTORY_INFORMATION_SIZE
+        .checked_add(name.len())
+        .ok_or(QueryDirectoryError::LengthOverflow)?;
+    require_len(buf, len)?;
+    write_u32(buf, 0, next_entry_offset)?;
+    write_u32(buf, 4, entry.file_index)?;
+    write_u64(buf, 8, encode_filetime(entry.creation_time))?;
+    write_u64(buf, 16, encode_filetime(entry.last_access_time))?;
+    write_u64(buf, 24, encode_filetime(entry.last_write_time))?;
+    write_u64(buf, 32, encode_filetime(entry.change_time))?;
+    write_u64(buf, 40, entry.end_of_file)?;
+    write_u64(buf, 48, entry.allocation_size)?;
+    write_u32(buf, 56, entry.file_attributes)?;
+    write_u32(buf, 60, len_to_u32(name.len())?)?;
+    write_u32(buf, 64, entry.ea_size)?;
+    write_u8(buf, 68, entry.short_name_length)?;
+    write_u8(buf, 69, 0)?;
+    write_bytes(buf, 70, &entry.short_name)?;
+    write_u16(buf, 94, 0)?;
+    write_u64(buf, 96, entry.file_id)?;
+    write_bytes(buf, SMB2_FILEID_BOTH_DIRECTORY_INFORMATION_SIZE, &name)?;
+    Ok(len)
+}
+
+/// Encodes chained FILE_ID_BOTH_DIRECTORY_INFORMATION entries into `buf`.
+///
+/// # Errors
+///
+/// Returns an error if the encoded entries cannot fit in `buf` or in wire length fields.
+pub fn smb2_encode_fileidbothdirectoryinformation_entries(
+    entries: &[FileIdBothDirectoryInformation],
+    buf: &mut [u8],
+) -> QueryDirectoryResult<usize> {
+    encode_directory_entry_chain(entries, buf, smb2_encode_fileidbothdirectoryinformation)
+}
+
+/// Encodes chained FILE_ID_BOTH_DIRECTORY_INFORMATION entries into an owned buffer.
+///
+/// # Errors
+///
+/// Returns an error if the encoded entries cannot fit in wire length fields.
+pub fn smb2_encode_fileidbothdirectoryinformation_entries_vec(
+    entries: &[FileIdBothDirectoryInformation],
+) -> QueryDirectoryResult<Vec<u8>> {
+    let len = directory_entry_chain_len(
+        entries,
+        |entry| encode_utf16le(&entry.name).len(),
+        SMB2_FILEID_BOTH_DIRECTORY_INFORMATION_SIZE,
+    )?;
+    let mut buf = vec![0; len];
+    let written = smb2_encode_fileidbothdirectoryinformation_entries(entries, &mut buf)?;
+    buf.truncate(written);
+    Ok(buf)
 }
 
 /// Encodes the fixed QUERY_DIRECTORY request fields and optional name bytes.
@@ -546,6 +758,10 @@ fn write_u32(data: &mut [u8], offset: usize, value: u32) -> QueryDirectoryResult
     write_bytes(data, offset, &value.to_le_bytes())
 }
 
+fn write_u64(data: &mut [u8], offset: usize, value: u64) -> QueryDirectoryResult<()> {
+    write_bytes(data, offset, &value.to_le_bytes())
+}
+
 fn write_bytes(data: &mut [u8], offset: usize, value: &[u8]) -> QueryDirectoryResult<()> {
     let end = offset
         .checked_add(value.len())
@@ -567,6 +783,99 @@ fn slice_at(data: &[u8], offset: usize, len: usize) -> QueryDirectoryResult<&[u8
 
 fn len_to_u32(len: usize) -> QueryDirectoryResult<u32> {
     u32::try_from(len).map_err(|_| QueryDirectoryError::LengthOverflow)
+}
+
+fn require_len(data: &[u8], len: usize) -> QueryDirectoryResult<()> {
+    if data.len() < len {
+        return Err(QueryDirectoryError::BufferTooShort);
+    }
+    Ok(())
+}
+
+fn decode_directory_entry_chain<T>(
+    data: &[u8],
+    fixed_len: usize,
+    decode: fn(&[u8]) -> QueryDirectoryResult<T>,
+) -> QueryDirectoryResult<Vec<T>> {
+    let mut entries = Vec::new();
+    let mut offset = 0usize;
+    while offset < data.len() {
+        let remaining = &data[offset..];
+        require_len(remaining, fixed_len)?;
+        let next_entry_offset = read_u32(remaining, 0)? as usize;
+        let entry_len = if next_entry_offset == 0 {
+            remaining.len()
+        } else {
+            if next_entry_offset < fixed_len || next_entry_offset > remaining.len() {
+                return Err(QueryDirectoryError::MalformedEntryChain);
+            }
+            next_entry_offset
+        };
+        entries.push(decode(slice_at(data, offset, entry_len)?)?);
+        if next_entry_offset == 0 {
+            break;
+        }
+        offset = offset
+            .checked_add(next_entry_offset)
+            .ok_or(QueryDirectoryError::LengthOverflow)?;
+    }
+    Ok(entries)
+}
+
+fn encode_directory_entry_chain<T>(
+    entries: &[T],
+    buf: &mut [u8],
+    encode: fn(&T, u32, &mut [u8]) -> QueryDirectoryResult<usize>,
+) -> QueryDirectoryResult<usize> {
+    let mut offset = 0usize;
+    for (index, entry) in entries.iter().enumerate() {
+        let available_len = buf.len().saturating_sub(offset);
+        let entry_len = encode(entry, 0, slice_mut_at(buf, offset, available_len)?)?;
+        let padded_len = pad_to_32bit(entry_len);
+        let next_entry_offset = if index + 1 == entries.len() {
+            0
+        } else {
+            len_to_u32(padded_len)?
+        };
+        write_u32(buf, offset, next_entry_offset)?;
+        let padding_start = offset
+            .checked_add(entry_len)
+            .ok_or(QueryDirectoryError::LengthOverflow)?;
+        let padding_end = offset
+            .checked_add(padded_len)
+            .ok_or(QueryDirectoryError::LengthOverflow)?;
+        require_len(buf, padding_end)?;
+        for byte in slice_mut_at(buf, padding_start, padding_end - padding_start)? {
+            *byte = 0;
+        }
+        offset = padding_end;
+    }
+    Ok(offset)
+}
+
+fn directory_entry_chain_len<T>(
+    entries: &[T],
+    name_len: fn(&T) -> usize,
+    fixed_len: usize,
+) -> QueryDirectoryResult<usize> {
+    let mut total = 0usize;
+    for entry in entries {
+        let len = fixed_len
+            .checked_add(name_len(entry))
+            .ok_or(QueryDirectoryError::LengthOverflow)?;
+        total = total
+            .checked_add(pad_to_32bit(len))
+            .ok_or(QueryDirectoryError::LengthOverflow)?;
+    }
+    Ok(total)
+}
+
+fn slice_mut_at(data: &mut [u8], offset: usize, len: usize) -> QueryDirectoryResult<&mut [u8]> {
+    let end = offset
+        .checked_add(len)
+        .ok_or(QueryDirectoryError::LengthOverflow)?;
+    data.get_mut(offset..end)
+        .ok_or(QueryDirectoryError::BufferTooShort)
 }
 
 fn utf16le_len(value: &str) -> QueryDirectoryResult<u16> {
@@ -593,8 +902,19 @@ fn decode_utf16le_lossy(bytes: &[u8]) -> String {
     String::from_utf16_lossy(&units)
 }
 
-fn filetime_placeholder(_value: u64) -> Smb2Timeval {
-    Smb2Timeval::default()
+fn decode_filetime(value: u64) -> Smb2Timeval {
+    let timeval = smb2_win_to_timeval(value);
+    Smb2Timeval {
+        tv_sec: timeval.tv_sec,
+        tv_usec: timeval.tv_usec,
+    }
+}
+
+fn encode_filetime(value: Smb2Timeval) -> u64 {
+    smb2_timeval_to_win(&super::timestamps::Smb2Timeval {
+        tv_sec: value.tv_sec,
+        tv_usec: value.tv_usec,
+    })
 }
 
 const fn pad_to_32bit(value: usize) -> usize {

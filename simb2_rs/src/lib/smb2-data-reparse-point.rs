@@ -1,5 +1,7 @@
 //! Reparse point encoders/decoders migrated from `lib/smb2-data-reparse-point.c`.
 
+use super::unicode::smb2_utf16_to_utf8;
+
 /// SMB2 symlink reparse tag value used by `SMB2_REPARSE_TAG_SYMLINK`.
 pub const SMB2_REPARSE_TAG_SYMLINK: u32 = 0xa000_000c;
 
@@ -34,6 +36,10 @@ pub enum ReparseDataError {
     InvalidReparseDataLength,
     /// A symlink name range falls outside the reparse payload bounds.
     InvalidSymlinkNameRange,
+    /// A UTF-16LE symlink name length is not divisible by two bytes.
+    OddUtf16NameLength,
+    /// The payload cannot be encoded from the available Rust-owned fields.
+    UnsupportedPayload,
 }
 
 /// Byte range for a UTF-16LE symlink name inside a reparse point buffer.
@@ -111,7 +117,9 @@ impl Smb2SymlinkReparseBuffer {
 pub enum Smb2ReparseDataPayload {
     /// Symlink payload corresponding to `SMB2_REPARSE_TAG_SYMLINK`.
     Symlink(Smb2SymlinkReparseBuffer),
-    /// Placeholder for tags whose protocol-specific payloads have not been migrated yet.
+    /// Raw payload for reparse tags not decoded by this module.
+    Raw(Vec<u8>),
+    /// Placeholder for buffers where protocol-specific raw bytes are not available.
     Unknown,
 }
 
@@ -137,6 +145,20 @@ impl Smb2ReparseDataBuffer {
         }
     }
 
+    /// Creates a reparse data buffer carrying raw tag-specific payload bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReparseDataError::LengthOverflow`] if `payload` length cannot fit in `u16`.
+    pub fn raw(reparse_tag: u32, payload: Vec<u8>) -> ReparseDataResult<Self> {
+        let reparse_data_length = len_to_u16(payload.len())?;
+        Ok(Self {
+            reparse_tag,
+            reparse_data_length,
+            payload: Smb2ReparseDataPayload::Raw(payload),
+        })
+    }
+
     /// Creates a symlink reparse data buffer skeleton.
     #[must_use]
     pub const fn symlink(reparse_data_length: u16, symlink: Smb2SymlinkReparseBuffer) -> Self {
@@ -158,8 +180,18 @@ impl Smb2ReparseDataBuffer {
     pub const fn as_symlink(&self) -> Option<&Smb2SymlinkReparseBuffer> {
         match &self.payload {
             Smb2ReparseDataPayload::Symlink(symlink) => Some(symlink),
+            Smb2ReparseDataPayload::Raw(_) => None,
             Smb2ReparseDataPayload::Unknown => None,
         }
+    }
+
+    /// Encodes this reparse data buffer to the SMB2 wire layout.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReparseDataError`] if lengths overflow or a payload cannot be written.
+    pub fn encode_reparse_data_buffer(&self) -> ReparseDataResult<Vec<u8>> {
+        smb2_encode_reparse_data_buffer(self)
     }
 
     /// Decodes the fixed reparse data fields from a wire buffer.
@@ -178,11 +210,7 @@ impl Smb2ReparseDataBuffer {
     }
 }
 
-/// Decodes the fixed fields of an SMB2 reparse data buffer.
-///
-/// The function name follows the C source entry point. It intentionally stops short
-/// of performing full protocol string conversion and instead stores validated raw
-/// symlink name ranges in [`Smb2SymlinkReparseBuffer`].
+/// Decodes the fixed fields and symlink names of an SMB2 reparse data buffer.
 ///
 /// # Errors
 ///
@@ -205,7 +233,12 @@ pub fn smb2_decode_reparse_data_buffer(input: &[u8]) -> ReparseDataResult<Smb2Re
     }
 
     if reparse_tag != SMB2_REPARSE_TAG_SYMLINK {
-        return Ok(Smb2ReparseDataBuffer::new(reparse_tag, reparse_data_length));
+        let payload = input[SMB2_REPARSE_DATA_HEADER_SIZE..declared_len].to_vec();
+        return Ok(Smb2ReparseDataBuffer {
+            reparse_tag,
+            reparse_data_length,
+            payload: Smb2ReparseDataPayload::Raw(payload),
+        });
     }
 
     if input.len() < SMB2_SYMLINK_REPARSE_MIN_SIZE {
@@ -227,8 +260,104 @@ pub fn smb2_decode_reparse_data_buffer(input: &[u8]) -> ReparseDataResult<Smb2Re
     )?;
     let symlink =
         Smb2SymlinkReparseBuffer::new(flags).with_name_ranges(subname_range, printname_range);
+    let symlink = Smb2SymlinkReparseBuffer {
+        subname: decode_utf16le_name(input, subname_range)?,
+        printname: decode_utf16le_name(input, printname_range)?,
+        ..symlink
+    };
 
     Ok(Smb2ReparseDataBuffer::symlink(reparse_data_length, symlink))
+}
+
+/// Encodes an SMB2 reparse data buffer.
+///
+/// # Errors
+///
+/// Returns [`ReparseDataError`] if lengths overflow or a payload cannot be written.
+pub fn smb2_encode_reparse_data_buffer(data: &Smb2ReparseDataBuffer) -> ReparseDataResult<Vec<u8>> {
+    match &data.payload {
+        Smb2ReparseDataPayload::Symlink(symlink) => encode_symlink_reparse_data_buffer(symlink),
+        Smb2ReparseDataPayload::Raw(payload) => {
+            encode_raw_reparse_data_buffer(data.reparse_tag, payload)
+        }
+        Smb2ReparseDataPayload::Unknown => {
+            let payload = vec![0; usize::from(data.reparse_data_length)];
+            encode_raw_reparse_data_buffer(data.reparse_tag, &payload)
+        }
+    }
+}
+
+fn encode_symlink_reparse_data_buffer(
+    symlink: &Smb2SymlinkReparseBuffer,
+) -> ReparseDataResult<Vec<u8>> {
+    let subname = match symlink.subname.as_deref() {
+        Some(value) => value,
+        None => "",
+    };
+    let printname = match symlink.printname.as_deref() {
+        Some(value) => value,
+        None => "",
+    };
+    let subname_bytes = encode_utf16le(subname);
+    let printname_bytes = encode_utf16le(printname);
+    let subname_len = len_to_u16(subname_bytes.len())?;
+    let printname_offset = len_to_u16(subname_bytes.len())?;
+    let printname_len = len_to_u16(printname_bytes.len())?;
+    let reparse_data_length = SYMLINK_REPARSE_DATA_PREFIX
+        .checked_add(subname_bytes.len())
+        .and_then(|len| len.checked_add(printname_bytes.len()))
+        .ok_or(ReparseDataError::LengthOverflow)?;
+    let reparse_data_length_u16 = len_to_u16(reparse_data_length)?;
+    let total_len = SMB2_REPARSE_DATA_HEADER_SIZE
+        .checked_add(reparse_data_length)
+        .ok_or(ReparseDataError::LengthOverflow)?;
+    let mut out = vec![0; total_len];
+    write_u32(&mut out, 0, SMB2_REPARSE_TAG_SYMLINK)?;
+    write_u16(&mut out, 4, reparse_data_length_u16)?;
+    write_u16(&mut out, SYMLINK_SUBSTITUTE_NAME_OFFSET_FIELD, 0)?;
+    write_u16(&mut out, SYMLINK_SUBSTITUTE_NAME_LENGTH_FIELD, subname_len)?;
+    write_u16(&mut out, SYMLINK_PRINT_NAME_OFFSET_FIELD, printname_offset)?;
+    write_u16(&mut out, SYMLINK_PRINT_NAME_LENGTH_FIELD, printname_len)?;
+    write_u32(&mut out, SYMLINK_FLAGS_FIELD, symlink.flags)?;
+    write_bytes(&mut out, SYMLINK_PATH_BUFFER_OFFSET, &subname_bytes)?;
+    write_bytes(
+        &mut out,
+        SYMLINK_PATH_BUFFER_OFFSET + subname_bytes.len(),
+        &printname_bytes,
+    )?;
+    Ok(out)
+}
+
+fn encode_raw_reparse_data_buffer(reparse_tag: u32, payload: &[u8]) -> ReparseDataResult<Vec<u8>> {
+    let total_len = SMB2_REPARSE_DATA_HEADER_SIZE
+        .checked_add(payload.len())
+        .ok_or(ReparseDataError::LengthOverflow)?;
+    let mut out = vec![0; total_len];
+    write_u32(&mut out, 0, reparse_tag)?;
+    write_u16(&mut out, 4, len_to_u16(payload.len())?)?;
+    write_bytes(&mut out, SMB2_REPARSE_DATA_HEADER_SIZE, payload)?;
+    Ok(out)
+}
+
+fn decode_utf16le_name(input: &[u8], range: ReparseNameRange) -> ReparseDataResult<Option<String>> {
+    if range.is_empty() {
+        return Ok(None);
+    }
+    let end = range
+        .offset
+        .checked_add(range.length)
+        .ok_or(ReparseDataError::LengthOverflow)?;
+    let Some(bytes) = input.get(range.offset..end) else {
+        return Err(ReparseDataError::BufferTooShort);
+    };
+    if bytes.len() % 2 != 0 {
+        return Err(ReparseDataError::OddUtf16NameLength);
+    }
+    let units = bytes
+        .chunks_exact(2)
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect::<Vec<_>>();
+    Ok(Some(smb2_utf16_to_utf8(&units)))
 }
 
 fn read_symlink_name_range(
@@ -271,6 +400,37 @@ fn read_u16(input: &[u8], offset: usize) -> ReparseDataResult<u16> {
 fn read_u32(input: &[u8], offset: usize) -> ReparseDataResult<u32> {
     let bytes = read_bytes::<4>(input, offset)?;
     Ok(u32::from_le_bytes(bytes))
+}
+
+fn write_u16(output: &mut [u8], offset: usize, value: u16) -> ReparseDataResult<()> {
+    write_bytes(output, offset, &value.to_le_bytes())
+}
+
+fn write_u32(output: &mut [u8], offset: usize, value: u32) -> ReparseDataResult<()> {
+    write_bytes(output, offset, &value.to_le_bytes())
+}
+
+fn write_bytes(output: &mut [u8], offset: usize, value: &[u8]) -> ReparseDataResult<()> {
+    let end = offset
+        .checked_add(value.len())
+        .ok_or(ReparseDataError::LengthOverflow)?;
+    let Some(dst) = output.get_mut(offset..end) else {
+        return Err(ReparseDataError::BufferTooShort);
+    };
+    dst.copy_from_slice(value);
+    Ok(())
+}
+
+fn len_to_u16(len: usize) -> ReparseDataResult<u16> {
+    u16::try_from(len).map_err(|_| ReparseDataError::LengthOverflow)
+}
+
+fn encode_utf16le(value: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(value.encode_utf16().count() * 2);
+    for unit in value.encode_utf16() {
+        out.extend_from_slice(&unit.to_le_bytes());
+    }
+    out
 }
 
 fn read_bytes<const N: usize>(input: &[u8], offset: usize) -> ReparseDataResult<[u8; N]> {

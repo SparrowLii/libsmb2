@@ -1,5 +1,7 @@
 //! HMAC-MD5 helpers migrated from `lib/hmac-md5.c`.
 
+use super::md5::Md5Context;
+
 /// MD5 digest length used by HMAC-MD5.
 pub const HMAC_MD5_DIGEST_LEN: usize = 16;
 
@@ -22,7 +24,7 @@ impl HmacMd5Digest {
         Self { bytes }
     }
 
-    /// Creates a zero-filled digest placeholder for the migration skeleton.
+    /// Creates a zero-filled digest value.
     #[must_use]
     pub const fn zeroed() -> Self {
         Self::new([0; HMAC_MD5_DIGEST_LEN])
@@ -57,9 +59,8 @@ pub struct HmacMd5Pads {
 impl HmacMd5Pads {
     /// Builds the inner and outer pad buffers from key material that is at most one MD5 block.
     ///
-    /// Keys longer than [`HMAC_MD5_BLOCK_LEN`] require the MD5 key-folding pass described by
-    /// RFC 2104 before this step. This migration skeleton records that requirement in
-    /// [`HmacMd5Context`] and does not perform the MD5 compression itself.
+    /// Keys longer than [`HMAC_MD5_BLOCK_LEN`] must be folded to an MD5 digest before calling
+    /// this helper; [`HmacMd5Context`] performs that RFC 2104 key preparation.
     #[must_use]
     pub fn from_block_sized_key(key: &[u8]) -> Self {
         let mut inner = [0; HMAC_MD5_BLOCK_LEN];
@@ -108,21 +109,18 @@ pub enum HmacMd5KeyState {
     NeedsMd5Fold,
 }
 
-/// Migration skeleton for the C `smb2_hmac_md5` operation.
+/// Streaming context for the C `smb2_hmac_md5` operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HmacMd5Context {
     pads: HmacMd5Pads,
+    inner: Md5Context,
     key_state: HmacMd5KeyState,
     key_len: usize,
     text_len: usize,
 }
 
 impl HmacMd5Context {
-    /// Creates a new HMAC-MD5 context skeleton for the provided authentication key.
-    ///
-    /// The legacy C implementation folds keys longer than 64 bytes with MD5 before building the
-    /// pads. This skeleton does not implement that hash pass; callers can inspect
-    /// [`Self::key_state`] to detect that the fold is still required.
+    /// Creates a new HMAC-MD5 context for the provided authentication key.
     #[must_use]
     pub fn new(key: &[u8]) -> Self {
         let key_state = if key.len() > HMAC_MD5_BLOCK_LEN {
@@ -131,25 +129,44 @@ impl HmacMd5Context {
             HmacMd5KeyState::BlockSized
         };
 
+        let folded_key;
+        let prepared_key = if key.len() > HMAC_MD5_BLOCK_LEN {
+            let mut key_context = Md5Context::new();
+            key_context.update(key);
+            folded_key = key_context.finalize();
+            &folded_key[..]
+        } else {
+            key
+        };
+
+        let pads = HmacMd5Pads::from_block_sized_key(prepared_key);
+        let mut inner = Md5Context::new();
+        inner.update(pads.inner());
+
         Self {
-            pads: HmacMd5Pads::from_block_sized_key(key),
+            pads,
+            inner,
             key_state,
             key_len: key.len(),
             text_len: 0,
         }
     }
 
-    /// Records additional text bytes for the HMAC-MD5 data stream.
+    /// Adds text bytes to the HMAC-MD5 data stream.
     pub fn update(&mut self, text: &[u8]) {
         self.text_len = self.text_len.saturating_add(text.len());
+        self.inner.update(text);
     }
 
-    /// Finishes the migration skeleton and returns a zero-filled digest placeholder.
-    ///
-    /// The complete MD5 inner and outer hash passes are intentionally not implemented here yet.
+    /// Finishes the HMAC-MD5 operation and returns the digest.
     #[must_use]
-    pub const fn finalize(&self) -> HmacMd5Digest {
-        HmacMd5Digest::zeroed()
+    pub fn finalize(&self) -> HmacMd5Digest {
+        let mut inner = self.inner.clone();
+        let inner_digest = inner.finalize();
+        let mut outer = Md5Context::new();
+        outer.update(self.pads.outer());
+        outer.update(&inner_digest);
+        HmacMd5Digest::new(outer.finalize())
     }
 
     /// Returns the prepared HMAC-MD5 pads.
@@ -177,11 +194,7 @@ impl HmacMd5Context {
     }
 }
 
-/// One-shot skeleton corresponding to the C `smb2_hmac_md5` function.
-///
-/// This records the same input roles as the C API: text stream, authentication key, and caller
-/// digest output. It currently returns a zero-filled digest placeholder instead of computing the
-/// MD5 inner and outer passes.
+/// One-shot helper corresponding to the C `smb2_hmac_md5` function.
 #[must_use]
 pub fn smb2_hmac_md5(text: &[u8], key: &[u8]) -> HmacMd5Digest {
     let mut context = HmacMd5Context::new(key);

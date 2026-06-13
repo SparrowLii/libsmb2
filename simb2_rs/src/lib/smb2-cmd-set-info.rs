@@ -2,6 +2,15 @@
 
 use crate::include::libsmb2_private::SMB2_HEADER_SIZE;
 
+use super::smb2_data_file_info::{
+    smb2_decode_file_basic_info, smb2_decode_file_disposition_info,
+    smb2_decode_file_end_of_file_info, smb2_decode_file_rename_info, smb2_encode_file_basic_info,
+    smb2_encode_file_disposition_info, smb2_encode_file_end_of_file_info,
+    smb2_encode_file_rename_info, FileInfoError, Smb2FileBasicInfo, Smb2FileDispositionInfo,
+    Smb2FileEndOfFileInfo, Smb2FileRenameInfo, FILE_BASIC_INFO_SIZE, FILE_DISPOSITION_INFO_SIZE,
+    FILE_END_OF_FILE_INFO_SIZE, FILE_RENAME_INFO_PREFIX_SIZE,
+};
+
 /// SMB2 command id for SET_INFO.
 pub const SMB2_SET_INFO: u16 = 17;
 /// SMB2 file id size in bytes.
@@ -24,7 +33,7 @@ pub const SMB2_FILE_DISPOSITION_INFORMATION: u8 = 0x0d;
 pub const SMB2_FILE_END_OF_FILE_INFORMATION: u8 = 0x14;
 
 /// Errors returned by the SET_INFO migration skeleton.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetInfoError {
     /// A fixed or variable buffer is shorter than the requested field.
     BufferTooShort,
@@ -36,13 +45,10 @@ pub enum SetInfoError {
     InvalidStructureSize,
     /// A checked offset or length calculation overflowed.
     LengthOverflow,
-    /// The skeleton intentionally does not encode this info type/class pair.
-    UnsupportedInfoClass {
-        /// SET_INFO info type.
-        info_type: u8,
-        /// SET_INFO file information class.
-        file_info_class: u8,
-    },
+    /// A typed SET_INFO buffer is malformed for its class.
+    MalformedPayload,
+    /// File information typed payload codec failed.
+    FileInfo(FileInfoError),
 }
 
 impl core::fmt::Display for SetInfoError {
@@ -57,14 +63,19 @@ impl core::fmt::Display for SetInfoError {
             }
             Self::InvalidStructureSize => f.write_str("unexpected SET_INFO structure size"),
             Self::LengthOverflow => f.write_str("SET_INFO offset or length calculation overflowed"),
-            Self::UnsupportedInfoClass { .. } => {
-                f.write_str("SET_INFO info type/class is not encoded by this skeleton")
-            }
+            Self::MalformedPayload => f.write_str("SET_INFO typed payload is malformed"),
+            Self::FileInfo(error) => write!(f, "SET_INFO file information payload error: {error}"),
         }
     }
 }
 
 impl std::error::Error for SetInfoError {}
+
+impl From<FileInfoError> for SetInfoError {
+    fn from(error: FileInfoError) -> Self {
+        Self::FileInfo(error)
+    }
+}
 
 /// Result type for SET_INFO skeleton helpers.
 pub type SetInfoResult<T> = core::result::Result<T, SetInfoError>;
@@ -85,82 +96,14 @@ pub enum SetInfoPayloadKind {
     FileDispositionInformation,
 }
 
-/// Rust-owned counterpart of `struct smb2_file_basic_info` for SET_INFO use.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct SetInfoFileBasicInformation {
-    /// Creation time in SMB timestamp units.
-    pub creation_time: u64,
-    /// Last access time in SMB timestamp units.
-    pub last_access_time: u64,
-    /// Last write time in SMB timestamp units.
-    pub last_write_time: u64,
-    /// Change time in SMB timestamp units.
-    pub change_time: u64,
-    /// File attributes written by FILE_BASIC_INFORMATION.
-    pub file_attributes: u32,
-}
-
-/// Rust-owned counterpart of `struct smb2_file_end_of_file_info`.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct SetInfoFileEndOfFileInformation {
-    /// New end-of-file value.
-    pub end_of_file: u64,
-}
-
-/// Rust-owned counterpart of `struct smb2_file_disposition_info`.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct SetInfoFileDispositionInformation {
-    /// Non-zero when the file should be marked delete-pending.
-    pub delete_pending: u8,
-}
-
-impl SetInfoFileDispositionInformation {
-    /// Creates a disposition payload from a boolean delete-pending flag.
-    #[must_use]
-    pub const fn from_bool(delete_pending: bool) -> Self {
-        Self {
-            delete_pending: if delete_pending { 1 } else { 0 },
-        }
-    }
-
-    /// Returns whether the payload requests delete-pending state.
-    #[must_use]
-    pub const fn is_delete_pending(&self) -> bool {
-        self.delete_pending != 0
-    }
-}
-
-/// Rust-owned counterpart of `struct smb2_file_rename_info`.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct SetInfoFileRenameInformation {
-    /// Non-zero when an existing destination may be replaced.
-    pub replace_if_exist: u8,
-    /// UTF-8 destination name before the legacy UTF-16 wire conversion.
-    pub file_name: String,
-}
-
-impl SetInfoFileRenameInformation {
-    /// Creates a rename payload skeleton.
-    #[must_use]
-    pub fn new(file_name: impl Into<String>, replace_if_exist: bool) -> Self {
-        Self {
-            replace_if_exist: u8::from(replace_if_exist),
-            file_name: file_name.into(),
-        }
-    }
-
-    /// Returns whether the payload allows replacing an existing destination.
-    #[must_use]
-    pub const fn replaces_existing(&self) -> bool {
-        self.replace_if_exist != 0
-    }
-
-    /// Returns the UTF-16LE byte length that the legacy encoder would reserve for the name.
-    #[must_use]
-    pub fn utf16_wire_len(&self) -> usize {
-        utf16_wire_len(&self.file_name)
-    }
-}
+/// SET_INFO alias for the shared `smb2_file_basic_info` typed payload.
+pub type SetInfoFileBasicInformation = Smb2FileBasicInfo;
+/// SET_INFO alias for the shared `smb2_file_end_of_file_info` typed payload.
+pub type SetInfoFileEndOfFileInformation = Smb2FileEndOfFileInfo;
+/// SET_INFO alias for the shared `smb2_file_disposition_info` typed payload.
+pub type SetInfoFileDispositionInformation = Smb2FileDispositionInfo;
+/// SET_INFO alias for the shared `smb2_file_rename_info` typed payload.
+pub type SetInfoFileRenameInformation = Smb2FileRenameInfo;
 
 /// SET_INFO input payloads supported or preserved by this skeleton.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -201,10 +144,12 @@ impl SetInfoPayload {
         match self {
             Self::None => 0,
             Self::Raw(bytes) => bytes.len(),
-            Self::FileBasicInformation(_) => 40,
-            Self::FileEndOfFileInformation(_) => 8,
-            Self::FileRenameInformation(rename) => 28 + rename.utf16_wire_len(),
-            Self::FileDispositionInformation(_) => 1,
+            Self::FileBasicInformation(_) => FILE_BASIC_INFO_SIZE,
+            Self::FileEndOfFileInformation(_) => FILE_END_OF_FILE_INFO_SIZE,
+            Self::FileRenameInformation(rename) => {
+                FILE_RENAME_INFO_PREFIX_SIZE + rename.utf16_wire_len()
+            }
+            Self::FileDispositionInformation(_) => FILE_DISPOSITION_INFO_SIZE,
         }
     }
 
@@ -365,26 +310,16 @@ pub struct SetInfoEncodePlan {
     pub variable_len: usize,
 }
 
-/// Encodes fixed SET_INFO request fields and reserves a typed payload area.
-///
-/// The returned bytes are a migration skeleton only: typed payload bytes are zero-filled instead
-/// of fully serialized, while passthrough raw bytes are copied unchanged.
+/// Encodes fixed SET_INFO request fields and the input payload area.
 ///
 /// # Errors
 ///
-/// Returns an error if the info type/class is not recognized by the skeleton or if a length
-/// calculation overflows.
+/// Returns an error if a typed payload is malformed, raw payload metadata is inconsistent, or a
+/// length calculation overflows.
 pub fn smb2_encode_set_info_request(
     req: &SetInfoRequest,
     passthrough: bool,
 ) -> SetInfoResult<Vec<u8>> {
-    if !passthrough && recognized_payload_kind(req.info_type, req.file_info_class).is_none() {
-        return Err(SetInfoError::UnsupportedInfoClass {
-            info_type: req.info_type,
-            file_info_class: req.file_info_class,
-        });
-    }
-
     let variable_len = if passthrough {
         usize::try_from(req.buffer_length).map_err(|_| SetInfoError::LengthOverflow)?
     } else {
@@ -399,10 +334,11 @@ pub fn smb2_encode_set_info_request(
     write_u32(&mut buf, 12, req.additional_information)?;
     write_bytes(&mut buf, 16, &req.file_id)?;
 
-    if let SetInfoPayload::Raw(bytes) = &req.input_data {
-        let len = bytes.len().min(variable_len);
-        write_bytes(&mut buf, SetInfoRequest::fixed_wire_len(), &bytes[..len])?;
-    }
+    encode_payload(
+        &req.input_data,
+        &mut buf[SetInfoRequest::fixed_wire_len()..SetInfoRequest::fixed_wire_len() + variable_len],
+        passthrough,
+    )?;
 
     Ok(buf)
 }
@@ -494,14 +430,12 @@ pub fn smb2_process_set_info_request_fixed(
     ))
 }
 
-/// Attaches the variable SET_INFO request buffer.
-///
-/// The C implementation only preserves the buffer in passthrough mode; this skeleton follows that
-/// boundary and does not interpret non-passthrough bytes yet.
+/// Attaches and decodes the variable SET_INFO request buffer.
 ///
 /// # Errors
 ///
-/// Returns an error if `passthrough` is false or the input slice does not fit in `variable`.
+/// Returns an error if the input slice does not fit in `variable` or a recognized typed class is
+/// malformed.
 pub fn smb2_process_set_info_request_variable(
     req: &mut SetInfoRequest,
     variable: &[u8],
@@ -511,16 +445,14 @@ pub fn smb2_process_set_info_request_variable(
         req.input_data = SetInfoPayload::None;
         return Ok(());
     }
-    if !passthrough {
-        return Err(SetInfoError::UnsupportedInfoClass {
-            info_type: req.info_type,
-            file_info_class: req.file_info_class,
-        });
-    }
-
     let offset = request_iov_offset(req.buffer_offset)?;
     let len = usize::try_from(req.buffer_length).map_err(|_| SetInfoError::LengthOverflow)?;
-    req.input_data = SetInfoPayload::Raw(slice_at(variable, offset, len)?.to_vec());
+    let bytes = slice_at(variable, offset, len)?;
+    req.input_data = if passthrough {
+        SetInfoPayload::Raw(bytes.to_vec())
+    } else {
+        decode_payload(req.info_type, req.file_info_class, bytes)?
+    };
     Ok(())
 }
 
@@ -602,8 +534,63 @@ fn decode_request_fixed(
     })
 }
 
-fn utf16_wire_len(name: &str) -> usize {
-    name.encode_utf16().count().saturating_mul(2)
+fn encode_payload(
+    payload: &SetInfoPayload,
+    buf: &mut [u8],
+    passthrough: bool,
+) -> SetInfoResult<()> {
+    match payload {
+        SetInfoPayload::None => Ok(()),
+        SetInfoPayload::Raw(bytes) => {
+            if !passthrough && bytes.len() != buf.len() {
+                return Err(SetInfoError::MalformedPayload);
+            }
+            let len = if passthrough {
+                bytes.len().min(buf.len())
+            } else {
+                bytes.len()
+            };
+            write_bytes(buf, 0, &bytes[..len])
+        }
+        SetInfoPayload::FileBasicInformation(info) => {
+            smb2_encode_file_basic_info(info, buf)?;
+            Ok(())
+        }
+        SetInfoPayload::FileEndOfFileInformation(info) => {
+            smb2_encode_file_end_of_file_info(info, buf)?;
+            Ok(())
+        }
+        SetInfoPayload::FileRenameInformation(info) => {
+            smb2_encode_file_rename_info(info, buf)?;
+            Ok(())
+        }
+        SetInfoPayload::FileDispositionInformation(info) => {
+            smb2_encode_file_disposition_info(info, buf)?;
+            Ok(())
+        }
+    }
+}
+
+fn decode_payload(
+    info_type: u8,
+    file_info_class: u8,
+    bytes: &[u8],
+) -> SetInfoResult<SetInfoPayload> {
+    match recognized_payload_kind(info_type, file_info_class) {
+        Some(SetInfoPayloadKind::FileBasicInformation) => Ok(SetInfoPayload::FileBasicInformation(
+            smb2_decode_file_basic_info(bytes)?,
+        )),
+        Some(SetInfoPayloadKind::FileEndOfFileInformation) => Ok(
+            SetInfoPayload::FileEndOfFileInformation(smb2_decode_file_end_of_file_info(bytes)?),
+        ),
+        Some(SetInfoPayloadKind::FileRenameInformation) => Ok(
+            SetInfoPayload::FileRenameInformation(smb2_decode_file_rename_info(bytes)?),
+        ),
+        Some(SetInfoPayloadKind::FileDispositionInformation) => Ok(
+            SetInfoPayload::FileDispositionInformation(smb2_decode_file_disposition_info(bytes)?),
+        ),
+        None => Ok(SetInfoPayload::Raw(bytes.to_vec())),
+    }
 }
 
 fn read_u8(data: &[u8], offset: usize) -> SetInfoResult<u8> {

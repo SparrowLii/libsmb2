@@ -3,6 +3,8 @@
 //! This module intentionally models the legacy LSA request, reply, and nested
 //! NDR structures without implementing the full DCERPC/NDR protocol encoder.
 
+use super::dcerpc::{DceRpcError, DceRpcResult, DceRpcUtf16, NdrCodec};
+
 /// LSA interface UUID from `LSA_UUID` in the C source.
 pub const LSA_UUID: Uuid = Uuid {
     time_low: 0x1234_5778,
@@ -696,6 +698,348 @@ pub fn lsa_close_req_coder_plan() -> CoderPlan {
 #[must_use]
 pub fn lsa_close_rep_coder_plan() -> CoderPlan {
     lsa_close_req_coder_plan().with_step(CoderStep::Uint32("Status"))
+}
+
+/// Encodes an LSA `Close` request body.
+pub fn encode_lsa_close_request(req: &LsaCloseRequest) -> DceRpcResult<Vec<u8>> {
+    let mut codec = NdrCodec::encoder();
+    code_lsa_close_request(&mut codec, &mut req.clone())?;
+    Ok(codec.into_bytes())
+}
+
+/// Decodes an LSA `Close` request body.
+pub fn decode_lsa_close_request(bytes: &[u8]) -> DceRpcResult<LsaCloseRequest> {
+    let mut req = LsaCloseRequest::default();
+    let mut codec = NdrCodec::decoder(bytes.to_vec());
+    code_lsa_close_request(&mut codec, &mut req)?;
+    Ok(req)
+}
+
+/// Encodes an LSA `Close` response body.
+pub fn encode_lsa_close_reply(rep: &LsaCloseReply) -> DceRpcResult<Vec<u8>> {
+    let mut codec = NdrCodec::encoder();
+    code_lsa_close_reply(&mut codec, &mut rep.clone())?;
+    Ok(codec.into_bytes())
+}
+
+/// Decodes an LSA `Close` response body.
+pub fn decode_lsa_close_reply(bytes: &[u8]) -> DceRpcResult<LsaCloseReply> {
+    let mut rep = LsaCloseReply::default();
+    let mut codec = NdrCodec::decoder(bytes.to_vec());
+    code_lsa_close_reply(&mut codec, &mut rep)?;
+    Ok(rep)
+}
+
+/// Encodes an LSA `OpenPolicy2` request body.
+pub fn encode_lsa_open_policy2_request(req: &LsaOpenPolicy2Request) -> DceRpcResult<Vec<u8>> {
+    let mut codec = NdrCodec::encoder();
+    code_open_policy2_request(&mut codec, &mut req.clone())?;
+    Ok(codec.into_bytes())
+}
+
+/// Decodes an LSA `OpenPolicy2` response body.
+pub fn decode_lsa_open_policy2_reply(bytes: &[u8]) -> DceRpcResult<LsaOpenPolicy2Reply> {
+    let mut rep = LsaOpenPolicy2Reply::default();
+    let mut codec = NdrCodec::decoder(bytes.to_vec());
+    code_open_policy2_reply(&mut codec, &mut rep)?;
+    Ok(rep)
+}
+
+/// Encodes an LSA `LookupSids2` request body.
+pub fn encode_lsa_lookup_sids2_request(req: &LsaLookupSids2Request) -> DceRpcResult<Vec<u8>> {
+    let mut codec = NdrCodec::encoder();
+    code_lookup_sids2_request(&mut codec, &mut req.clone())?;
+    Ok(codec.into_bytes())
+}
+
+/// Decodes an LSA `LookupSids2` response body.
+pub fn decode_lsa_lookup_sids2_reply(bytes: &[u8]) -> DceRpcResult<LsaLookupSids2Reply> {
+    let mut rep = LsaLookupSids2Reply::default();
+    let mut codec = NdrCodec::decoder(bytes.to_vec());
+    code_lookup_sids2_reply(&mut codec, &mut rep)?;
+    Ok(rep)
+}
+
+fn code_lsa_close_request(codec: &mut NdrCodec, req: &mut LsaCloseRequest) -> DceRpcResult<()> {
+    let mut h = to_ndr_handle(&req.policy_handle);
+    codec.code_context_handle(&mut h)?;
+    req.policy_handle = from_ndr_handle(h);
+    Ok(())
+}
+
+fn code_lsa_close_reply(codec: &mut NdrCodec, rep: &mut LsaCloseReply) -> DceRpcResult<()> {
+    let mut h = to_ndr_handle(&rep.policy_handle);
+    codec.code_context_handle(&mut h)?;
+    rep.policy_handle = from_ndr_handle(h);
+    codec.code_u32(&mut rep.status)
+}
+
+fn code_open_policy2_request(
+    codec: &mut NdrCodec,
+    req: &mut LsaOpenPolicy2Request,
+) -> DceRpcResult<()> {
+    code_optional_utf16(codec, &mut req.system_name, true)?;
+    code_object_attributes(codec, &mut req.object_attributes)?;
+    codec.code_u32(&mut req.desired_access)
+}
+
+fn code_open_policy2_reply(
+    codec: &mut NdrCodec,
+    rep: &mut LsaOpenPolicy2Reply,
+) -> DceRpcResult<()> {
+    let mut h = to_ndr_handle(&rep.policy_handle);
+    codec.code_context_handle(&mut h)?;
+    rep.policy_handle = from_ndr_handle(h);
+    codec.code_u32(&mut rep.status)
+}
+
+fn code_lookup_sids2_request(
+    codec: &mut NdrCodec,
+    req: &mut LsaLookupSids2Request,
+) -> DceRpcResult<()> {
+    let mut h = to_ndr_handle(&req.policy_handle);
+    codec.code_context_handle(&mut h)?;
+    req.policy_handle = from_ndr_handle(h);
+    code_sid_enum_buffer(codec, &mut req.sid_enum_buffer)?;
+    code_translated_names(codec, &mut req.translated_names)?;
+    let mut level = req.lookup_level as u32;
+    codec.code_u32(&mut level)?;
+    req.lookup_level = lookup_level_from_u32(level);
+    codec.code_u32(&mut req.mapped_count)?;
+    codec.code_u32(&mut req.lookup_options)?;
+    codec.code_u32(&mut req.client_revision)
+}
+
+fn code_lookup_sids2_reply(
+    codec: &mut NdrCodec,
+    rep: &mut LsaLookupSids2Reply,
+) -> DceRpcResult<()> {
+    let present = codec.code_unique_pointer_present(rep.referenced_domains.is_some())?;
+    if present {
+        let mut rdl = rep
+            .referenced_domains
+            .take()
+            .map_or_else(LsaprReferencedDomainList::default, core::convert::identity);
+        code_referenced_domain_list(codec, &mut rdl)?;
+        rep.referenced_domains = Some(rdl);
+    } else {
+        rep.referenced_domains = None;
+    }
+    code_translated_names(codec, &mut rep.translated_names)?;
+    codec.code_u32(&mut rep.mapped_count)?;
+    codec.code_u32(&mut rep.status)
+}
+
+fn code_object_attributes(
+    codec: &mut NdrCodec,
+    attrs: &mut LsaprObjectAttributes,
+) -> DceRpcResult<()> {
+    codec.code_u32(&mut attrs.length)?;
+    let mut zero = 0u64;
+    codec.code_u3264(&mut zero)?;
+    codec.code_u3264(&mut zero)?;
+    codec.code_u32(&mut attrs.attributes)?;
+    codec.code_u3264(&mut zero)?;
+    codec.code_u3264(&mut zero)
+}
+
+fn code_sid_enum_buffer(codec: &mut NdrCodec, buffer: &mut LsaprSidEnumBuffer) -> DceRpcResult<()> {
+    let mut entries = buffer.entries();
+    codec.code_u32(&mut entries)?;
+    let present = codec.code_unique_pointer_present(entries != 0)?;
+    if !present {
+        buffer.sid_info.clear();
+        return Ok(());
+    }
+    let count = u32_to_usize(entries);
+    resize_sids(&mut buffer.sid_info, count);
+    let mut conformant = u64::from(entries);
+    codec.code_u3264(&mut conformant)?;
+    for sid in &mut buffer.sid_info {
+        let sid_present = codec.code_unique_pointer_present(true)?;
+        if !sid_present {
+            return Err(DceRpcError::NullPointer);
+        }
+        code_rpc_sid(codec, sid)?;
+    }
+    Ok(())
+}
+
+fn code_rpc_sid(codec: &mut NdrCodec, sid: &mut RpcSid) -> DceRpcResult<()> {
+    let mut count = u64::from(sid.sub_authority_count());
+    codec.code_u3264(&mut count)?;
+    codec.code_u8(&mut sid.revision)?;
+    let mut sub_count = sid.sub_authority_count();
+    codec.code_u8(&mut sub_count)?;
+    if matches!(
+        codec.direction(),
+        super::dcerpc::Direction::Decode | super::dcerpc::Direction::Response
+    ) {
+        sid.sub_authority.resize(usize::from(sub_count), 0);
+    }
+    for byte in &mut sid.identifier_authority {
+        codec.code_u8(byte)?;
+    }
+    for authority in &mut sid.sub_authority {
+        codec.code_u32(authority)?;
+    }
+    Ok(())
+}
+
+fn code_translated_names(
+    codec: &mut NdrCodec,
+    names: &mut LsaprTranslatedNamesEx,
+) -> DceRpcResult<()> {
+    let mut entries = names.entries();
+    codec.code_u32(&mut entries)?;
+    let present = codec.code_unique_pointer_present(entries != 0)?;
+    if !present {
+        names.names.clear();
+        return Ok(());
+    }
+    let count = u32_to_usize(entries);
+    names
+        .names
+        .resize_with(count, LsaprTranslatedNameEx::default);
+    let mut conformant = u64::from(entries);
+    codec.code_u3264(&mut conformant)?;
+    for name in &mut names.names {
+        let mut raw_use = name.use_kind.as_raw();
+        codec.code_u32(&mut raw_use)?;
+        name.use_kind = SidNameUse::from_raw(raw_use);
+        code_unicode_string(codec, &mut name.name)?;
+        codec.code_u32(&mut name.domain_index)?;
+        codec.code_u32(&mut name.flags)?;
+    }
+    Ok(())
+}
+
+fn code_referenced_domain_list(
+    codec: &mut NdrCodec,
+    rdl: &mut LsaprReferencedDomainList,
+) -> DceRpcResult<()> {
+    let mut entries = rdl.entries();
+    codec.code_u32(&mut entries)?;
+    let present = codec.code_unique_pointer_present(entries != 0)?;
+    if present {
+        let count = u32_to_usize(entries);
+        rdl.domains
+            .resize_with(count, LsaprTrustInformation::default);
+        let mut conformant = u64::from(entries);
+        codec.code_u3264(&mut conformant)?;
+        for domain in &mut rdl.domains {
+            code_unicode_string(codec, &mut domain.name)?;
+            let sid_present = codec.code_unique_pointer_present(domain.sid.is_some())?;
+            if sid_present {
+                let mut sid = match domain.sid.take() {
+                    Some(sid) => sid,
+                    None => RpcSid::nt_authority(1, Vec::new()),
+                };
+                code_rpc_sid(codec, &mut sid)?;
+                domain.sid = Some(sid);
+            }
+        }
+    } else {
+        rdl.domains.clear();
+    }
+    codec.code_u32(&mut rdl.max_entries)
+}
+
+fn code_unicode_string(codec: &mut NdrCodec, value: &mut RpcUnicodeString) -> DceRpcResult<()> {
+    codec.align_3264();
+    let mut len = value.length_bytes();
+    let mut max_len = value.maximum_length_bytes();
+    codec.code_u16(&mut len)?;
+    codec.code_u16(&mut max_len)?;
+    let mut utf = DceRpcUtf16 {
+        utf8: Some(value.value.clone()),
+        ..DceRpcUtf16::default()
+    };
+    let present = codec.code_unique_pointer_present(!value.value.is_empty())?;
+    if present {
+        codec.code_utf16(&mut utf, false)?;
+        if let Some(decoded) = utf.utf8 {
+            value.value = decoded;
+        }
+    } else if matches!(
+        codec.direction(),
+        super::dcerpc::Direction::Decode | super::dcerpc::Direction::Response
+    ) {
+        value.value.clear();
+    }
+    Ok(())
+}
+
+fn code_optional_utf16(
+    codec: &mut NdrCodec,
+    value: &mut Option<RpcUnicodeString>,
+    nul: bool,
+) -> DceRpcResult<()> {
+    let present = codec.code_unique_pointer_present(value.is_some())?;
+    if present {
+        let mut utf = DceRpcUtf16 {
+            utf8: value.as_ref().map(|v| v.value.clone()),
+            ..DceRpcUtf16::default()
+        };
+        codec.code_utf16(&mut utf, nul)?;
+        let decoded = utf.utf8.map_or_else(String::new, core::convert::identity);
+        value.replace(RpcUnicodeString::new(decoded));
+    } else {
+        *value = None;
+    }
+    Ok(())
+}
+
+fn to_ndr_handle(handle: &ContextHandle) -> super::dcerpc::NdrContextHandle {
+    let mut uuid = super::dcerpc::DceRpcUuid::default();
+    uuid.v1 = u32::from_le_bytes([
+        handle.uuid[0],
+        handle.uuid[1],
+        handle.uuid[2],
+        handle.uuid[3],
+    ]);
+    uuid.v2 = u16::from_le_bytes([handle.uuid[4], handle.uuid[5]]);
+    uuid.v3 = u16::from_le_bytes([handle.uuid[6], handle.uuid[7]]);
+    uuid.v4.copy_from_slice(&handle.uuid[8..16]);
+    super::dcerpc::NdrContextHandle {
+        context_handle_attributes: handle.attributes,
+        context_handle_uuid: uuid,
+    }
+}
+
+fn from_ndr_handle(handle: super::dcerpc::NdrContextHandle) -> ContextHandle {
+    let mut uuid = [0u8; 16];
+    uuid[0..4].copy_from_slice(&handle.context_handle_uuid.v1.to_le_bytes());
+    uuid[4..6].copy_from_slice(&handle.context_handle_uuid.v2.to_le_bytes());
+    uuid[6..8].copy_from_slice(&handle.context_handle_uuid.v3.to_le_bytes());
+    uuid[8..16].copy_from_slice(&handle.context_handle_uuid.v4);
+    ContextHandle {
+        attributes: handle.context_handle_attributes,
+        uuid,
+    }
+}
+
+fn resize_sids(sids: &mut Vec<RpcSid>, count: usize) {
+    sids.resize_with(count, || RpcSid::nt_authority(1, Vec::new()));
+}
+
+fn u32_to_usize(value: u32) -> usize {
+    match usize::try_from(value) {
+        Ok(value) => value,
+        Err(_) => usize::MAX,
+    }
+}
+
+fn lookup_level_from_u32(value: u32) -> LsapLookupLevel {
+    match value {
+        2 => LsapLookupLevel::Pdc,
+        3 => LsapLookupLevel::Tdl,
+        4 => LsapLookupLevel::Gc,
+        5 => LsapLookupLevel::XForestReferral,
+        6 => LsapLookupLevel::XForestResolve,
+        7 => LsapLookupLevel::RodcReferral,
+        _ => LsapLookupLevel::Wksta,
+    }
 }
 
 fn len_to_u8_saturating(len: usize) -> u8 {

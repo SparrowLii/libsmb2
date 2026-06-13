@@ -1,7 +1,7 @@
 //! Context initialization migrated from `lib/init.c`.
 
 use crate::include::libsmb2_private::{
-    Context, IoVec, IoVectors, RecvState, Smb2Header, SMB2_MAX_VECTORS,
+    Context, IoVec, IoVectors, RecvState, Smb2Header, SMB2_MAX_TREE_NESTING, SMB2_MAX_VECTORS,
 };
 use crate::include::smb2::libsmb2::Smb2Url;
 
@@ -11,6 +11,8 @@ pub const MAX_URL_SIZE: usize = 1024;
 pub const SMB2_GUID_SIZE: usize = 16;
 /// Size of the SMB3 salt buffer initialized with the context.
 pub const SMB2_SALT_SIZE: usize = 32;
+/// Size of the SMB3 pre-authentication hash buffer.
+pub const SMB2_PREAUTH_HASH_SIZE: usize = 64;
 /// Maximum stored error string length used by `lib/init.c`.
 pub const MAX_ERROR_SIZE: usize = 256;
 
@@ -34,6 +36,10 @@ pub enum InitError {
     TooManyIoVectors,
     /// The accumulated I/O vector size overflowed `usize`.
     IoVectorSizeOverflow,
+    /// The tree-id stack is at its legacy nesting limit.
+    TreeNestingTooDeep,
+    /// The requested tree id is not present in the active stack.
+    TreeIdNotFound,
 }
 
 /// Authentication selector corresponding to `enum smb2_sec`.
@@ -169,6 +175,24 @@ pub struct InitState {
     pub client_guid: [u8; SMB2_GUID_SIZE],
     /// Negotiated dialect value.
     pub dialect: u16,
+    /// Negotiated server capability flags.
+    pub capabilities: u32,
+    /// Negotiated maximum transaction size.
+    pub max_transact_size: u32,
+    /// Negotiated maximum read size.
+    pub max_read_size: u32,
+    /// Negotiated maximum write size.
+    pub max_write_size: u32,
+    /// Skeleton pre-authentication hash accumulator metadata.
+    pub preauth_hash: [u8; SMB2_PREAUTH_HASH_SIZE],
+    /// Number of skeleton pre-authentication hash updates applied.
+    pub preauth_hash_updates: usize,
+    /// Negotiated session id from the SESSION_SETUP reply header.
+    pub session_id: u64,
+    /// Session key bytes supplied by the authentication layer skeleton.
+    pub session_key: Vec<u8>,
+    /// Active tree id stack, newest/current tree first.
+    pub tree_ids: Vec<u32>,
     /// Last NT status associated with the context.
     pub nterror: i32,
     error_string: String,
@@ -189,6 +213,15 @@ impl Default for InitState {
             salt: [0; SMB2_SALT_SIZE],
             client_guid: default_client_guid(),
             dialect: 0,
+            capabilities: 0,
+            max_transact_size: 0,
+            max_read_size: 0,
+            max_write_size: 0,
+            preauth_hash: [0; SMB2_PREAUTH_HASH_SIZE],
+            preauth_hash_updates: 0,
+            session_id: 0,
+            session_key: Vec::new(),
+            tree_ids: Vec::new(),
             nterror: 0,
             error_string: String::new(),
         }
@@ -321,6 +354,69 @@ impl InitState {
     #[must_use]
     pub fn dialect(&self) -> u16 {
         self.dialect
+    }
+
+    /// Applies negotiated reply metadata to the initialization state.
+    pub fn apply_negotiate_reply(
+        &mut self,
+        dialect: u16,
+        capabilities: u32,
+        max_transact_size: u32,
+        max_read_size: u32,
+        max_write_size: u32,
+    ) {
+        self.dialect = dialect;
+        self.capabilities = capabilities;
+        self.max_transact_size = max_transact_size;
+        self.max_read_size = max_read_size;
+        self.max_write_size = max_write_size;
+        self.update_preauth_hash_skeleton(&dialect.to_le_bytes());
+        self.update_preauth_hash_skeleton(&capabilities.to_le_bytes());
+        self.update_preauth_hash_skeleton(&max_transact_size.to_le_bytes());
+        self.update_preauth_hash_skeleton(&max_read_size.to_le_bytes());
+        self.update_preauth_hash_skeleton(&max_write_size.to_le_bytes());
+    }
+
+    /// Folds bytes into the deterministic pre-authentication hash skeleton.
+    pub fn update_preauth_hash_skeleton(&mut self, input: &[u8]) {
+        for (index, byte) in input.iter().enumerate() {
+            let slot = (self.preauth_hash_updates + index) % SMB2_PREAUTH_HASH_SIZE;
+            self.preauth_hash[slot] ^= *byte;
+        }
+        self.preauth_hash_updates = self.preauth_hash_updates.saturating_add(input.len());
+    }
+
+    /// Applies SESSION_SETUP reply metadata to the initialization state.
+    pub fn apply_session_setup_reply(&mut self, session_id: u64, session_key: &[u8]) {
+        self.session_id = session_id;
+        self.session_key.clear();
+        self.session_key.extend_from_slice(session_key);
+    }
+
+    /// Pushes a connected tree id onto the active tree stack.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InitError::TreeNestingTooDeep`] when the legacy nesting limit is reached.
+    pub fn connect_tree_id(&mut self, tree_id: u32) -> InitResult<()> {
+        if self.tree_ids.len() >= SMB2_MAX_TREE_NESTING {
+            return Err(InitError::TreeNestingTooDeep);
+        }
+        self.tree_ids.insert(0, tree_id);
+        Ok(())
+    }
+
+    /// Removes a connected tree id from the active tree stack.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InitError::TreeIdNotFound`] when `tree_id` is not active.
+    pub fn disconnect_tree_id(&mut self, tree_id: u32) -> InitResult<()> {
+        let Some(index) = self.tree_ids.iter().position(|value| *value == tree_id) else {
+            return Err(InitError::TreeIdNotFound);
+        };
+        self.tree_ids.remove(index);
+        Ok(())
     }
 
     /// Sets the configured security mode bitmask.
@@ -565,7 +661,8 @@ fn default_client_guid() -> [u8; SMB2_GUID_SIZE] {
 }
 
 fn parse_i32(value: Option<&str>) -> i32 {
-    value
-        .and_then(|value| value.parse().ok())
-        .unwrap_or_default()
+    match value.and_then(|value| value.parse().ok()) {
+        Some(parsed) => parsed,
+        None => 0,
+    }
 }

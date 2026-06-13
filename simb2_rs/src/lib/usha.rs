@@ -1,8 +1,6 @@
 //! Unified SHA digest helpers migrated from `lib/usha.c`.
-//!
-//! The legacy C file dispatches USHA calls to the selected SHA implementation.
-//! This Rust module keeps the same responsibility and API shape while the
-//! algorithm-specific SHA implementations are still migration skeletons.
+
+use super::{sha1, sha224_256, sha384_512};
 
 /// Largest SHA message block accepted by the unified SHA interface.
 pub const USHA_MAX_MESSAGE_BLOCK_SIZE: usize = SHA512_MESSAGE_BLOCK_SIZE;
@@ -88,104 +86,126 @@ pub enum ShaErrorCode {
     ShaBadParam,
 }
 
-/// Minimal SHA state retained by this migration skeleton.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ShaContextState {
-    message_block: [u8; USHA_MAX_MESSAGE_BLOCK_SIZE],
-    message_block_index: usize,
-    byte_count: usize,
-    final_bits: Option<(u8, usize)>,
-    computed: bool,
-    corrupted: Option<ShaErrorCode>,
-}
-
-impl Default for ShaContextState {
-    fn default() -> Self {
-        Self {
-            message_block: [0; USHA_MAX_MESSAGE_BLOCK_SIZE],
-            message_block_index: 0,
-            byte_count: 0,
-            final_bits: None,
-            computed: false,
-            corrupted: None,
-        }
-    }
-}
-
-impl ShaContextState {
-    fn reset(&mut self) {
-        *self = Self::default();
-    }
-
-    fn input(&mut self, bytes: &[u8]) -> ShaErrorCode {
-        if self.computed || self.final_bits.is_some() {
-            self.corrupted = Some(ShaErrorCode::ShaStateError);
-            return ShaErrorCode::ShaStateError;
-        }
-
-        if self.byte_count.checked_add(bytes.len()).is_none() {
-            self.corrupted = Some(ShaErrorCode::ShaInputTooLong);
-            return ShaErrorCode::ShaInputTooLong;
-        }
-
-        for byte in bytes {
-            self.message_block[self.message_block_index] = *byte;
-            self.message_block_index = (self.message_block_index + 1) % USHA_MAX_MESSAGE_BLOCK_SIZE;
-        }
-        self.byte_count += bytes.len();
-        ShaErrorCode::ShaSuccess
-    }
-
-    fn final_bits(&mut self, bits: u8, bitcount: usize) -> ShaErrorCode {
-        if !(1..=7).contains(&bitcount) {
-            self.corrupted = Some(ShaErrorCode::ShaBadParam);
-            return ShaErrorCode::ShaBadParam;
-        }
-
-        if self.computed || self.final_bits.is_some() {
-            self.corrupted = Some(ShaErrorCode::ShaStateError);
-            return ShaErrorCode::ShaStateError;
-        }
-
-        self.final_bits = Some((bits, bitcount));
-        ShaErrorCode::ShaSuccess
-    }
-}
-
 /// Per-algorithm storage for a unified SHA context.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UshaContextData {
     /// SHA-1 context storage.
-    Sha1(ShaContextState),
+    Sha1(sha1::Sha1Context),
     /// SHA-224 context storage.
-    Sha224(ShaContextState),
+    Sha224(sha224_256::Sha224Context),
     /// SHA-256 context storage.
-    Sha256(ShaContextState),
+    Sha256(sha224_256::Sha256Context),
     /// SHA-384 context storage.
-    Sha384(ShaContextState),
+    Sha384(sha384_512::Sha384Context),
     /// SHA-512 context storage.
-    Sha512(ShaContextState),
+    Sha512(sha384_512::Sha512Context),
 }
 
 impl UshaContextData {
     fn new(which_sha: SHAversion) -> Self {
         match which_sha {
-            SHAversion::SHA1 => Self::Sha1(ShaContextState::default()),
-            SHAversion::SHA224 => Self::Sha224(ShaContextState::default()),
-            SHAversion::SHA256 => Self::Sha256(ShaContextState::default()),
-            SHAversion::SHA384 => Self::Sha384(ShaContextState::default()),
-            SHAversion::SHA512 => Self::Sha512(ShaContextState::default()),
+            SHAversion::SHA1 => Self::Sha1(sha1::Sha1Context::new()),
+            SHAversion::SHA224 => Self::Sha224(sha224_256::Sha256Context::new_sha224()),
+            SHAversion::SHA256 => Self::Sha256(sha224_256::Sha256Context::new_sha256()),
+            SHAversion::SHA384 => Self::Sha384(sha384_512::Sha512Context::new_sha384()),
+            SHAversion::SHA512 => Self::Sha512(sha384_512::Sha512Context::new_sha512()),
         }
     }
 
-    fn state_mut(&mut self) -> &mut ShaContextState {
+    fn input(&mut self, bytes: &[u8]) -> ShaErrorCode {
         match self {
-            Self::Sha1(state)
-            | Self::Sha224(state)
-            | Self::Sha256(state)
-            | Self::Sha384(state)
-            | Self::Sha512(state) => state,
+            Self::Sha1(ctx) => map_sha1(ctx.input(bytes)),
+            Self::Sha224(ctx) => map_sha224_256(ctx.sha224_input(bytes)),
+            Self::Sha256(ctx) => map_sha224_256(ctx.sha256_input(bytes)),
+            Self::Sha384(ctx) => map_sha384_512(ctx.input(bytes)),
+            Self::Sha512(ctx) => map_sha384_512(ctx.input(bytes)),
         }
+    }
+
+    fn final_bits(&mut self, bits: u8, bitcount: usize) -> ShaErrorCode {
+        if !(1..=7).contains(&bitcount) {
+            return ShaErrorCode::ShaBadParam;
+        }
+
+        match self {
+            Self::Sha1(ctx) => map_sha1(ctx.final_bits(bits, bitcount)),
+            Self::Sha224(ctx) => map_sha224_256(ctx.sha224_final_bits(bits, bitcount)),
+            Self::Sha256(ctx) => map_sha224_256(ctx.sha256_final_bits(bits, bitcount)),
+            Self::Sha384(ctx) => map_sha384_512(ctx.final_bits(bits, bitcount)),
+            Self::Sha512(ctx) => map_sha384_512(ctx.final_bits(bits, bitcount)),
+        }
+    }
+
+    fn result(&mut self, message_digest: &mut [u8; USHA_MAX_HASH_SIZE]) -> ShaErrorCode {
+        match self {
+            Self::Sha1(ctx) => match ctx.result() {
+                Ok(digest) => {
+                    message_digest[..SHA1_HASH_SIZE].copy_from_slice(&digest);
+                    ShaErrorCode::ShaSuccess
+                }
+                Err(error) => map_sha1::<()>(Err(error)),
+            },
+            Self::Sha224(ctx) => match ctx.sha224_result() {
+                Ok(digest) => {
+                    message_digest[..SHA224_HASH_SIZE].copy_from_slice(&digest);
+                    ShaErrorCode::ShaSuccess
+                }
+                Err(error) => map_sha224_256(error),
+            },
+            Self::Sha256(ctx) => match ctx.sha256_result() {
+                Ok(digest) => {
+                    message_digest[..SHA256_HASH_SIZE].copy_from_slice(&digest);
+                    ShaErrorCode::ShaSuccess
+                }
+                Err(error) => map_sha224_256(error),
+            },
+            Self::Sha384(ctx) => {
+                let mut digest = [0u8; SHA384_HASH_SIZE];
+                match ctx.result(&mut digest) {
+                    Ok(()) => {
+                        message_digest[..SHA384_HASH_SIZE].copy_from_slice(&digest);
+                        ShaErrorCode::ShaSuccess
+                    }
+                    Err(error) => map_sha384_512::<()>(Err(error)),
+                }
+            }
+            Self::Sha512(ctx) => {
+                let mut digest = [0u8; SHA512_HASH_SIZE];
+                match ctx.result(&mut digest) {
+                    Ok(()) => {
+                        message_digest[..SHA512_HASH_SIZE].copy_from_slice(&digest);
+                        ShaErrorCode::ShaSuccess
+                    }
+                    Err(error) => map_sha384_512::<()>(Err(error)),
+                }
+            }
+        }
+    }
+}
+
+fn map_sha1<T>(result: sha1::Sha1Result<T>) -> ShaErrorCode {
+    match result {
+        Ok(_) => ShaErrorCode::ShaSuccess,
+        Err(sha1::Sha1Error::Null) => ShaErrorCode::ShaNull,
+        Err(sha1::Sha1Error::InputTooLong) => ShaErrorCode::ShaInputTooLong,
+        Err(sha1::Sha1Error::StateError) => ShaErrorCode::ShaStateError,
+        Err(sha1::Sha1Error::BadParam) => ShaErrorCode::ShaBadParam,
+    }
+}
+
+fn map_sha224_256(error: sha224_256::ShaError) -> ShaErrorCode {
+    match error {
+        sha224_256::ShaError::Success => ShaErrorCode::ShaSuccess,
+        sha224_256::ShaError::Null => ShaErrorCode::ShaNull,
+        sha224_256::ShaError::State => ShaErrorCode::ShaStateError,
+    }
+}
+
+fn map_sha384_512<T>(result: sha384_512::Result<T>) -> ShaErrorCode {
+    match result {
+        Ok(_) => ShaErrorCode::ShaSuccess,
+        Err(sha384_512::Sha384512Error::InputTooLong) => ShaErrorCode::ShaInputTooLong,
+        Err(sha384_512::Sha384512Error::StateError) => ShaErrorCode::ShaStateError,
     }
 }
 
@@ -220,28 +240,22 @@ impl USHAContext {
     pub fn reset(&mut self, which_sha: SHAversion) -> ShaErrorCode {
         self.which_sha = which_sha;
         self.ctx = UshaContextData::new(which_sha);
-        self.ctx.state_mut().reset();
         ShaErrorCode::ShaSuccess
     }
 
     /// Accepts the next portion of message bytes for this context.
     pub fn input(&mut self, bytes: &[u8]) -> ShaErrorCode {
-        self.ctx.state_mut().input(bytes)
+        self.ctx.input(bytes)
     }
 
     /// Adds final message bits in the upper portion of `bits`.
     pub fn final_bits(&mut self, bits: u8, bitcount: usize) -> ShaErrorCode {
-        self.ctx.state_mut().final_bits(bits, bitcount)
+        self.ctx.final_bits(bits, bitcount)
     }
 
-    /// Writes the message digest into `message_digest` when hashing is available.
-    ///
-    /// This migration skeleton does not implement the underlying SHA algorithms;
-    /// callers receive `ShaStateError` instead of a placeholder digest.
+    /// Writes the message digest into `message_digest`.
     pub fn result(&mut self, message_digest: &mut [u8; USHA_MAX_HASH_SIZE]) -> ShaErrorCode {
-        let _ = message_digest;
-        self.ctx.state_mut().corrupted = Some(ShaErrorCode::ShaStateError);
-        ShaErrorCode::ShaStateError
+        self.ctx.result(message_digest)
     }
 }
 
@@ -265,8 +279,6 @@ pub fn USHAFinalBits(ctx: &mut USHAContext, bits: u8, bitcount: usize) -> ShaErr
 
 /// Returns a digest for the selected SHA version, mirroring C `USHAResult`.
 ///
-/// The hashing backend is not implemented in this skeleton, so this currently
-/// returns `ShaStateError` without writing a digest.
 #[allow(non_snake_case)]
 pub fn USHAResult(
     ctx: &mut USHAContext,

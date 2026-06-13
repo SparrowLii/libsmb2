@@ -1,6 +1,7 @@
-//! SRVSVC DCERPC skeleton from `include/smb2/libsmb2-dcerpc-srvsvc.h`.
+//! SRVSVC DCERPC public surface from `include/smb2/libsmb2-dcerpc-srvsvc.h`.
 
 use super::libsmb2::{ErrorCode, Result, Smb2Client};
+use crate::lib::dcerpc_srvsvc as lib_srvsvc;
 
 /// SRVSVC operation number for `NetrShareEnum`.
 pub const SRVSVC_NETR_SHARE_ENUM: u16 = 0x0f;
@@ -182,6 +183,9 @@ pub enum SrvsvcShareEnumUnion {
     /// Level 1 share enumeration container.
     Level1(SrvsvcShareInfo1Container),
     /// Unsupported level placeholder retained for forward compatibility.
+    ///
+    /// Known raw levels are safely converted to empty modeled containers when
+    /// this value crosses the migrated SRVSVC NDR boundary.
     Unsupported { level: u32 },
 }
 
@@ -240,6 +244,8 @@ pub struct NetrShareEnumResponse {
 /// Union-like SRVSVC share information payload selected by level.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SrvsvcShareInfoUnion {
+    /// Level 0 share information.
+    Level0(SrvsvcShareInfo0),
     /// Level 1 share information.
     Level1(SrvsvcShareInfo1),
     /// Unsupported level placeholder retained for forward compatibility.
@@ -306,8 +312,16 @@ pub type SrvsvcCommandCallback<T> = Box<dyn FnOnce(&mut Smb2Client, Result<T>) +
 /// # Errors
 ///
 /// Always returns `ErrorCode(-38)` until SRVSVC NDR coding is implemented.
-pub fn srvsvc_share_info_0_coder(_value: &mut SrvsvcShareInfo0) -> Result<()> {
-    Err(not_implemented())
+pub fn srvsvc_share_info_0_coder(value: &mut SrvsvcShareInfo0) -> Result<()> {
+    let mut req = lib_srvsvc::SrvsvcNetrShareEnumReq::new(lib_srvsvc::ShareInfoLevel::Level0);
+    req.share_enum.share_info =
+        lib_srvsvc::SrvsvcShareEnumUnion::Level0(lib_srvsvc::SrvsvcShareInfo0Container::new(vec![
+            lib_srvsvc::SrvsvcShareInfo0 {
+                netname: non_empty_option(value.netname.clone()),
+            },
+        ]));
+    lib_srvsvc::encode_netr_share_enum_request(&req).map_err(map_dcerpc_error)?;
+    Ok(())
 }
 
 /// Encodes or decodes a level 1 share information structure.
@@ -315,8 +329,13 @@ pub fn srvsvc_share_info_0_coder(_value: &mut SrvsvcShareInfo0) -> Result<()> {
 /// # Errors
 ///
 /// Always returns `ErrorCode(-38)` until SRVSVC NDR coding is implemented.
-pub fn srvsvc_share_info_1_coder(_value: &mut SrvsvcShareInfo1) -> Result<()> {
-    Err(not_implemented())
+pub fn srvsvc_share_info_1_coder(value: &mut SrvsvcShareInfo1) -> Result<()> {
+    let req = lib_srvsvc::SrvsvcNetrShareGetInfoReq::new(
+        value.netname.clone(),
+        lib_srvsvc::ShareInfoLevel::Level1,
+    );
+    lib_srvsvc::encode_netr_share_get_info_request(&req).map_err(map_dcerpc_error)?;
+    Ok(())
 }
 
 /// Encodes or decodes a level 1 share information container.
@@ -324,8 +343,14 @@ pub fn srvsvc_share_info_1_coder(_value: &mut SrvsvcShareInfo1) -> Result<()> {
 /// # Errors
 ///
 /// Always returns `ErrorCode(-38)` until SRVSVC NDR coding is implemented.
-pub fn srvsvc_share_info_1_container_coder(_value: &mut SrvsvcShareInfo1Container) -> Result<()> {
-    Err(not_implemented())
+pub fn srvsvc_share_info_1_container_coder(value: &mut SrvsvcShareInfo1Container) -> Result<()> {
+    let mut req = lib_srvsvc::SrvsvcNetrShareEnumReq::new(lib_srvsvc::ShareInfoLevel::Level1);
+    req.share_enum.share_info =
+        lib_srvsvc::SrvsvcShareEnumUnion::Level1(lib_srvsvc::SrvsvcShareInfo1Container::new(
+            value.shares.iter().map(to_lib_share_info_1).collect(),
+        ));
+    lib_srvsvc::encode_netr_share_enum_request(&req).map_err(map_dcerpc_error)?;
+    Ok(())
 }
 
 /// Encodes or decodes a `NetrShareEnum` response.
@@ -333,8 +358,12 @@ pub fn srvsvc_share_info_1_container_coder(_value: &mut SrvsvcShareInfo1Containe
 /// # Errors
 ///
 /// Always returns `ErrorCode(-38)` until SRVSVC NDR coding is implemented.
-pub fn srvsvc_netr_share_enum_response_coder(_value: &mut NetrShareEnumResponse) -> Result<()> {
-    Err(not_implemented())
+pub fn srvsvc_netr_share_enum_response_coder(value: &mut NetrShareEnumResponse) -> Result<()> {
+    let rep = to_lib_share_enum_reply(value)?;
+    let bytes = lib_srvsvc::encode_netr_share_enum_reply(&rep).map_err(map_dcerpc_error)?;
+    let decoded = lib_srvsvc::decode_netr_share_enum_reply(&bytes).map_err(map_dcerpc_error)?;
+    *value = from_lib_share_enum_reply(decoded);
+    Ok(())
 }
 
 /// Encodes or decodes a `NetrShareEnum` request.
@@ -342,8 +371,10 @@ pub fn srvsvc_netr_share_enum_response_coder(_value: &mut NetrShareEnumResponse)
 /// # Errors
 ///
 /// Always returns `ErrorCode(-38)` until SRVSVC NDR coding is implemented.
-pub fn srvsvc_netr_share_enum_request_coder(_value: &mut NetrShareEnumRequest) -> Result<()> {
-    Err(not_implemented())
+pub fn srvsvc_netr_share_enum_request_coder(value: &mut NetrShareEnumRequest) -> Result<()> {
+    let req = to_lib_share_enum_request(value)?;
+    lib_srvsvc::encode_netr_share_enum_request(&req).map_err(map_dcerpc_error)?;
+    Ok(())
 }
 
 /// Encodes or decodes a `NetrShareGetInfo` response.
@@ -352,9 +383,13 @@ pub fn srvsvc_netr_share_enum_request_coder(_value: &mut NetrShareEnumRequest) -
 ///
 /// Always returns `ErrorCode(-38)` until SRVSVC NDR coding is implemented.
 pub fn srvsvc_netr_share_get_info_response_coder(
-    _value: &mut NetrShareGetInfoResponse,
+    value: &mut NetrShareGetInfoResponse,
 ) -> Result<()> {
-    Err(not_implemented())
+    let rep = to_lib_share_get_info_reply(value)?;
+    let bytes = lib_srvsvc::encode_netr_share_get_info_reply(&rep).map_err(map_dcerpc_error)?;
+    let decoded = lib_srvsvc::decode_netr_share_get_info_reply(&bytes).map_err(map_dcerpc_error)?;
+    *value = from_lib_share_get_info_reply(decoded);
+    Ok(())
 }
 
 /// Encodes or decodes a `NetrShareGetInfo` request.
@@ -362,10 +397,10 @@ pub fn srvsvc_netr_share_get_info_response_coder(
 /// # Errors
 ///
 /// Always returns `ErrorCode(-38)` until SRVSVC NDR coding is implemented.
-pub fn srvsvc_netr_share_get_info_request_coder(
-    _value: &mut NetrShareGetInfoRequest,
-) -> Result<()> {
-    Err(not_implemented())
+pub fn srvsvc_netr_share_get_info_request_coder(value: &mut NetrShareGetInfoRequest) -> Result<()> {
+    let req = to_lib_share_get_info_request(value)?;
+    lib_srvsvc::encode_netr_share_get_info_request(&req).map_err(map_dcerpc_error)?;
+    Ok(())
 }
 
 impl Smb2Client {
@@ -430,4 +465,237 @@ impl Smb2Client {
 
 fn not_implemented() -> ErrorCode {
     ErrorCode(ERROR_FUNCTION_NOT_IMPLEMENTED)
+}
+
+fn to_lib_share_enum_request(
+    value: &NetrShareEnumRequest,
+) -> Result<lib_srvsvc::SrvsvcNetrShareEnumReq> {
+    let mut req = lib_srvsvc::SrvsvcNetrShareEnumReq::new(to_lib_level(value.share_enum.level)?);
+    req.server_name = non_empty_option(value.server_name.clone());
+    req.share_enum = to_lib_share_enum_struct(&value.share_enum)?;
+    req.preferred_maximum_length = value.preferred_maximum_length;
+    req.resume_handle = if value.resume_handle == 0 {
+        None
+    } else {
+        Some(value.resume_handle)
+    };
+    Ok(req)
+}
+
+fn to_lib_share_get_info_request(
+    value: &NetrShareGetInfoRequest,
+) -> Result<lib_srvsvc::SrvsvcNetrShareGetInfoReq> {
+    let mut req = lib_srvsvc::SrvsvcNetrShareGetInfoReq::new(
+        value.netname.clone(),
+        to_lib_level(value.level)?,
+    );
+    req.server_name = non_empty_option(value.server_name.clone());
+    Ok(req)
+}
+
+fn to_lib_share_enum_reply(
+    value: &NetrShareEnumResponse,
+) -> Result<lib_srvsvc::SrvsvcNetrShareEnumRep> {
+    Ok(lib_srvsvc::SrvsvcNetrShareEnumRep {
+        share_enum: to_lib_share_enum_struct(&value.share_enum)?,
+        total_entries: value.total_entries,
+        resume_handle: if value.resume_handle == 0 {
+            None
+        } else {
+            Some(value.resume_handle)
+        },
+        status: value.status,
+    })
+}
+
+fn to_lib_share_get_info_reply(
+    value: &NetrShareGetInfoResponse,
+) -> Result<lib_srvsvc::SrvsvcNetrShareGetInfoRep> {
+    Ok(lib_srvsvc::SrvsvcNetrShareGetInfoRep {
+        info_struct: to_lib_share_info(&value.info)?,
+        status: value.status,
+    })
+}
+
+fn to_lib_share_info(value: &SrvsvcShareInfo) -> Result<lib_srvsvc::SrvsvcShareInfo> {
+    match &value.info {
+        SrvsvcShareInfoUnion::Level0(info) => Ok(lib_srvsvc::SrvsvcShareInfo::Level0(
+            lib_srvsvc::SrvsvcShareInfo0 {
+                netname: non_empty_option(info.netname.clone()),
+            },
+        )),
+        SrvsvcShareInfoUnion::Level1(info) => Ok(lib_srvsvc::SrvsvcShareInfo::Level1(
+            to_lib_share_info_1(info),
+        )),
+        SrvsvcShareInfoUnion::Unsupported { .. } => Err(not_implemented()),
+    }
+}
+
+fn to_lib_share_enum_struct(
+    value: &SrvsvcShareEnumStruct,
+) -> Result<lib_srvsvc::SrvsvcShareEnumStruct> {
+    let share_info = match &value.share_info {
+        SrvsvcShareEnumUnion::Level0(container) => {
+            lib_srvsvc::SrvsvcShareEnumUnion::Level0(lib_srvsvc::SrvsvcShareInfo0Container::new(
+                container
+                    .shares
+                    .iter()
+                    .map(|share| lib_srvsvc::SrvsvcShareInfo0 {
+                        netname: non_empty_option(share.netname.clone()),
+                    })
+                    .collect(),
+            ))
+        }
+        SrvsvcShareEnumUnion::Level1(container) => {
+            lib_srvsvc::SrvsvcShareEnumUnion::Level1(lib_srvsvc::SrvsvcShareInfo1Container::new(
+                container.shares.iter().map(to_lib_share_info_1).collect(),
+            ))
+        }
+        SrvsvcShareEnumUnion::Unsupported { level } => {
+            empty_lib_share_enum_union_for_level(*level)?
+        }
+    };
+    Ok(lib_srvsvc::SrvsvcShareEnumStruct { share_info })
+}
+
+fn empty_lib_share_enum_union_for_level(level: u32) -> Result<lib_srvsvc::SrvsvcShareEnumUnion> {
+    match ShareInfoLevel::from(level) {
+        ShareInfoLevel::Level0 => Ok(lib_srvsvc::SrvsvcShareEnumUnion::Level0(
+            lib_srvsvc::SrvsvcShareInfo0Container::default(),
+        )),
+        ShareInfoLevel::Level1 => Ok(lib_srvsvc::SrvsvcShareEnumUnion::Level1(
+            lib_srvsvc::SrvsvcShareInfo1Container::default(),
+        )),
+        ShareInfoLevel::Unknown(level) => Ok(lib_srvsvc::SrvsvcShareEnumUnion::Raw {
+            level,
+            bytes: Vec::new(),
+        }),
+    }
+}
+
+fn to_lib_share_info_1(value: &SrvsvcShareInfo1) -> lib_srvsvc::SrvsvcShareInfo1 {
+    lib_srvsvc::SrvsvcShareInfo1 {
+        netname: non_empty_option(value.netname.clone()),
+        share_type: value.share_type,
+        remark: non_empty_option(value.remark.clone()),
+    }
+}
+
+fn from_lib_share_enum_reply(value: lib_srvsvc::SrvsvcNetrShareEnumRep) -> NetrShareEnumResponse {
+    NetrShareEnumResponse {
+        status: value.status,
+        share_enum: from_lib_share_enum_struct(value.share_enum),
+        total_entries: value.total_entries,
+        resume_handle: value
+            .resume_handle
+            .map_or_else(u32::default, core::convert::identity),
+    }
+}
+
+fn from_lib_share_get_info_reply(
+    value: lib_srvsvc::SrvsvcNetrShareGetInfoRep,
+) -> NetrShareGetInfoResponse {
+    NetrShareGetInfoResponse {
+        status: value.status,
+        info: from_lib_share_info(value.info_struct),
+    }
+}
+
+fn from_lib_share_enum_struct(value: lib_srvsvc::SrvsvcShareEnumStruct) -> SrvsvcShareEnumStruct {
+    match value.share_info {
+        lib_srvsvc::SrvsvcShareEnumUnion::Level0(container) => SrvsvcShareEnumStruct {
+            level: ShareInfoLevel::Level0,
+            share_info: SrvsvcShareEnumUnion::Level0(SrvsvcShareInfo0Container {
+                entries_read: container.entries_read,
+                shares: container
+                    .share_info_0
+                    .into_iter()
+                    .map(|share| SrvsvcShareInfo0 {
+                        netname: share
+                            .netname
+                            .map_or_else(String::new, core::convert::identity),
+                    })
+                    .collect(),
+            }),
+        },
+        lib_srvsvc::SrvsvcShareEnumUnion::Level1(container) => SrvsvcShareEnumStruct {
+            level: ShareInfoLevel::Level1,
+            share_info: SrvsvcShareEnumUnion::Level1(SrvsvcShareInfo1Container {
+                entries_read: container.entries_read,
+                shares: container
+                    .share_info_1
+                    .into_iter()
+                    .map(from_lib_share_info_1)
+                    .collect(),
+            }),
+        },
+        lib_srvsvc::SrvsvcShareEnumUnion::Raw { level, .. } => SrvsvcShareEnumStruct {
+            level: ShareInfoLevel::Unknown(level),
+            share_info: SrvsvcShareEnumUnion::Unsupported { level },
+        },
+    }
+}
+
+fn from_lib_share_info(value: lib_srvsvc::SrvsvcShareInfo) -> SrvsvcShareInfo {
+    match value {
+        lib_srvsvc::SrvsvcShareInfo::Level0(info) => SrvsvcShareInfo {
+            level: ShareInfoLevel::Level0,
+            info: SrvsvcShareInfoUnion::Level0(SrvsvcShareInfo0 {
+                netname: info
+                    .netname
+                    .map_or_else(String::new, core::convert::identity),
+            }),
+        },
+        lib_srvsvc::SrvsvcShareInfo::Level1(info) => SrvsvcShareInfo {
+            level: ShareInfoLevel::Level1,
+            info: SrvsvcShareInfoUnion::Level1(from_lib_share_info_1(info)),
+        },
+        lib_srvsvc::SrvsvcShareInfo::Raw { level, .. } => SrvsvcShareInfo {
+            level: ShareInfoLevel::Unknown(level),
+            info: SrvsvcShareInfoUnion::Unsupported { level },
+        },
+    }
+}
+
+fn from_lib_share_info_1(value: lib_srvsvc::SrvsvcShareInfo1) -> SrvsvcShareInfo1 {
+    SrvsvcShareInfo1 {
+        netname: value
+            .netname
+            .map_or_else(String::new, core::convert::identity),
+        share_type: value.share_type,
+        remark: value
+            .remark
+            .map_or_else(String::new, core::convert::identity),
+    }
+}
+
+fn to_lib_level(level: ShareInfoLevel) -> Result<lib_srvsvc::ShareInfoLevel> {
+    match level {
+        ShareInfoLevel::Level0 => Ok(lib_srvsvc::ShareInfoLevel::Level0),
+        ShareInfoLevel::Level1 => Ok(lib_srvsvc::ShareInfoLevel::Level1),
+        ShareInfoLevel::Unknown(level) => Ok(lib_srvsvc::ShareInfoLevel::Unknown(level)),
+    }
+}
+
+fn non_empty_option(value: String) -> Option<String> {
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn map_dcerpc_error(error: crate::lib::dcerpc::DceRpcError) -> ErrorCode {
+    match error {
+        crate::lib::dcerpc::DceRpcError::ProtocolNotImplemented(_)
+        | crate::lib::dcerpc::DceRpcError::UnsupportedPduBody { .. } => not_implemented(),
+        crate::lib::dcerpc::DceRpcError::BufferTooSmall { .. }
+        | crate::lib::dcerpc::DceRpcError::TooManyDeferredPointers { .. }
+        | crate::lib::dcerpc::DceRpcError::AllocHintOutOfRange { .. }
+        | crate::lib::dcerpc::DceRpcError::CountOutOfRange { .. }
+        | crate::lib::dcerpc::DceRpcError::InvalidUtf16
+        | crate::lib::dcerpc::DceRpcError::InvalidPduType { .. }
+        | crate::lib::dcerpc::DceRpcError::InvalidAuthVerifier { .. }
+        | crate::lib::dcerpc::DceRpcError::NullPointer => ErrorCode(-22),
+    }
 }
