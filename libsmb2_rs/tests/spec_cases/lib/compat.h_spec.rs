@@ -54,7 +54,10 @@ fn test_compat_h_caller_invokes_login_name_compatibility_function() {
 // - **THEN** 兼容实现 MUST 返回平台宏 `getpid_num()` 的结果
 #[test]
 fn test_compat_h_caller_obtains_compatibility_process_id() {
-    assert_eq!(compat::GETPID_COMPAT_TARGETS.windows_target, "GetCurrentProcessId");
+    assert_eq!(
+        compat::GETPID_COMPAT_TARGETS.windows_target,
+        "GetCurrentProcessId"
+    );
     assert_eq!(compat::GETPID_COMPAT_TARGETS.xbox_value, 0);
     assert_eq!(compat::GETPID_COMPAT_TARGETS.ps2_iop_value, 27);
 }

@@ -1,6 +1,25 @@
 pub const SRVSVC_NETRSHAREENUM: u32 = 0x0f;
 pub const SRVSVC_NETRSHAREGETINFO: u32 = 0x10;
 
+pub const SRVSVC_UUID: [u8; 16] = [
+    0xc8, 0x4f, 0x32, 0x4b, 0x70, 0x16, 0xd3, 0x01, 0x12, 0x78, 0x5a, 0x47, 0xbf, 0x6e, 0xe1, 0x88,
+];
+pub const SRVSVC_INTERFACE_MAJOR_VERSION: u16 = 3;
+pub const SRVSVC_INTERFACE_MINOR_VERSION: u16 = 0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SrvsvcInterfaceSyntax {
+    pub uuid: [u8; 16],
+    pub major_version: u16,
+    pub minor_version: u16,
+}
+
+pub const SRVSVC_INTERFACE: SrvsvcInterfaceSyntax = SrvsvcInterfaceSyntax {
+    uuid: SRVSVC_UUID,
+    major_version: SRVSVC_INTERFACE_MAJOR_VERSION,
+    minor_version: SRVSVC_INTERFACE_MINOR_VERSION,
+};
+
 pub const SHARE_TYPE_DISKTREE: u32 = 0;
 pub const SHARE_TYPE_PRINTQ: u32 = 1;
 pub const SHARE_TYPE_DEVICE: u32 = 2;
@@ -146,6 +165,24 @@ pub fn srvsvc_share_info_0_decoder_harness(bytes: &[u8]) -> SrvsvcHarnessResult<
     let mut value = SrvsvcShareInfo0::default();
     let mut codec = SrvsvcHarnessCodec::decoder(bytes);
     code_share_info_0(&mut codec, &mut value)?;
+    Ok(value)
+}
+
+#[must_use]
+pub fn srvsvc_share_info_0_container_coder_harness(
+    value: &SrvsvcShareInfo0Container,
+) -> SrvsvcHarnessResult<Vec<u8>> {
+    let mut codec = SrvsvcHarnessCodec::encoder();
+    code_share_info_0_container(&mut codec, &mut value.clone())?;
+    Ok(codec.into_bytes())
+}
+
+pub fn srvsvc_share_info_0_container_decoder_harness(
+    bytes: &[u8],
+) -> SrvsvcHarnessResult<SrvsvcShareInfo0Container> {
+    let mut value = SrvsvcShareInfo0Container::default();
+    let mut codec = SrvsvcHarnessCodec::decoder(bytes);
+    code_share_info_0_container(&mut codec, &mut value)?;
     Ok(value)
 }
 
@@ -451,6 +488,30 @@ fn code_share_info_1(
     code_optional_string(codec, &mut value.remark)
 }
 
+fn code_share_info_0_container(
+    codec: &mut SrvsvcHarnessCodec,
+    value: &mut SrvsvcShareInfo0Container,
+) -> SrvsvcHarnessResult<()> {
+    if matches!(codec.direction, HarnessDirection::Encode) {
+        value.entries_read = value.share_info_0.len() as u32;
+    }
+    codec.code_u32(&mut value.entries_read)?;
+    let present = codec.code_unique_pointer_present(value.entries_read != 0)?;
+    if !present {
+        value.share_info_0.clear();
+        return Ok(());
+    }
+    let mut array_count = value.entries_read;
+    codec.code_u32(&mut array_count)?;
+    value
+        .share_info_0
+        .resize_with(array_count as usize, SrvsvcShareInfo0::default);
+    for item in &mut value.share_info_0 {
+        code_share_info_0(codec, item)?;
+    }
+    Ok(())
+}
+
 fn code_share_info_1_container(
     codec: &mut SrvsvcHarnessCodec,
     value: &mut SrvsvcShareInfo1Container,
@@ -494,23 +555,7 @@ fn code_share_enum_union(
 ) -> SrvsvcHarnessResult<()> {
     codec.code_u32(&mut value.level)?;
     match &mut value.share_info {
-        SrvsvcShareEnumUnion::Level0(container) => {
-            codec.code_u32(&mut container.entries_read)?;
-            let present = codec.code_unique_pointer_present(container.entries_read != 0)?;
-            if !present {
-                container.share_info_0.clear();
-                return Ok(());
-            }
-            let mut array_count = container.entries_read;
-            codec.code_u32(&mut array_count)?;
-            container
-                .share_info_0
-                .resize_with(array_count as usize, SrvsvcShareInfo0::default);
-            for item in &mut container.share_info_0 {
-                code_share_info_0(codec, item)?;
-            }
-            Ok(())
-        }
+        SrvsvcShareEnumUnion::Level0(container) => code_share_info_0_container(codec, container),
         SrvsvcShareEnumUnion::Level1(container) => code_share_info_1_container(codec, container),
     }
 }

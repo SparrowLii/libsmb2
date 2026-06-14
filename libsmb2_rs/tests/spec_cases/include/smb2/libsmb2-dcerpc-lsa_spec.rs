@@ -455,8 +455,11 @@ fn test_libsmb2_dcerpc_lsa_lookupsids2_response_carries_domains_names_count_and_
     assert_eq!(rep.status, 0);
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc-lsa.h:lsa_Close_rep_coder`
+// Trace: `include/smb2/libsmb2-dcerpc-lsa.h:lsa_Close_rep_coder`, `lib/dcerpc-lsa.c:lsa_Close_rep_coder`
 // Spec: lsa_Close_rep_coder decodes or encodes Close responses#Close response coder succeeds
+// - **GIVEN** a valid DCERPC context, PDU, iovec, offset pointer, and `struct lsa_close_rep` pointer
+// - **WHEN** `lsa_Close_rep_coder` is invoked and both field coders succeed
+// - **THEN** the function returns `0` after processing `PolicyHandle` and `status`
 #[test]
 fn test_libsmb2_dcerpc_lsa_close_response_coder_succeeds() {
     let rep = LsaCloseReply {
@@ -471,8 +474,11 @@ fn test_libsmb2_dcerpc_lsa_close_response_coder_succeeds() {
     assert_eq!(&encoded[24..28], &LSA_STATUS_SUCCESS.to_le_bytes());
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc-lsa.h:lsa_Close_req_coder`
+// Trace: `include/smb2/libsmb2-dcerpc-lsa.h:lsa_Close_req_coder`, `lib/dcerpc-lsa.c:lsa_Close_req_coder`
 // Spec: lsa_Close_req_coder encodes Close requests#Close request coder succeeds
+// - **GIVEN** a valid DCERPC context, PDU, iovec, offset pointer, and `struct lsa_close_req` pointer
+// - **WHEN** `lsa_Close_req_coder` is invoked and context-handle coding succeeds
+// - **THEN** the function returns `0` after processing `PolicyHandle` as a reference pointer
 #[test]
 fn test_libsmb2_dcerpc_lsa_close_request_coder_succeeds() {
     let req = LsaCloseRequest {
@@ -487,8 +493,11 @@ fn test_libsmb2_dcerpc_lsa_close_request_coder_succeeds() {
     assert_eq!(&encoded[0..4], &[0x52, 0x70, 0x74, 0x72]);
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc-lsa.h:lsa_LookupSids2_rep_coder`
+// Trace: `include/smb2/libsmb2-dcerpc-lsa.h:lsa_LookupSids2_rep_coder`, `lib/dcerpc-lsa.c:lsa_LookupSids2_rep_coder`
 // Spec: lsa_LookupSids2_rep_coder decodes or encodes LookupSids2 responses#LookupSids2 response coder succeeds
+// - **GIVEN** a valid DCERPC context, PDU, iovec, offset pointer, and `struct lsa_lookupsids2_rep` pointer
+// - **WHEN** `lsa_LookupSids2_rep_coder` is invoked and all field coders succeed
+// - **THEN** the function returns `0` after processing referenced domains, translated names, mapped count, and status
 #[test]
 fn test_libsmb2_dcerpc_lsa_lookupsids2_response_coder_succeeds() {
     let rep = sample_safe_lookup_sids2_reply();
@@ -505,8 +514,11 @@ fn test_libsmb2_dcerpc_lsa_lookupsids2_response_coder_succeeds() {
     );
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc-lsa.h:lsa_LookupSids2_req_coder`
+// Trace: `include/smb2/libsmb2-dcerpc-lsa.h:lsa_LookupSids2_req_coder`, `lib/dcerpc-lsa.c:lsa_LookupSids2_req_coder`
 // Spec: lsa_LookupSids2_req_coder encodes LookupSids2 requests#LookupSids2 request coder succeeds
+// - **GIVEN** a valid DCERPC context, PDU, iovec, offset pointer, and `struct lsa_lookupsids2_req` pointer
+// - **WHEN** `lsa_LookupSids2_req_coder` is invoked and all field coders succeed
+// - **THEN** the function returns `0` after processing the handle, SID buffer, translated names, lookup level, two zero 32-bit values, and revision `2`
 #[test]
 fn test_libsmb2_dcerpc_lsa_lookupsids2_request_coder_succeeds() {
     let req = LsaLookupSids2Request::new(
@@ -529,8 +541,11 @@ fn test_libsmb2_dcerpc_lsa_lookupsids2_request_coder_succeeds() {
     assert_eq!(decoded.client_revision, LSA_LOOKUP_SIDS2_CLIENT_REVISION);
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc-lsa.h:lsa_OpenPolicy2_rep_coder`
+// Trace: `include/smb2/libsmb2-dcerpc-lsa.h:lsa_OpenPolicy2_rep_coder`, `lib/dcerpc-lsa.c:lsa_OpenPolicy2_rep_coder`
 // Spec: lsa_OpenPolicy2_rep_coder decodes or encodes OpenPolicy2 responses#OpenPolicy2 response coder succeeds
+// - **GIVEN** a valid DCERPC context, PDU, iovec, offset pointer, and `struct lsa_openpolicy2_rep` pointer
+// - **WHEN** `lsa_OpenPolicy2_rep_coder` is invoked and both field coders succeed
+// - **THEN** the function returns `0` after processing `PolicyHandle` and `status`
 #[test]
 fn test_libsmb2_dcerpc_lsa_openpolicy2_response_coder_succeeds() {
     let rep = LsaOpenPolicy2Reply {
@@ -547,8 +562,11 @@ fn test_libsmb2_dcerpc_lsa_openpolicy2_response_coder_succeeds() {
     assert_eq!(&encoded[24..28], &LSA_STATUS_SUCCESS.to_le_bytes());
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc-lsa.h:lsa_OpenPolicy2_req_coder`
+// Trace: `include/smb2/libsmb2-dcerpc-lsa.h:lsa_OpenPolicy2_req_coder`, `lib/dcerpc-lsa.c:lsa_OpenPolicy2_req_coder`
 // Spec: lsa_OpenPolicy2_req_coder encodes OpenPolicy2 requests#OpenPolicy2 request coder succeeds
+// - **GIVEN** a valid DCERPC context, PDU, iovec, offset pointer, and `struct lsa_openpolicy2_req` pointer
+// - **WHEN** `lsa_OpenPolicy2_req_coder` is invoked and all field coders succeed
+// - **THEN** the function returns `0` after processing `SystemName`, object attributes, and desired access
 #[test]
 fn test_libsmb2_dcerpc_lsa_openpolicy2_request_coder_succeeds() {
     let mut req = LsaOpenPolicy2Request::new(POLICY_LOOKUP_NAMES);
@@ -565,8 +583,11 @@ fn test_libsmb2_dcerpc_lsa_openpolicy2_request_coder_succeeds() {
     assert_eq!(decoded.desired_access, POLICY_LOOKUP_NAMES);
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc-lsa.h:lsa_RPC_SID_coder`
+// Trace: `include/smb2/libsmb2-dcerpc-lsa.h:lsa_RPC_SID_coder`, `lib/dcerpc-lsa.c:lsa_RPC_SID_coder`
 // Spec: lsa_RPC_SID_coder encodes and decodes RPC SID values#RPC SID coder processes variable sub-authorities
+// - **GIVEN** a valid DCERPC context, PDU, iovec, offset pointer, and `RPC_SID` pointer
+// - **WHEN** `lsa_RPC_SID_coder` is invoked and all primitive coders and decode allocation succeed
+// - **THEN** the function returns `0` after processing six identifier-authority bytes and `SubAuthorityCount` 32-bit sub-authority values
 #[test]
 fn test_libsmb2_dcerpc_lsa_rpc_sid_coder_processes_variable_sub_authorities() {
     let sid = SafeRpcSid::nt_authority(1, vec![21, 32, 544]);

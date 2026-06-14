@@ -201,8 +201,12 @@ pub enum PduError {
     TreeIdNotFound,
     /// The tree id stack already reached the migration skeleton limit.
     TreeNestingTooDeep,
+    /// PDU allocation failed before a usable PDU could be returned.
+    AllocationFailed,
     /// The PDU argument required by the C API was absent.
     MissingPdu,
+    /// Server-side replies must carry a message id except negotiate replies.
+    MissingMessageId,
     /// Adding another iovec would exceed the legacy vector limit.
     TooManyVectors,
     /// A command id is not part of the migrated SMB2 command table.
@@ -363,6 +367,15 @@ pub fn smb2_allocate_pdu(
     let mut pdu = Pdu::from_parts(header, IoVectors::new(), callback);
     ensure_header_vector(&mut pdu);
     pdu
+}
+
+/// Records the error emitted by the legacy allocation-failure branch.
+pub fn smb2_allocate_pdu_allocation_failure(
+    context: &mut Context,
+    _command: Smb2Command,
+) -> PduResult<Pdu> {
+    context.set_error("Failed to allocate pdu");
+    Err(PduError::AllocationFailed)
 }
 
 /// Adds an owned I/O vector to a vector list.
@@ -1578,6 +1591,10 @@ fn encode_queued_pdu(
 ) -> PduResult<()> {
     if context.is_server() {
         pdu.header.flags |= SMB2_FLAGS_SERVER_TO_REDIR;
+        if pdu.header.message_id == 0 && pdu.header.command != Smb2Command::Negotiate.as_u16() {
+            context.set_error("Queued pdu has no message id");
+            return Err(PduError::MissingMessageId);
+        }
     } else {
         pdu.prev_compound_mid = *prev_compound_mid;
     }

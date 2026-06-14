@@ -8,6 +8,17 @@ mod ffi {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 
+pub const HMAC_MD5_UWORD32_DEFINED: bool = true;
+pub const HMAC_MD5_UWORD32_BITS: u32 = u32::BITS;
+pub const HMAC_MD5_WORDS_BIGENDIAN_VALUE: i32 = 1;
+
+pub fn hmac_md5_words_bigendian_defined(
+    byte_order_big_endian: bool,
+    xbox_360_platform: bool,
+) -> bool {
+    byte_order_big_endian || xbox_360_platform
+}
+
 pub fn digest(text: &[u8], key: &[u8]) -> [u8; 16] {
     let mut output = [0; 16];
     let text_len = i32::try_from(text.len()).expect("HMAC-MD5 text length exceeds int range");

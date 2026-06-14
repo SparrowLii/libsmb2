@@ -256,6 +256,18 @@ pub fn readv_overflow_sets_einval() -> bool {
     unsafe { ffi::compat_ffi_readv_overflow_sets_einval() != 0 }
 }
 
+pub fn writev_allocation_failure_returns_minus_one() -> bool {
+    unsafe { ffi::compat_ffi_writev_allocation_failure_returns_minus_one() != 0 }
+}
+
+pub fn readv_allocation_failure_returns_minus_one() -> bool {
+    unsafe { ffi::compat_ffi_readv_allocation_failure_returns_minus_one() != 0 }
+}
+
+pub fn strdup_allocation_failure_returns_none() -> bool {
+    unsafe { ffi::compat_ffi_strdup_allocation_failure_returns_null() != 0 }
+}
+
 pub fn poll_readable_pipe() -> Option<PollSnapshot> {
     poll_snapshot(ffi::compat_ffi_poll_readable_pipe)
 }

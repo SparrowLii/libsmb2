@@ -160,7 +160,13 @@ impl Smb2RustContext {
             return;
         }
         let mut byte = 0_u8;
-        let read_count = unsafe { read(self.wake_read_fd, (&mut byte as *mut u8).cast::<c_void>(), 1) };
+        let read_count = unsafe {
+            read(
+                self.wake_read_fd,
+                (&mut byte as *mut u8).cast::<c_void>(),
+                1,
+            )
+        };
         if read_count >= 0 {
             self.wake_pending = false;
         }

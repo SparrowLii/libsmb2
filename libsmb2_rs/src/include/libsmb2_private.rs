@@ -123,9 +123,10 @@ impl From<crate::lib::pdu::PduError> for PrivateError {
             crate::lib::pdu::PduError::MissingTreeId
             | crate::lib::pdu::PduError::TreeIdNotFound => Self::NoCurrentTreeId,
             crate::lib::pdu::PduError::TreeNestingTooDeep => Self::TooManyTreeIds,
-            crate::lib::pdu::PduError::MissingPdu | crate::lib::pdu::PduError::UnknownCommand => {
-                Self::MissingPdu
-            }
+            crate::lib::pdu::PduError::AllocationFailed => Self::ProtocolLogicUnavailable,
+            crate::lib::pdu::PduError::MissingPdu
+            | crate::lib::pdu::PduError::MissingMessageId
+            | crate::lib::pdu::PduError::UnknownCommand => Self::MissingPdu,
             crate::lib::pdu::PduError::TooManyVectors => Self::TooManyVectors,
             crate::lib::pdu::PduError::Signing(_) | crate::lib::pdu::PduError::Sealing(_) => {
                 Self::ProtocolLogicUnavailable

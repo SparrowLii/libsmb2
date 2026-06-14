@@ -1,4 +1,6 @@
 use libsmb2_sys::smb2::libsmb2_dcerpc_srvsvc::*;
+use libsmb2_rs::include::smb2::libsmb2::Smb2Client;
+use libsmb2_rs::lib::sync::{self, SyncPayload, SyncRequestKind};
 
 // Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:SRVSVC_NETRSHAREENUM`, `lib/smb2-share-enum.c:share_enum_bind_cb`
 // Spec: SRVSVC_NETRSHAREENUM operation number#NetrShareEnum opcode is stable
@@ -287,7 +289,7 @@ fn test_libsmb2_dcerpc_srvsvc_netrshareenum_request_carries_server_and_paging_fi
 
 // Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_NetrShareEnum_req_coder`, `lib/dcerpc-srvsvc.c:srvsvc_NetrShareEnum_req_coder`
 // Spec: srvsvc_NetrShareEnum_req_coder request coder#NetrShareEnum request coder propagates field failures
-// - **GIVEN** `ptr` 指向 `srvsvc_NetrShareEnum_req` 且任一字段底层 coder 返回错误
+// - **GIVEN** `ptr` 指向 `srvsvc_NetrShareEnum_req` 且任一底层字段 coder 返回错误
 // - **WHEN** 调用方执行 `srvsvc_NetrShareEnum_req_coder`
 // - **THEN** 该函数返回 `-1`
 #[test]
@@ -340,7 +342,7 @@ fn test_libsmb2_dcerpc_srvsvc_netrshareenum_response_carries_status_and_enumerat
 
 // Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_NetrShareEnum_rep_coder`, `lib/dcerpc-srvsvc.c:srvsvc_NetrShareEnum_rep_coder`
 // Spec: srvsvc_NetrShareEnum_rep_coder response coder#NetrShareEnum response coder propagates field failures
-// - **GIVEN** `ptr` 指向 `srvsvc_NetrShareEnum_rep` 且任一字段底层 coder 返回错误
+// - **GIVEN** `ptr` 指向 `srvsvc_NetrShareEnum_rep` 且任一底层字段 coder 返回错误
 // - **WHEN** 调用方执行 `srvsvc_NetrShareEnum_rep_coder`
 // - **THEN** 该函数返回 `-1`
 #[test]
@@ -408,7 +410,7 @@ fn test_libsmb2_dcerpc_srvsvc_netrsharegetinfo_request_carries_target_share() {
 
 // Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_NetrShareGetInfo_req_coder`, `lib/dcerpc-srvsvc.c:srvsvc_NetrShareGetInfo_req_coder`
 // Spec: srvsvc_NetrShareGetInfo_req_coder request coder#NetrShareGetInfo request coder propagates field failures
-// - **GIVEN** `ptr` 指向 `srvsvc_NetrShareGetInfo_req` 且任一字段底层 coder 返回错误
+// - **GIVEN** `ptr` 指向 `srvsvc_NetrShareGetInfo_req` 且任一底层字段 coder 返回错误
 // - **WHEN** 调用方执行 `srvsvc_NetrShareGetInfo_req_coder`
 // - **THEN** 该函数返回 `-1`
 #[test]
@@ -453,7 +455,7 @@ fn test_libsmb2_dcerpc_srvsvc_netrsharegetinfo_response_carries_status_and_info(
 
 // Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_NetrShareGetInfo_rep_coder`, `lib/dcerpc-srvsvc.c:srvsvc_NetrShareGetInfo_rep_coder`
 // Spec: srvsvc_NetrShareGetInfo_rep_coder response coder#NetrShareGetInfo response coder propagates field failures
-// - **GIVEN** `ptr` 指向 `srvsvc_NetrShareGetInfo_rep` 且任一字段底层 coder 返回错误
+// - **GIVEN** `ptr` 指向 `srvsvc_NetrShareGetInfo_rep` 且任一底层字段 coder 返回错误
 // - **WHEN** 调用方执行 `srvsvc_NetrShareGetInfo_rep_coder`
 // - **THEN** 该函数返回 `-1`
 #[test]
@@ -498,19 +500,22 @@ fn test_libsmb2_dcerpc_srvsvc_async_share_enum_boundary_requires_network() {
     assert!(!boundary.safe_offline_smoke_available);
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:smb2_share_enum_sync`, `lib/sync.c:smb2_share_enum_sync`
+// Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:smb2_share_enum_sync`, `lib/sync.c:smb2_share_enum_sync`, `examples/smb2-share-enum-sync.c:main`
 // Spec: smb2_share_enum_sync synchronous share enumeration#Sync share enum returns response pointer on success
 // - **GIVEN** `smb2` 已连接且异步 share enum 与等待回复均成功
 // - **WHEN** 调用方执行 `smb2_share_enum_sync`
 // - **THEN** 函数返回非 `NULL` 的 `struct srvsvc_NetrShareEnum_rep *`
 #[test]
-fn test_libsmb2_dcerpc_srvsvc_sync_share_enum_boundary_requires_network() {
-    let boundary = share_enum_network_boundary();
-    assert_eq!(
-        boundary.reason,
-        "smb2_share_enum_async/sync require a live SMB2 IPC$ tree and srvsvc DCERPC bind"
-    );
-    assert!(!boundary.safe_offline_smoke_available);
+fn test_libsmb2_dcerpc_srvsvc_sync_share_enum_returns_response_pointer_on_success() {
+    let client = Smb2Client::new();
+
+    let request = sync::smb2_share_enum_sync(&client, ShareInfoLevel::ShareInfo1 as u32).unwrap();
+
+    assert!(matches!(request.kind(), SyncRequestKind::ShareEnum { level: 1 }));
+    assert!(matches!(
+        request.payload(),
+        SyncPayload::ShareEnum(reply) if reply.level == 1 && reply.shares.is_empty()
+    ));
 }
 
 // Trace: `include/smb2/libsmb2-dcerpc-srvsvc.h:srvsvc_rep`, `lib/smb2-share-enum.c:srvsvc_ioctl_cb`

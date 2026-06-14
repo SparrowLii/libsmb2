@@ -65,8 +65,16 @@ pub struct ContextLayout {
     pub serverin_key_len: usize,
     pub serverout_key_len: usize,
     pub salt_len: usize,
+    pub has_connecting_fds: bool,
+    pub has_addrinfos: bool,
+    pub has_security_mode: bool,
     pub has_connect_cb_data: bool,
+    pub has_tree_id_cur: bool,
+    pub has_outqueue: bool,
+    pub has_waitqueue: bool,
     pub has_io_vectors: bool,
+    pub has_recv_state: bool,
+    pub has_error_string: bool,
     pub has_owning_server: bool,
 }
 
@@ -179,8 +187,16 @@ pub fn context_layout() -> ContextLayout {
         serverin_key_len: layout.serverin_key_len,
         serverout_key_len: layout.serverout_key_len,
         salt_len: layout.salt_len,
+        has_connecting_fds: ffi_size_to_bool(layout.has_connecting_fds),
+        has_addrinfos: ffi_size_to_bool(layout.has_addrinfos),
+        has_security_mode: ffi_size_to_bool(layout.has_security_mode),
         has_connect_cb_data: ffi_size_to_bool(layout.has_connect_cb_data),
+        has_tree_id_cur: ffi_size_to_bool(layout.has_tree_id_cur),
+        has_outqueue: ffi_size_to_bool(layout.has_outqueue),
+        has_waitqueue: ffi_size_to_bool(layout.has_waitqueue),
         has_io_vectors: ffi_size_to_bool(layout.has_io_vectors),
+        has_recv_state: ffi_size_to_bool(layout.has_recv_state),
+        has_error_string: ffi_size_to_bool(layout.has_error_string),
         has_owning_server: ffi_size_to_bool(layout.has_owning_server),
     }
 }

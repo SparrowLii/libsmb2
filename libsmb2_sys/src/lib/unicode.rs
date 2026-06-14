@@ -12,6 +12,15 @@ use std::ffi::{CStr, CString};
 
 pub fn utf8_to_utf16_units(input: &str) -> Option<Vec<u16>> {
     let input = CString::new(input).ok()?;
+    utf8_cstr_to_utf16_units(&input)
+}
+
+pub fn utf8_bytes_to_utf16_units(input: &[u8]) -> Option<Vec<u16>> {
+    let input = CString::new(input).ok()?;
+    utf8_cstr_to_utf16_units(&input)
+}
+
+fn utf8_cstr_to_utf16_units(input: &CString) -> Option<Vec<u16>> {
     let ptr = unsafe { ffi::smb2_utf8_to_utf16(input.as_ptr()) };
     if ptr.is_null() {
         return None;
@@ -37,4 +46,12 @@ pub fn utf16_units_to_utf8(units: &[u16]) -> Option<String> {
     unsafe { ffi::unicode_ffi_free(ptr.cast_mut().cast()) };
 
     Some(result)
+}
+
+pub fn utf8_to_utf16_allocation_failure_returns_none() -> bool {
+    unsafe { ffi::unicode_ffi_utf8_to_utf16_alloc_failure() != 0 }
+}
+
+pub fn utf16_to_utf8_allocation_failure_returns_none() -> bool {
+    unsafe { ffi::unicode_ffi_utf16_to_utf8_alloc_failure() != 0 }
 }

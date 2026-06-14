@@ -2661,6 +2661,19 @@ impl Smb2Client {
         }
     }
 
+    /// Creates a directory through the deterministic local state machine.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`ErrorCode`] if the context is not share-connected, `path` is
+    /// empty, or local completion fails.
+    pub fn mkdir(&mut self, path: &str) -> Result<()> {
+        self.ensure_share_connected()?;
+        self.validate_non_empty_arg("path", path)?;
+        self.mkdir_async(path);
+        self.complete_next_local_operation().map(|_| ())
+    }
+
     /// Builds an lseek request skeleton and returns the requested resulting offset.
     #[must_use]
     pub fn lseek(&mut self, handle: &FileHandle, offset: i64, whence: i32) -> Option<u64> {

@@ -404,6 +404,9 @@ fn test_smb2_lock_element_model_stores_range_and_flags() {
 
 // Trace: `include/smb2/smb2.h:smb2_get_file_id`, `lib/libsmb2.c:smb2_get_file_id`
 // Spec: smb2_get_file_id expose handle file identifier#返回句柄内部 file id 指针
+// - **GIVEN** 调用方持有一个有效的 `struct smb2fh *fh`
+// - **WHEN** 调用方调用 `smb2_get_file_id(fh)`
+// - **THEN** 返回值 MUST 指向该 `fh` 内部的 `file_id` 字段，而不是返回拷贝或新分配对象
 #[test]
 fn test_smb2_get_file_id_model_exposes_internal_identifier() {
     let handle = libsmb2_rs::lib::libsmb2::Smb2FileHandle::new([0x5a; 16]);
@@ -413,6 +416,9 @@ fn test_smb2_get_file_id_model_exposes_internal_identifier() {
 
 // Trace: `include/smb2/smb2.h:smb2_fh_from_file_id`, `lib/libsmb2.c:smb2_fh_from_file_id`
 // Spec: smb2_fh_from_file_id allocate handle from identifier#成功复制 file id
+// - **GIVEN** 调用方提供一个 `smb2_file_id *fileid`
+// - **WHEN** `calloc(1, sizeof(struct smb2fh))` 成功并调用 `smb2_fh_from_file_id(smb2, fileid)`
+// - **THEN** 返回的 `struct smb2fh *` MUST 包含与输入 `fileid` 前 `SMB2_FD_SIZE` 字节相同的 file id 内容
 #[test]
 fn test_smb2_fh_from_file_id_model_copies_identifier() {
     let mut source = [0x21_u8; 16];
@@ -424,13 +430,16 @@ fn test_smb2_fh_from_file_id_model_copies_identifier() {
     assert_eq!(handle.file_id[1..], [0x21; 15]);
 }
 
-// Trace: `include/smb2/smb2.h:smb2_decode_fileidfulldirectoryinformation`, `lib/smb2-cmd-query-directory.c:smb2_decode_fileidfulldirectoryinformation`
+// Trace: `include/smb2/smb2.h:smb2_decode_fileidfulldirectoryinformation`, `lib/smb2-cmd-query-directory.c:smb2_decode_fileidfulldirectoryinformation`, `examples/smb2-CMD-FIND.c`
 // Spec: smb2_decode_fileidfulldirectoryinformation decode directory entry#解码有效目录项
+// - **GIVEN** `vec` 包含至少 80 字节固定字段和 UTF-16 文件名数据
+// - **WHEN** 调用 `smb2_decode_fileidfulldirectoryinformation(smb2, fs, vec)`
+// - **THEN** 函数 MUST 填充 next entry offset、file index、file size、allocation size、attributes、EA size、file id、名称和四个时间戳字段，并返回 `0`
 #[test]
 fn test_smb2_decode_fileid_full_directory_valid_entry() {
     let buffer = fileid_full_directory_entry("ab");
-    let decoded = smb2_cmd_query_directory::smb2_decode_fileidfulldirectoryinformation(&buffer)
-        .unwrap();
+    let decoded =
+        smb2_cmd_query_directory::smb2_decode_fileidfulldirectoryinformation(&buffer).unwrap();
 
     assert_eq!(decoded.file_index, 7);
     assert_eq!(decoded.end_of_file, 0x0102_0304_0506_0708);
@@ -443,6 +452,9 @@ fn test_smb2_decode_fileid_full_directory_valid_entry() {
 
 // Trace: `include/smb2/smb2.h:smb2_decode_fileidfulldirectoryinformation`, `lib/smb2-cmd-query-directory.c:smb2_decode_fileidfulldirectoryinformation`
 // Spec: smb2_decode_fileidfulldirectoryinformation decode directory entry#拒绝越界名称
+// - **GIVEN** `vec` 中 offset 60 的名称长度会使 `80 + name_len` 超过 `vec->len`
+// - **WHEN** 调用 `smb2_decode_fileidfulldirectoryinformation(smb2, fs, vec)`
+// - **THEN** 函数 MUST 通过 `smb2_set_error` 报告 malformed name，并返回 `-1`
 #[test]
 fn test_smb2_decode_fileid_full_directory_rejects_oob_name() {
     let mut buffer = fileid_full_directory_entry("ab");
@@ -450,16 +462,22 @@ fn test_smb2_decode_fileid_full_directory_rejects_oob_name() {
 
     let result = smb2_cmd_query_directory::smb2_decode_fileidfulldirectoryinformation(&buffer);
 
-    assert_eq!(result, Err(smb2_cmd_query_directory::QueryDirectoryError::MalformedName));
+    assert_eq!(
+        result,
+        Err(smb2_cmd_query_directory::QueryDirectoryError::MalformedName)
+    );
 }
 
 // Trace: `include/smb2/smb2.h:smb2_decode_filenotifychangeinformation`, `lib/libsmb2.c:smb2_decode_filenotifychangeinformation`
 // Spec: smb2_decode_filenotifychangeinformation decode notify chain#解码单个通知记录
+// - **GIVEN** `vec` 中 `next_entry_offset + 12` 不超过 `vec->len` 且记录包含 action 和 UTF-16 名称长度
+// - **WHEN** 调用 `smb2_decode_filenotifychangeinformation(smb2, fnc, vec, next_entry_offset)`
+// - **THEN** 函数 MUST 填充 `fnc->action`，将 UTF-16 名称转换为 UTF-8 并赋给 `fnc->name`，然后返回 `0`
 #[test]
 fn test_smb2_decode_filenotify_single_record() {
     let buffer = notify_record(1, "a");
-    let records = smb2_cmd_notify_change::smb2_decode_file_notify_information_records(&buffer)
-        .unwrap();
+    let records =
+        smb2_cmd_notify_change::smb2_decode_file_notify_information_records(&buffer).unwrap();
 
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].action, 1);
@@ -468,11 +486,14 @@ fn test_smb2_decode_filenotify_single_record() {
 
 // Trace: `include/smb2/smb2.h:smb2_decode_filenotifychangeinformation`, `lib/libsmb2.c:smb2_decode_filenotifychangeinformation`
 // Spec: smb2_decode_filenotifychangeinformation decode notify chain#解码链式通知记录
+// - **GIVEN** 当前通知记录起始处的 next-entry offset 非零
+// - **WHEN** 调用 `smb2_decode_filenotifychangeinformation(smb2, fnc, vec, next_entry_offset)`
+// - **THEN** 函数 MUST 为 `fnc->next` 分配后继节点，并递归解码位于累加 offset 的后继通知记录
 #[test]
 fn test_smb2_decode_filenotify_chain_records() {
     let buffer = notify_chain();
-    let records = smb2_cmd_notify_change::smb2_decode_file_notify_information_records(&buffer)
-        .unwrap();
+    let records =
+        smb2_cmd_notify_change::smb2_decode_file_notify_information_records(&buffer).unwrap();
 
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].file_name, "a");
@@ -482,11 +503,17 @@ fn test_smb2_decode_filenotify_chain_records() {
 
 // Trace: `include/smb2/smb2.h:smb2_decode_filenotifychangeinformation`, `lib/libsmb2.c:smb2_decode_filenotifychangeinformation`
 // Spec: smb2_decode_filenotifychangeinformation decode notify chain#短缓冲区返回成功且不解码
+// - **GIVEN** `next_entry_offset + 12` 大于 `vec->len`
+// - **WHEN** 调用 `smb2_decode_filenotifychangeinformation(smb2, fnc, vec, next_entry_offset)`
+// - **THEN** 函数 MUST 返回 `0`，且不得读取当前记录的 action、name length 或 name payload
 #[test]
 fn test_smb2_decode_filenotify_short_buffer_is_rejected_by_safe_decoder() {
     let result = smb2_cmd_notify_change::smb2_decode_file_notify_information_records(&[0_u8; 4]);
 
-    assert_eq!(result, Err(smb2_cmd_notify_change::ChangeNotifyError::BufferTooShort));
+    assert_eq!(
+        result,
+        Err(smb2_cmd_notify_change::ChangeNotifyError::BufferTooShort)
+    );
 }
 
 fn fileid_full_directory_entry(name: &str) -> Vec<u8> {

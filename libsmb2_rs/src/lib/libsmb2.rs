@@ -129,6 +129,12 @@ impl Smb2Directory {
         entry
     }
 
+    /// Releases all decoded entries and resets the cursor.
+    pub fn closedir(&mut self) {
+        self.entries.clear();
+        self.index = 0;
+    }
+
     /// Returns the number of decoded entries held by this directory cursor.
     #[must_use]
     pub fn len(&self) -> usize {

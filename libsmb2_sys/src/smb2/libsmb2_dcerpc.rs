@@ -18,6 +18,7 @@ pub struct DceRpcContext {
     syntax: Option<PSyntaxId>,
     callback_count: usize,
     call_id: u32,
+    tctx_id: i32,
 }
 
 impl Default for DceRpcContext {
@@ -29,6 +30,7 @@ impl Default for DceRpcContext {
             syntax: None,
             callback_count: 0,
             call_id: 1,
+            tctx_id: 0,
         }
     }
 }
@@ -55,6 +57,8 @@ pub struct DceRpcPdu {
     pub direction: i32,
     pub payload: Vec<u8>,
     pub size_is: i32,
+    pub packed_drep: [u8; 4],
+    pub is_conformance_run: bool,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -151,6 +155,18 @@ pub struct DceRpcCarray {
     pub data: Vec<u8>,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
+pub struct DceRpcHeader {
+    pub version: u8,
+    pub packet_type: u8,
+    pub packet_flags: u8,
+    pub packed_drep: [u8; 4],
+    pub frag_length: u16,
+    pub auth_length: u16,
+    pub call_id: u32,
+}
+
 pub const NDR_TRANSFER_SYNTAX: NdrTransferSyntax = NdrTransferSyntax {
     uuid: DceRpcUuid {
         v1: 0x8a88_5d04,
@@ -159,6 +175,17 @@ pub const NDR_TRANSFER_SYNTAX: NdrTransferSyntax = NdrTransferSyntax {
         v4: [0x9f, 0xe8, 0x08, 0x00, 0x2b, 0x10, 0x48, 0x60],
     },
     vers: 2,
+};
+
+pub const NDR64_SYNTAX: PSyntaxId = PSyntaxId {
+    uuid: DceRpcUuid {
+        v1: 0x7171_0533,
+        v2: 0xbeba,
+        v3: 0x4937,
+        v4: [0x83, 0x19, 0xb5, 0xdb, 0xef, 0x9c, 0xcc, 0x36],
+    },
+    vers: 1,
+    vers_minor: 0,
 };
 
 pub const LSA_INTERFACE: PSyntaxId = PSyntaxId {
@@ -280,6 +307,8 @@ pub fn dcerpc_allocate_pdu(
         direction,
         payload: vec![0; payload_len],
         size_is: 0,
+        packed_drep: [DCERPC_DR_LITTLE_ENDIAN, 0, 0, 0],
+        is_conformance_run: false,
     })
 }
 
@@ -292,6 +321,63 @@ pub fn dcerpc_set_size_is(pdu: &mut DceRpcPdu, size_is: i32) {
 #[must_use]
 pub fn dcerpc_get_size_is(pdu: &DceRpcPdu) -> i32 {
     pdu.size_is
+}
+
+pub fn dcerpc_header_coder(
+    dce: &mut DceRpcContext,
+    pdu: &mut DceRpcPdu,
+    iov: &mut Smb2Iovec,
+    offset: &mut i32,
+    header: &mut DceRpcHeader,
+) -> Result<()> {
+    dcerpc_uint8_coder(dce, pdu, iov, offset, &mut header.version)?;
+    dcerpc_uint8_coder(dce, pdu, iov, offset, &mut header.packet_type)?;
+    dcerpc_uint8_coder(dce, pdu, iov, offset, &mut header.packet_flags)?;
+    for byte in &mut header.packed_drep {
+        dcerpc_uint8_coder(dce, pdu, iov, offset, byte)?;
+    }
+    dcerpc_uint16_coder(dce, pdu, iov, offset, &mut header.frag_length)?;
+    dcerpc_uint16_coder(dce, pdu, iov, offset, &mut header.auth_length)?;
+    dcerpc_uint32_coder(dce, pdu, iov, offset, &mut header.call_id)
+}
+
+#[must_use]
+pub fn dcerpc_pdu_direction(pdu: &DceRpcPdu) -> i32 {
+    pdu.direction
+}
+
+#[must_use]
+pub fn dcerpc_align_3264(ctx: &DceRpcContext, offset: i32) -> i32 {
+    if offset < 0 {
+        return offset;
+    }
+    if ctx.tctx_id != 0 {
+        (offset + 7) & !7
+    } else {
+        (offset + 3) & !3
+    }
+}
+
+pub fn dcerpc_set_tctx(ctx: &mut DceRpcContext, tctx_id: i32) {
+    ctx.tctx_id = tctx_id;
+}
+
+#[must_use]
+pub fn dcerpc_tctx(ctx: &DceRpcContext) -> i32 {
+    ctx.tctx_id
+}
+
+pub fn dcerpc_set_endian(pdu: &mut DceRpcPdu, little_endian: i32) {
+    if little_endian != 0 {
+        pdu.packed_drep[0] |= DCERPC_DR_LITTLE_ENDIAN;
+    } else {
+        pdu.packed_drep[0] &= !DCERPC_DR_LITTLE_ENDIAN;
+    }
+}
+
+#[must_use]
+pub fn dcerpc_get_cr(pdu: &DceRpcPdu) -> bool {
+    pdu.is_conformance_run
 }
 
 pub fn dcerpc_do_coder(
@@ -320,6 +406,39 @@ pub fn dcerpc_uint8_coder(
         *value = iov.data[usize::try_from(*offset - 1).map_err(|_| DceRpcError {
             code: ERROR_INVALID_ARGUMENT,
         })?];
+    }
+    Ok(())
+}
+
+pub fn dcerpc_set_uint8(iov: &mut Smb2Iovec, offset: &mut i32, value: u8) -> Result<()> {
+    let start = usize::try_from(*offset).map_err(|_| DceRpcError {
+        code: ERROR_INVALID_ARGUMENT,
+    })?;
+    let end = start.checked_add(1).ok_or(DceRpcError {
+        code: ERROR_INVALID_ARGUMENT,
+    })?;
+    if end > iov.data.len() {
+        return Err(DceRpcError { code: -1 });
+    }
+    iov.data[start] = value;
+    *offset = i32::try_from(end).map_err(|_| DceRpcError {
+        code: ERROR_INVALID_ARGUMENT,
+    })?;
+    Ok(())
+}
+
+pub fn dcerpc_uint64_coder(
+    _dce: &mut DceRpcContext,
+    pdu: &mut DceRpcPdu,
+    iov: &mut Smb2Iovec,
+    offset: &mut i32,
+    value: &mut u64,
+) -> Result<()> {
+    align_offset(offset, 8)?;
+    let mut bytes = value.to_le_bytes();
+    code_bytes(pdu, iov, offset, &mut bytes)?;
+    if pdu.direction == DCERPC_DECODE {
+        *value = u64::from_le_bytes(bytes);
     }
     Ok(())
 }
@@ -573,14 +692,20 @@ fn code_utf16(
             } else {
                 value.utf16.len()
             };
-            value.utf8 = Some(String::from_utf16(&value.utf16[..slice_len]).map_err(|_| {
-                DceRpcError {
-                    code: ERROR_INVALID_ARGUMENT,
-                }
-            })?);
+            value.utf8 =
+                Some(
+                    String::from_utf16(&value.utf16[..slice_len]).map_err(|_| DceRpcError {
+                        code: ERROR_INVALID_ARGUMENT,
+                    })?,
+                );
         }
         _ => {
-            value.utf16 = value.utf8.as_deref().unwrap_or_default().encode_utf16().collect();
+            value.utf16 = value
+                .utf8
+                .as_deref()
+                .unwrap_or_default()
+                .encode_utf16()
+                .collect();
             let actual = value.utf16.len() + usize::from(nul_terminated);
             value.actual_count = u32::try_from(actual).map_err(|_| DceRpcError {
                 code: ERROR_INVALID_ARGUMENT,

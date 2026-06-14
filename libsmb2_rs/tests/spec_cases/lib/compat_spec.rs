@@ -27,7 +27,10 @@ fn test_compat_non_iop_seed_delegates_to_platform() {
 // - **THEN** 实现 MUST 返回当前平台 `getpid_num()` 展开的值
 #[test]
 fn test_compat_caller_requests_compatibility_process_id() {
-    assert_eq!(compat::GETPID_COMPAT_TARGETS.windows_target, "GetCurrentProcessId");
+    assert_eq!(
+        compat::GETPID_COMPAT_TARGETS.windows_target,
+        "GetCurrentProcessId"
+    );
     assert_eq!(compat::GETPID_COMPAT_TARGETS.xbox_value, 0);
     assert_eq!(compat::GETPID_COMPAT_TARGETS.ps2_iop_value, 27);
 }
@@ -73,6 +76,35 @@ fn test_compat_caller_frees_compatibility_addrinfo() {
     assert_eq!(snapshot.family, compat::AF_INET_FAMILY);
     assert!(snapshot.addr_len > 0);
     assert!(snapshot.next_is_null);
+}
+
+// Trace: `lib/compat.c:331`
+// Spec: random returns platform random values#PS2 IOP random advances local state
+// - **GIVEN** 编译目标定义 `_IOP`
+// - **WHEN** 调用 `random()`
+// - **THEN** 实现 MUST 更新静态 `next` 状态并返回 `(unsigned int)(next/65536) % 32768`
+#[test]
+fn test_compat_ps2_iop_random_advances_local_state() {
+    assert_eq!(compat::ps2_iop_random_after_seed(1), 16_838);
+    assert_eq!(compat::PS2_IOP_RANDOM_DIVISOR, 65_536);
+    assert_eq!(compat::PS2_IOP_RANDOM_MODULUS, 32_768);
+}
+
+// Trace: `lib/compat.c:347`
+// Spec: srandom seeds platform random state#PS2 IOP seed updates local state
+// - **GIVEN** 编译目标定义 `_IOP`
+// - **WHEN** 调用 `srandom(seed)`
+// - **THEN** 实现 MUST 将静态 `next` 状态设置为 `seed`
+#[test]
+fn test_compat_ps2_iop_seed_updates_local_state() {
+    let seeded_once = compat::ps2_iop_random_after_seed(7);
+    let expected = (7_u32
+        .wrapping_mul(compat::PS2_IOP_RANDOM_MULTIPLIER)
+        .wrapping_add(compat::PS2_IOP_RANDOM_INCREMENT)
+        / compat::PS2_IOP_RANDOM_DIVISOR)
+        % compat::PS2_IOP_RANDOM_MODULUS;
+
+    assert_eq!(seeded_once, expected);
 }
 
 // Trace: `lib/compat.c:371`

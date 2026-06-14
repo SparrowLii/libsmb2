@@ -25,8 +25,16 @@ typedef struct libsmb2_private_ffi_context_layout_t {
     size_t serverin_key_len;
     size_t serverout_key_len;
     size_t salt_len;
+    size_t has_connecting_fds;
+    size_t has_addrinfos;
+    size_t has_security_mode;
     size_t has_connect_cb_data;
+    size_t has_tree_id_cur;
+    size_t has_outqueue;
+    size_t has_waitqueue;
     size_t has_io_vectors;
+    size_t has_recv_state;
+    size_t has_error_string;
     size_t has_owning_server;
 } libsmb2_private_ffi_context_layout_t;
 

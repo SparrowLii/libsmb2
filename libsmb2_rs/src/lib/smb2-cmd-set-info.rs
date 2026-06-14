@@ -47,6 +47,8 @@ pub enum SetInfoError {
     LengthOverflow,
     /// A typed SET_INFO buffer is malformed for its class.
     MalformedPayload,
+    /// A SET_INFO variable buffer requires passthrough mode to be exposed safely.
+    PassthroughRequired,
     /// File information typed payload codec failed.
     FileInfo(FileInfoError),
 }
@@ -64,6 +66,9 @@ impl core::fmt::Display for SetInfoError {
             Self::InvalidStructureSize => f.write_str("unexpected SET_INFO structure size"),
             Self::LengthOverflow => f.write_str("SET_INFO offset or length calculation overflowed"),
             Self::MalformedPayload => f.write_str("SET_INFO typed payload is malformed"),
+            Self::PassthroughRequired => {
+                f.write_str("SET_INFO variable buffer requires passthrough")
+            }
             Self::FileInfo(error) => write!(f, "SET_INFO file information payload error: {error}"),
         }
     }
@@ -320,6 +325,9 @@ pub fn smb2_encode_set_info_request(
     req: &SetInfoRequest,
     passthrough: bool,
 ) -> SetInfoResult<Vec<u8>> {
+    if !passthrough && recognized_payload_kind(req.info_type, req.file_info_class).is_none() {
+        return Err(SetInfoError::MalformedPayload);
+    }
     let variable_len = if passthrough {
         usize::try_from(req.buffer_length).map_err(|_| SetInfoError::LengthOverflow)?
     } else {
@@ -448,6 +456,9 @@ pub fn smb2_process_set_info_request_variable(
     let offset = request_iov_offset(req.buffer_offset)?;
     let len = usize::try_from(req.buffer_length).map_err(|_| SetInfoError::LengthOverflow)?;
     let bytes = slice_at(variable, offset, len)?;
+    if !passthrough {
+        return Err(SetInfoError::PassthroughRequired);
+    }
     req.input_data = if passthrough {
         SetInfoPayload::Raw(bytes.to_vec())
     } else {

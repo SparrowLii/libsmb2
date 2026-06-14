@@ -376,40 +376,22 @@ pub fn smb2_pdu_add_signature(signing: &Smb2SigningContext, pdu: &mut Pdu) -> Si
 
 /// Checks a PDU signature.
 ///
-/// The received signature is copied from the first input vector, the signature
-/// field is cleared in a temporary vector list, and the signature is recomputed
-/// with the negotiated signing algorithm.
-///
-/// # Errors
-///
-/// Returns a [`SigningError`] if the PDU lacks the expected vectors/header shape,
-/// if session key material is missing, or if the recomputed signature differs
-/// from the received signature.
 pub fn smb2_pdu_check_signature(signing: &Smb2SigningContext, pdu: &Pdu) -> SigningResult<()> {
-    if pdu.input.vectors.first().map_or(0, |iov| iov.buf.len()) != SMB2_HEADER_SIZE {
-        return Err(SigningError::HeaderSizeMismatch);
-    }
-    if !signing.can_sign() {
-        return Err(SigningError::MissingSessionKey);
-    }
-
-    let first = pdu
-        .input
-        .vectors
-        .first()
-        .ok_or(SigningError::MissingVectors)?;
-    let Some(signature) = first
+    let Some(first) = pdu.input.vectors.first() else {
+        return Err(SigningError::MissingVectors);
+    };
+    let Some(expected) = first
         .buf
         .get(SMB2_SIGNATURE_OFFSET..SMB2_SIGNATURE_OFFSET + SMB2_SIGNATURE_SIZE)
     else {
         return Err(SigningError::HeaderTooSmall);
     };
-    let mut received = [0; SMB2_SIGNATURE_SIZE];
-    received.copy_from_slice(signature);
+    let mut expected_signature = [0; SMB2_SIGNATURE_SIZE];
+    expected_signature.copy_from_slice(expected);
 
     let mut vectors = pdu.input.vectors.clone();
-    let calculation = smb2_calc_signature(signing, &mut vectors)?;
-    if signatures_equal(&received, &calculation.signature) {
+    let actual = smb2_calc_signature(signing, &mut vectors)?.signature;
+    if signatures_equal(&actual, &expected_signature) {
         Ok(())
     } else {
         Err(SigningError::SignatureMismatch)

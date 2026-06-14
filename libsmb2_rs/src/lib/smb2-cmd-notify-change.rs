@@ -56,6 +56,8 @@ pub enum ChangeNotifyError {
     MalformedNotifyRecord,
     /// A length field does not fit in the destination integer type.
     LengthOverflow,
+    /// Non-passthrough reply packing is not implemented by the legacy encoder.
+    NonPassthroughOutputUnsupported,
 }
 
 impl core::fmt::Display for ChangeNotifyError {
@@ -67,6 +69,9 @@ impl core::fmt::Display for ChangeNotifyError {
             Self::InvalidStructureSize => "unexpected CHANGE_NOTIFY structure size",
             Self::MalformedNotifyRecord => "CHANGE_NOTIFY record is malformed",
             Self::LengthOverflow => "CHANGE_NOTIFY length does not fit in the wire field",
+            Self::NonPassthroughOutputUnsupported => {
+                "change-notify buffer packing is not implemented"
+            }
         };
         f.write_str(message)
     }
@@ -219,8 +224,24 @@ pub fn smb2_cmd_change_notify_async(
 ///
 /// Returns an error if output buffer lengths cannot fit in SMB2 fields.
 pub fn smb2_encode_change_notify_reply(rep: &ChangeNotifyReply) -> ChangeNotifyResult<Vec<u8>> {
+    smb2_encode_change_notify_reply_with_passthrough(rep, true)
+}
+
+/// Encodes a CHANGE_NOTIFY reply while selecting the legacy passthrough branch.
+///
+/// # Errors
+///
+/// Returns [`ChangeNotifyError::NonPassthroughOutputUnsupported`] when output is present and
+/// passthrough mode is disabled, matching the C encoder's not-implemented branch.
+pub fn smb2_encode_change_notify_reply_with_passthrough(
+    rep: &ChangeNotifyReply,
+    passthrough: bool,
+) -> ChangeNotifyResult<Vec<u8>> {
     let output_len =
         usize::try_from(rep.output_buffer_length).map_err(|_| ChangeNotifyError::LengthOverflow)?;
+    if output_len > 0 && !passthrough {
+        return Err(ChangeNotifyError::NonPassthroughOutputUnsupported);
+    }
     let fixed_len = ChangeNotifyReply::fixed_wire_len();
     let mut buf = vec![0; fixed_len + pad_to_32bit(output_len)];
     write_u16(&mut buf, 0, SMB2_CHANGE_NOTIFY_REPLY_SIZE as u16)?;
@@ -240,9 +261,21 @@ pub fn smb2_encode_change_notify_reply(rep: &ChangeNotifyReply) -> ChangeNotifyR
 pub fn smb2_cmd_change_notify_reply_async(
     rep: &ChangeNotifyReply,
 ) -> ChangeNotifyResult<ChangeNotifyPduSkeleton> {
+    smb2_cmd_change_notify_reply_async_with_passthrough(rep, true)
+}
+
+/// Builds a CHANGE_NOTIFY reply PDU skeleton with explicit passthrough selection.
+///
+/// # Errors
+///
+/// Returns an error if reply encoding fails or non-passthrough output is requested.
+pub fn smb2_cmd_change_notify_reply_async_with_passthrough(
+    rep: &ChangeNotifyReply,
+    passthrough: bool,
+) -> ChangeNotifyResult<ChangeNotifyPduSkeleton> {
     Ok(ChangeNotifyPduSkeleton {
         command: SMB2_CHANGE_NOTIFY_COMMAND,
-        payload: smb2_encode_change_notify_reply(rep)?,
+        payload: smb2_encode_change_notify_reply_with_passthrough(rep, passthrough)?,
     })
 }
 

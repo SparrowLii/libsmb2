@@ -11,6 +11,22 @@ mod ffi {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AesBlock(pub [u8; 16]);
 
+pub fn default_cbc_value() -> i32 {
+    unsafe { ffi::aes_reference_ffi_default_cbc_value() }
+}
+
+pub fn default_cbc_declarations_enabled() -> bool {
+    unsafe { ffi::aes_reference_ffi_default_cbc_declarations_enabled() != 0 }
+}
+
+pub fn external_ecb_value_when_disabled() -> i32 {
+    unsafe { ffi::aes_reference_ffi_external_ecb_value() }
+}
+
+pub fn external_ecb_declarations_enabled_when_disabled() -> bool {
+    unsafe { ffi::aes_reference_ffi_external_ecb_declarations_enabled() != 0 }
+}
+
 pub fn ecb_encrypt_block(input: AesBlock, key: AesBlock) -> AesBlock {
     let mut input = input.0;
     let key = key.0;

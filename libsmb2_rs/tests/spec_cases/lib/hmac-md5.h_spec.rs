@@ -41,3 +41,26 @@ fn test_hmac_md5_h_key_length_exceeds_block_size() {
         ]
     );
 }
+
+// Trace: `lib/hmac-md5.h:UWORD32`
+// Spec: UWORD32 exposes a guarded 32-bit compatibility alias#compatible platform without existing alias
+// - **GIVEN** 编译环境未定义 `__PS2__`、未定义 `PICO_PLATFORM` 且未定义 `UWORD32_DEFINED`
+// - **WHEN** 调用方包含 `lib/hmac-md5.h`
+// - **THEN** 头文件声明 `typedef uint32_t UWORD32;` 并定义 `UWORD32_DEFINED` 以避免重复 typedef
+#[test]
+fn test_hmac_md5_h_compatible_platform_without_existing_alias() {
+    assert!(hmac_md5::HMAC_MD5_UWORD32_DEFINED);
+    assert_eq!(hmac_md5::HMAC_MD5_UWORD32_BITS, 32);
+}
+
+// Trace: `lib/hmac-md5.h:WORDS_BIGENDIAN`
+// Spec: WORDS_BIGENDIAN exposes big-endian compile context#big-endian or Xbox 360 platform
+// - **GIVEN** 编译环境满足 `__BYTE_ORDER == __BIG_ENDIAN` 或已定义 `XBOX_360_PLATFORM`
+// - **WHEN** 调用方包含 `lib/hmac-md5.h`
+// - **THEN** 头文件提供值为 `1` 的 `WORDS_BIGENDIAN` 宏供后续 MD5 兼容代码使用
+#[test]
+fn test_hmac_md5_h_big_endian_or_xbox_360_platform() {
+    assert!(hmac_md5::hmac_md5_words_bigendian_defined(true, false));
+    assert!(hmac_md5::hmac_md5_words_bigendian_defined(false, true));
+    assert_eq!(hmac_md5::HMAC_MD5_WORDS_BIGENDIAN_VALUE, 1);
+}

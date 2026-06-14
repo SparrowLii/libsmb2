@@ -24,14 +24,28 @@
 #define NEED_POLL
 #define NEED_STRDUP
 
+static int compat_ffi_force_malloc_failure;
+
+static void *compat_ffi_malloc_maybe_fail(size_t size)
+{
+        if (compat_ffi_force_malloc_failure) {
+                errno = ENOMEM;
+                return NULL;
+        }
+        return malloc(size);
+}
+
 #define smb2_getaddrinfo compat_ffi_smb2_getaddrinfo
 #define smb2_freeaddrinfo compat_ffi_smb2_freeaddrinfo
 #define writev compat_ffi_writev
 #define readv compat_ffi_readv
 #define poll compat_ffi_poll
 #define strdup compat_ffi_strdup
+#define malloc compat_ffi_malloc_maybe_fail
 
 #include "../../../lib/compat.c"
+
+#undef malloc
 
 int compat_ffi_resolve_ipv4(const char *node, const char *service,
                             struct compat_ffi_addrinfo_snapshot *snapshot)
@@ -200,6 +214,54 @@ int compat_ffi_readv_overflow_sets_einval(void)
 
         errno = 0;
         return compat_ffi_readv(-1, iov, 2) == -1 && errno == EINVAL;
+}
+
+int compat_ffi_writev_allocation_failure_returns_minus_one(void)
+{
+        struct iovec iov[1];
+        const char byte = 'x';
+
+        iov[0].iov_base = (void *)&byte;
+        iov[0].iov_len = 1;
+
+        errno = 0;
+        compat_ffi_force_malloc_failure = 1;
+        int ok = compat_ffi_writev(-1, iov, 1) == -1 && errno == ENOMEM;
+        compat_ffi_force_malloc_failure = 0;
+        return ok;
+}
+
+int compat_ffi_readv_allocation_failure_returns_minus_one(void)
+{
+        int fds[2];
+        struct iovec iov[1];
+        char byte = 0;
+        int ok;
+
+        iov[0].iov_base = &byte;
+        iov[0].iov_len = 1;
+
+        if (pipe(fds) != 0) {
+                return 0;
+        }
+        close(fds[1]);
+
+        errno = 0;
+        compat_ffi_force_malloc_failure = 1;
+        ok = compat_ffi_readv(fds[0], iov, 1) == -1 && errno == ENOMEM;
+        compat_ffi_force_malloc_failure = 0;
+        close(fds[0]);
+        return ok;
+}
+
+int compat_ffi_strdup_allocation_failure_returns_null(void)
+{
+        errno = 0;
+        compat_ffi_force_malloc_failure = 1;
+        char *copy = compat_ffi_strdup("x");
+        int ok = copy == NULL && errno == ENOMEM;
+        compat_ffi_force_malloc_failure = 0;
+        return ok;
 }
 
 int compat_ffi_poll_readable_pipe(struct compat_ffi_poll_snapshot *snapshot)

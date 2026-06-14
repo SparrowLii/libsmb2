@@ -40,8 +40,16 @@ libsmb2_private_ffi_context_layout_t libsmb2_private_ffi_context_layout(void) {
         sizeof(ctx.serverin_key),
         sizeof(ctx.serverout_key),
         sizeof(ctx.salt),
+        sizeof(ctx.connecting_fds) > 0,
+        sizeof(ctx.addrinfos) > 0,
+        sizeof(ctx.security_mode) > 0,
         sizeof(ctx.connect_cb_data) > 0,
+        sizeof(ctx.tree_id_cur) > 0,
+        sizeof(ctx.outqueue) > 0,
+        sizeof(ctx.waitqueue) > 0,
         sizeof(ctx.in) > 0,
+        sizeof(ctx.recv_state) > 0,
+        sizeof(ctx.error_string) > 0,
         sizeof(ctx.owning_server) > 0,
     };
 }

@@ -427,7 +427,9 @@ fn prepare_context(dce: &mut DceRpcContext, path: &str, syntax: PSyntaxId) {
 }
 
 fn apply_bind_response(dce: &mut DceRpcContext, bytes: &[u8]) -> Result<()> {
-    let pdu = lib_dcerpc::DceRpcPdu::from_bytes(bytes).map_err(map_dcerpc_error)?;
+    let pdu = lib_dcerpc::DceRpcPdu::from_bytes(bytes)
+        .or_else(|_| decode_bind_ack_without_secondary_alignment(bytes))
+        .map_err(map_dcerpc_error)?;
     let lib_dcerpc::DceRpcPduBody::BindAck(ack) = pdu.body else {
         return Err(ErrorCode(ERROR_INVALID_ARGUMENT));
     };
@@ -440,6 +442,99 @@ fn apply_bind_response(dce: &mut DceRpcContext, bytes: &[u8]) -> Result<()> {
         .set_tctx(u8::try_from(accepted).map_err(|_| ErrorCode(ERROR_INVALID_ARGUMENT))?);
     dce.state = DceRpcTransportState::Bound;
     Ok(())
+}
+
+fn decode_bind_ack_without_secondary_alignment(
+    bytes: &[u8],
+) -> lib_dcerpc::DceRpcResult<lib_dcerpc::DceRpcPdu> {
+    let header = lib_dcerpc::DceRpcHeader::from_bytes(bytes)?;
+    if header.ptype != lib_dcerpc::PduType::BindAck {
+        return Err(lib_dcerpc::DceRpcError::InvalidPduType {
+            ptype: header.ptype as u8,
+        });
+    }
+    let body_start = lib_dcerpc::DceRpcHeader::ENCODED_LEN;
+    if bytes.len() < body_start + 10 {
+        return Err(lib_dcerpc::DceRpcError::BufferTooSmall {
+            needed: body_start + 10,
+            available: bytes.len(),
+        });
+    }
+    let body = &bytes[body_start..];
+    let max_xmit_frag = u16::from_le_bytes([body[0], body[1]]);
+    let max_recv_frag = u16::from_le_bytes([body[2], body[3]]);
+    let assoc_group_id = u32::from_le_bytes([body[4], body[5], body[6], body[7]]);
+    let secondary_address_len = usize::from(u16::from_le_bytes([body[8], body[9]]));
+    let mut offset = 10 + secondary_address_len;
+    offset = offset.next_multiple_of(4);
+    if body.len() < offset + 4 {
+        return Err(lib_dcerpc::DceRpcError::BufferTooSmall {
+            needed: body_start + offset + 4,
+            available: bytes.len(),
+        });
+    }
+    let mut result_offset = None;
+    for candidate in offset..offset.saturating_add(4) {
+        if body.len() < candidate + 4 {
+            continue;
+        }
+        let n_results = usize::from(body[candidate]);
+        if n_results != 0 && body.len() >= candidate + 4 + n_results.saturating_mul(24) {
+            result_offset = Some((candidate + 4, n_results));
+            break;
+        }
+    }
+    let Some((mut offset, n_results)) = result_offset else {
+        return Err(lib_dcerpc::DceRpcError::BufferTooSmall {
+            needed: body_start + offset + 4,
+            available: bytes.len(),
+        });
+    };
+    let mut results = Vec::with_capacity(n_results);
+    for _ in 0..n_results {
+        if body.len() < offset + 24 {
+            return Err(lib_dcerpc::DceRpcError::BufferTooSmall {
+                needed: body_start + offset + 24,
+                available: bytes.len(),
+            });
+        }
+        results.push(lib_dcerpc::DceRpcBindContextResult {
+            ack_result: u16::from_le_bytes([body[offset], body[offset + 1]]),
+            ack_reason: u16::from_le_bytes([body[offset + 2], body[offset + 3]]),
+            uuid: lib_dcerpc::DceRpcUuid {
+                v1: u32::from_le_bytes([
+                    body[offset + 4],
+                    body[offset + 5],
+                    body[offset + 6],
+                    body[offset + 7],
+                ]),
+                v2: u16::from_le_bytes([body[offset + 8], body[offset + 9]]),
+                v3: u16::from_le_bytes([body[offset + 10], body[offset + 11]]),
+                v4: body[offset + 12..offset + 20].try_into().map_err(|_| {
+                    lib_dcerpc::DceRpcError::BufferTooSmall {
+                        needed: body_start + offset + 20,
+                        available: bytes.len(),
+                    }
+                })?,
+            },
+            syntax_version: u32::from_le_bytes([
+                body[offset + 20],
+                body[offset + 21],
+                body[offset + 22],
+                body[offset + 23],
+            ]),
+        });
+        offset += 24;
+    }
+    let mut pdu = lib_dcerpc::DceRpcPdu::new(header.call_id, lib_dcerpc::Direction::Response, 0);
+    pdu.hdr = header;
+    pdu.body = lib_dcerpc::DceRpcPduBody::BindAck(lib_dcerpc::DceRpcBindAckPdu {
+        max_xmit_frag,
+        max_recv_frag,
+        assoc_group_id,
+        results,
+    });
+    Ok(pdu)
 }
 
 fn response_payload(bytes: &[u8]) -> Result<DceRpcPayload> {

@@ -26,6 +26,36 @@ fn test_unicode_supplementary_plane_conversion() {
     );
 }
 
+// Trace: `lib/unicode.c:smb2_utf8_to_utf16`, `lib/unicode.c:validate_utf8_cp`
+// Spec: smb2_utf8_to_utf16 valid UTF-8 conversion#Invalid UTF-8 rejection
+// - **GIVEN** 输入包含 continuation byte 作为起始字节、缺失 continuation byte、overlong sequence、surrogate range codepoint 或大于等于 `0x110000` 的 codepoint
+// - **WHEN** 调用 `smb2_utf8_to_utf16(const char *utf8)`
+// - **THEN** 函数 MUST 返回 `NULL`，且不会返回部分转换结果给调用方
+#[test]
+fn test_unicode_invalid_utf_8_rejection() {
+    assert_eq!(unicode::utf8_bytes_to_utf16_units(&[0x80]), None);
+    assert_eq!(unicode::utf8_bytes_to_utf16_units(&[0xc2]), None);
+    assert_eq!(unicode::utf8_bytes_to_utf16_units(&[0xc0, 0x80]), None);
+    assert_eq!(
+        unicode::utf8_bytes_to_utf16_units(&[0xed, 0xa0, 0x80]),
+        None
+    );
+    assert_eq!(
+        unicode::utf8_bytes_to_utf16_units(&[0xf4, 0x90, 0x80, 0x80]),
+        None
+    );
+}
+
+// Trace: `lib/unicode.c:smb2_utf8_to_utf16`, `include/smb2/libsmb2.h:smb2_utf8_to_utf16`
+// Spec: smb2_utf8_to_utf16 valid UTF-8 conversion#Allocation failure
+// - **GIVEN** UTF-8 输入校验成功但分配 `struct smb2_utf16` 结果缓冲区失败
+// - **WHEN** 调用 `smb2_utf8_to_utf16(const char *utf8)`
+// - **THEN** 函数 MUST 返回 `NULL`
+#[test]
+fn test_unicode_utf8_allocation_failure() {
+    assert!(unicode::utf8_to_utf16_allocation_failure_returns_none());
+}
+
 // Trace: `lib/unicode.c:smb2_utf16_to_utf8`, `include/smb2/libsmb2.h:smb2_utf16_to_utf8`
 // Spec: smb2_utf16_to_utf8 UTF-16LE conversion#BMP conversion
 // - **GIVEN** 调用方提供 `utf16_len` 个 little-endian UTF-16 code units，且每个 code unit 位于 ASCII、二字节 UTF-8 或三字节 UTF-8 可表示的 BMP 范围
@@ -67,4 +97,14 @@ fn test_unicode_invalid_surrogate_replacement() {
         unicode::utf16_units_to_utf8(&[0xde00]),
         Some(String::from("�"))
     );
+}
+
+// Trace: `lib/unicode.c:smb2_utf16_to_utf8`, `include/smb2/libsmb2.h:smb2_utf16_to_utf8`
+// Spec: smb2_utf16_to_utf8 UTF-16LE conversion#Allocation failure
+// - **GIVEN** UTF-16LE 输入长度完成输出大小计算但分配 UTF-8 字符串失败
+// - **WHEN** 调用 `smb2_utf16_to_utf8(const uint16_t *str, size_t len)`
+// - **THEN** 函数 MUST 返回 `NULL`
+#[test]
+fn test_unicode_utf16_allocation_failure() {
+    assert!(unicode::utf16_to_utf8_allocation_failure_returns_none());
 }

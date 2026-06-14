@@ -18,6 +18,16 @@ pub const GSS_REPLAY_FLAG: u32 = 1 << 2;
 pub const DEFAULT_SESSION_REQUEST_FLAGS: u32 =
     GSS_SEQUENCE_FLAG | GSS_MUTUAL_FLAG | GSS_REPLAY_FLAG;
 
+/// Non-Apple SPNEGO mechanism OID bytes from `lib/krb5-wrapper.h`.
+pub const GSS_MECH_SPNEGO_OID: &[u8] = &[0x2b, 0x06, 0x01, 0x05, 0x05, 0x02];
+
+/// Kerberos mechanism OID bytes used inside SPNEGO negotiation.
+pub const SPNEGO_MECH_KRB5_OID: &[u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x12, 0x01, 0x02, 0x02];
+
+/// NTLMSSP mechanism OID bytes used for SPNEGO capability checks.
+pub const SPNEGO_MECH_NTLMSSP_OID: &[u8] =
+    &[0x2b, 0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x02, 0x02, 0x0a];
+
 /// Result type used by Kerberos wrapper APIs.
 pub type Krb5Result<T> = core::result::Result<T, Krb5Error>;
 
@@ -676,6 +686,11 @@ impl PrivateAuthData {
         self.session_key = session_key;
     }
 
+    /// Replaces the stored output token for safe accessor tests and future GSS plumbing.
+    pub fn set_output_token(&mut self, output_token: Vec<u8>) {
+        self.output_token.replace(output_token);
+    }
+
     /// Renews server credentials matching `krb5_renew_server_credentials`.
     ///
     /// # Errors
@@ -742,6 +757,30 @@ impl PrivateAuthData {
     #[must_use]
     pub const fn get_proxy_cred(&self) -> bool {
         self.get_proxy_cred
+    }
+
+    /// Returns whether any credential marker is currently stored.
+    #[must_use]
+    pub fn has_credential(&self) -> bool {
+        self.credential.is_some()
+    }
+
+    /// Returns whether a delegated credential marker is currently stored.
+    #[must_use]
+    pub fn has_delegated_credential(&self) -> bool {
+        self.delegated_credential.is_some()
+    }
+
+    /// Returns whether a keytab path is currently stored.
+    #[must_use]
+    pub fn has_keytab_path(&self) -> bool {
+        self.keytab_path.is_some()
+    }
+
+    /// Returns whether a credential cache name is currently stored.
+    #[must_use]
+    pub fn has_ccache_name(&self) -> bool {
+        self.ccache_name.is_some()
     }
 }
 

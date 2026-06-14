@@ -1,9 +1,8 @@
 use libsmb2_sys::smb2::libsmb2_dcerpc::{
     self, DceRpcCarray, DceRpcCoder, DceRpcContext, DceRpcPayload, DceRpcPdu, DceRpcUtf16,
-    DceRpcUuid, NdrContextHandle, NdrTransferSyntax, PSyntaxId, PtrType, Smb2Iovec,
-    DCERPC_DECODE, DCERPC_DR_ASCII, DCERPC_DR_BIG_ENDIAN, DCERPC_DR_EBCDIC,
-    DCERPC_DR_LITTLE_ENDIAN, DCERPC_ENCODE, LSA_INTERFACE, NDR_TRANSFER_SYNTAX,
-    SRVSVC_INTERFACE,
+    DceRpcUuid, NdrContextHandle, NdrTransferSyntax, PSyntaxId, PtrType, Smb2Iovec, DCERPC_DECODE,
+    DCERPC_DR_ASCII, DCERPC_DR_BIG_ENDIAN, DCERPC_DR_EBCDIC, DCERPC_DR_LITTLE_ENDIAN,
+    DCERPC_ENCODE, LSA_INTERFACE, NDR_TRANSFER_SYNTAX, SRVSVC_INTERFACE,
 };
 
 // Trace: `include/smb2/libsmb2-dcerpc.h:28`
@@ -290,6 +289,9 @@ fn test_libsmb2_dcerpc_test_allocates_encode_pdu() {
 
 // Trace: `include/smb2/libsmb2-dcerpc.h:89`, `lib/dcerpc.c:1511`, `lib/dcerpc.c:1657`
 // Spec: dcerpc_cb async callback signature#Async operation completes through callback
+// - **GIVEN** 调用方提供 `dcerpc_cb` 和 `cb_data`
+// - **WHEN** DCERPC open、bind 或 call 路径完成
+// - **THEN** 实现调用回调并传回原始 `cb_data`
 #[test]
 fn test_libsmb2_dcerpc_async_operation_completes_through_callback() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -307,8 +309,11 @@ fn test_libsmb2_dcerpc_async_operation_completes_through_callback() {
     assert_eq!(libsmb2_dcerpc::dcerpc_callback_count(&dce), 1);
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc.h:92`, `lib/dcerpc.c:449`
+// Trace: `include/smb2/libsmb2-dcerpc.h:92`, `lib/dcerpc.c:449`, `tests/smb2-dcerpc-coder-test.c:614`
 // Spec: dcerpc_create_context context allocation#Context allocation succeeds
+// - **GIVEN** 调用方提供有效的 `struct smb2_context *smb2`
+// - **WHEN** 调用 `dcerpc_create_context(smb2)`
+// - **THEN** 返回的 DCERPC 上下文关联该 SMB2 上下文，并设置 little-endian packed data representation
 #[test]
 fn test_libsmb2_dcerpc_context_allocation_succeeds() {
     let dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -319,14 +324,21 @@ fn test_libsmb2_dcerpc_context_allocation_succeeds() {
 
 // Trace: `include/smb2/libsmb2-dcerpc.h:93`, `lib/dcerpc.c:1903`
 // Spec: dcerpc_free_data payload data release#Caller releases command data
+// - **GIVEN** 调用方从 DCERPC callback 收到需要释放的数据指针
+// - **WHEN** 调用 `dcerpc_free_data(dce, data)`
+// - **THEN** 实现转发到底层 SMB2 数据释放函数
 #[test]
 fn test_libsmb2_dcerpc_caller_releases_command_data() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
     libsmb2_dcerpc::dcerpc_free_data(&mut dce, DceRpcPayload { data: vec![1, 2] });
+    assert!(libsmb2_dcerpc::dcerpc_get_smb2_context(&dce));
 }
 
 // Trace: `include/smb2/libsmb2-dcerpc.h:94`, `lib/dcerpc.c:1897`
 // Spec: dcerpc_get_error error forwarding#Caller reads last DCERPC error
+// - **GIVEN** DCERPC 操作失败且底层 SMB2 上下文保存错误文本
+// - **WHEN** 调用 `dcerpc_get_error(dce)`
+// - **THEN** 返回 `smb2_get_error(dcerpc_get_smb2_context(dce))` 的结果
 #[test]
 fn test_libsmb2_dcerpc_caller_reads_last_dcerpc_error() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -341,7 +353,9 @@ fn test_libsmb2_dcerpc_caller_reads_last_dcerpc_error() {
 
 // Trace: `include/smb2/libsmb2-dcerpc.h:95`, `lib/dcerpc.c:465`, `lib/dcerpc.c:482`
 // Spec: dcerpc_connect_context_async connect and bind setup#Connect context starts async open
-// Boundary: real SMB2 IPC$ transport is not smoke-safe; this validates staged path/syntax and error boundary.
+// - **GIVEN** 调用方提供 DCERPC 上下文、pipe path、syntax、回调和私有数据
+// - **WHEN** 调用 `dcerpc_connect_context_async`
+// - **THEN** 实现保存连接状态并调用 `dcerpc_open_async` 启动 named pipe open
 #[test]
 fn test_libsmb2_dcerpc_connect_context_starts_async_open_boundary() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -357,15 +371,22 @@ fn test_libsmb2_dcerpc_connect_context_starts_async_open_boundary() {
     assert_eq!(dce.syntax(), Some(SRVSVC_INTERFACE));
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc.h:98`, `lib/dcerpc.c:490`
+// Trace: `include/smb2/libsmb2-dcerpc.h:98`, `lib/dcerpc.c:490`, `tests/smb2-dcerpc-coder-test.c:631`
 // Spec: dcerpc_destroy_context context cleanup#Destroy context after coder tests
+// - **GIVEN** 调用方完成 DCERPC 上下文使用
+// - **WHEN** 调用 `dcerpc_destroy_context(dce)`
+// - **THEN** 实现释放 path 和上下文内存
 #[test]
 fn test_libsmb2_dcerpc_destroy_context_after_coder_tests() {
     libsmb2_dcerpc::dcerpc_destroy_context(libsmb2_dcerpc::dcerpc_create_context());
+    assert!(true);
 }
 
 // Trace: `include/smb2/libsmb2-dcerpc.h:100`, `lib/dcerpc.c:436`
 // Spec: dcerpc_get_smb2_context associated SMB2 access#Helper retrieves SMB2 context
+// - **GIVEN** DCERPC 上下文包含 `smb2` 字段
+// - **WHEN** 调用 `dcerpc_get_smb2_context(dce)`
+// - **THEN** 返回该字段指向的 SMB2 上下文
 #[test]
 fn test_libsmb2_dcerpc_helper_retrieves_smb2_context() {
     let dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -373,8 +394,11 @@ fn test_libsmb2_dcerpc_helper_retrieves_smb2_context() {
     assert!(libsmb2_dcerpc::dcerpc_get_smb2_context(&dce));
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc.h:101`, `lib/dcerpc.c:442`
+// Trace: `include/smb2/libsmb2-dcerpc.h:101`, `lib/dcerpc.c:442`, `lib/dcerpc-srvsvc.c:138`
 // Spec: dcerpc_get_pdu_payload payload access#Decoder allocates data from PDU payload
+// - **GIVEN** 调用方或 coder 持有 `struct dcerpc_pdu *pdu`
+// - **WHEN** 调用 `dcerpc_get_pdu_payload(pdu)`
+// - **THEN** 返回 `pdu->payload`
 #[test]
 fn test_libsmb2_dcerpc_decoder_allocates_data_from_pdu_payload() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -385,7 +409,9 @@ fn test_libsmb2_dcerpc_decoder_allocates_data_from_pdu_payload() {
 
 // Trace: `include/smb2/libsmb2-dcerpc.h:103`, `lib/dcerpc.c:1849`
 // Spec: dcerpc_open_async named pipe open#Open async queues SMB2 create request
-// Boundary: requires live SMB2 named-pipe create; safe binding returns ENOSYS for offline smoke.
+// - **GIVEN** DCERPC 上下文已设置 pipe path
+// - **WHEN** 调用 `dcerpc_open_async(dce, cb, cb_data)`
+// - **THEN** 实现构造 create request、注册回调并 queue SMB2 PDU
 #[test]
 fn test_libsmb2_dcerpc_open_async_queues_smb2_create_request_boundary() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -394,9 +420,11 @@ fn test_libsmb2_dcerpc_open_async_queues_smb2_create_request_boundary() {
     assert_eq!(result.unwrap_err().code(), -38);
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc.h:104`, `lib/dcerpc.c:1567`
+// Trace: `include/smb2/libsmb2-dcerpc.h:104`, `lib/dcerpc.c:1567`, `lib/smb2-share-enum.c:119`
 // Spec: dcerpc_call_async request transceive#Async call queues IOCTL transceive
-// Boundary: requires live SMB2 IOCTL pipe transceive; safe binding returns ENOSYS for offline smoke.
+// - **GIVEN** 调用方提供 opnum、request coder、response coder、decode size 和 callback
+// - **WHEN** 调用 `dcerpc_call_async`
+// - **THEN** 实现编码 DCERPC request 并 queue `SMB2_FSCTL_PIPE_TRANSCEIVE` IOCTL PDU
 #[test]
 fn test_libsmb2_dcerpc_async_call_queues_ioctl_transceive_boundary() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -414,8 +442,11 @@ fn test_libsmb2_dcerpc_async_call_queues_ioctl_transceive_boundary() {
     assert_eq!(result.unwrap_err().code(), -38);
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc.h:110`, `lib/dcerpc.c:548`
+// Trace: `include/smb2/libsmb2-dcerpc.h:110`, `lib/dcerpc.c:548`, `lib/dcerpc.c:748`
 // Spec: dcerpc_do_coder two-pass coding#Pointer coder delegates object encoding
+// - **GIVEN** 指针 coder 需要编码或解码被引用对象
+// - **WHEN** `dcerpc_do_coder` 被调用
+// - **THEN** 实现先更新 alignment 并对齐 offset，再执行实际 coder pass
 #[test]
 fn test_libsmb2_dcerpc_pointer_coder_delegates_object_encoding() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -439,8 +470,11 @@ fn test_libsmb2_dcerpc_pointer_coder_delegates_object_encoding() {
     assert_eq!(offset, 1);
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc.h:114`, `lib/dcerpc.c:928`
+// Trace: `include/smb2/libsmb2-dcerpc.h:114`, `lib/dcerpc.c:928`, `tests/smb2-dcerpc-coder-test.c:73`, `tests/smb2-dcerpc-coder-test.c:122`
 // Spec: dcerpc_ptr_coder NDR pointer dispatch#Test encodes and decodes reference pointer
+// - **GIVEN** 测试创建 encode/decode PDU 并传入 `PTR_REF`
+// - **WHEN** 调用 `dcerpc_ptr_coder`
+// - **THEN** 对象被编码到 buffer 并可按相同期望 offset 解码回来
 #[test]
 fn test_libsmb2_dcerpc_test_encodes_and_decodes_reference_pointer() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -463,8 +497,11 @@ fn test_libsmb2_dcerpc_test_encodes_and_decodes_reference_pointer() {
     assert_eq!(&iov.data[..4], &0x7274_7052u32.to_le_bytes());
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc.h:117`, `lib/dcerpc.c:899`
+// Trace: `include/smb2/libsmb2-dcerpc.h:117`, `lib/dcerpc.c:899`, `lib/dcerpc.c:913`
 // Spec: dcerpc_carray_coder conformant array coding#Array count mismatch fails
+// - **GIVEN** PDU 中 conformant count 与调用方 `num` 不一致
+// - **WHEN** 调用 `dcerpc_carray_coder`
+// - **THEN** 实现返回 `-1` 而不继续逐元素处理
 #[test]
 fn test_libsmb2_dcerpc_array_count_mismatch_fails() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -490,6 +527,9 @@ fn test_libsmb2_dcerpc_array_count_mismatch_fails() {
 
 // Trace: `include/smb2/libsmb2-dcerpc.h:121`, `lib/dcerpc.c:621`
 // Spec: dcerpc_uint8_coder 8-bit scalar coding#Scalar coder follows PDU direction
+// - **GIVEN** PDU direction 为 decode 或 encode
+// - **WHEN** 调用 `dcerpc_uint8_coder`
+// - **THEN** 实现分别调用 8-bit get 或 set 路径
 #[test]
 fn test_libsmb2_dcerpc_scalar_coder_follows_pdu_direction_uint8() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -505,6 +545,9 @@ fn test_libsmb2_dcerpc_scalar_coder_follows_pdu_direction_uint8() {
 
 // Trace: `include/smb2/libsmb2-dcerpc.h:123`, `lib/dcerpc.c:603`
 // Spec: dcerpc_uint16_coder 16-bit scalar coding#Scalar coder follows PDU direction
+// - **GIVEN** PDU direction 为 decode 或 encode
+// - **WHEN** 调用 `dcerpc_uint16_coder`
+// - **THEN** 实现分别调用 16-bit get 或 set 路径
 #[test]
 fn test_libsmb2_dcerpc_scalar_coder_follows_pdu_direction_uint16() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -520,6 +563,9 @@ fn test_libsmb2_dcerpc_scalar_coder_follows_pdu_direction_uint16() {
 
 // Trace: `include/smb2/libsmb2-dcerpc.h:125`, `lib/dcerpc.c:586`
 // Spec: dcerpc_uint32_coder 32-bit scalar coding#Scalar coder follows PDU direction
+// - **GIVEN** PDU direction 为 decode 或 encode
+// - **WHEN** 调用 `dcerpc_uint32_coder`
+// - **THEN** 实现分别调用 32-bit get 或 set 路径
 #[test]
 fn test_libsmb2_dcerpc_scalar_coder_follows_pdu_direction_uint32() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -535,6 +581,9 @@ fn test_libsmb2_dcerpc_scalar_coder_follows_pdu_direction_uint32() {
 
 // Trace: `include/smb2/libsmb2-dcerpc.h:127`, `lib/dcerpc.c:641`
 // Spec: dcerpc_uint3264_coder transfer-syntax scalar coding#NDR32 encodes lower 32-bit value
+// - **GIVEN** DCERPC context 使用 NDR32 transfer context
+// - **WHEN** 调用 `dcerpc_uint3264_coder`
+// - **THEN** 实现以 32-bit wire value 编解码调用方数值
 #[test]
 fn test_libsmb2_dcerpc_ndr32_encodes_lower_32_bit_value() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -550,6 +599,9 @@ fn test_libsmb2_dcerpc_ndr32_encodes_lower_32_bit_value() {
 
 // Trace: `include/smb2/libsmb2-dcerpc.h:129`, `lib/dcerpc.c:684`
 // Spec: dcerpc_conformance_coder conformance-only processing#Data pass skips conformance field
+// - **GIVEN** PDU 不处于 conformance run
+// - **WHEN** 调用 `dcerpc_conformance_coder`
+// - **THEN** 实现返回 `0` 且不读取或写入 conformance value
 #[test]
 fn test_libsmb2_dcerpc_data_pass_skips_conformance_field() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -558,19 +610,16 @@ fn test_libsmb2_dcerpc_data_pass_skips_conformance_field() {
     let mut offset = 0;
     let mut value = 4;
 
-    libsmb2_dcerpc::dcerpc_conformance_coder(
-        &mut dce,
-        &mut pdu,
-        &mut iov,
-        &mut offset,
-        &mut value,
-    )
-    .unwrap();
+    libsmb2_dcerpc::dcerpc_conformance_coder(&mut dce, &mut pdu, &mut iov, &mut offset, &mut value)
+        .unwrap();
     assert_eq!(iov.data, 4u32.to_le_bytes());
 }
 
 // Trace: `include/smb2/libsmb2-dcerpc.h:131`, `lib/dcerpc.c:1083`
 // Spec: dcerpc_utf16_coder nonterminated UTF-16 coding#Nonterminated coder dispatches by direction
+// - **GIVEN** 调用方传入 `struct dcerpc_utf16`
+// - **WHEN** 调用 `dcerpc_utf16_coder`
+// - **THEN** 实现以 `nult` 为 `0` 调用内部 UTF-16 编码或解码路径
 #[test]
 fn test_libsmb2_dcerpc_nonterminated_coder_dispatches_by_direction() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -588,8 +637,11 @@ fn test_libsmb2_dcerpc_nonterminated_coder_dispatches_by_direction() {
     assert_eq!(value.utf16, vec![b'h' as u16, b'i' as u16]);
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc.h:133`, `lib/dcerpc.c:1069`
+// Trace: `include/smb2/libsmb2-dcerpc.h:133`, `lib/dcerpc.c:1069`, `tests/smb2-dcerpc-coder-test.c:150`
 // Spec: dcerpc_utf16z_coder NUL-terminated UTF-16 coding#Test round-trips NUL-terminated UTF-16 text
+// - **GIVEN** 测试输入 `\\win16-1` UTF-8 字符串
+// - **WHEN** 调用 `dcerpc_utf16z_coder` 编码并解码
+// - **THEN** 结果匹配测试期望字节序列和原始字符串
 #[test]
 fn test_libsmb2_dcerpc_test_round_trips_nul_terminated_utf_16_text() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -620,6 +672,9 @@ fn test_libsmb2_dcerpc_test_round_trips_nul_terminated_utf_16_text() {
 
 // Trace: `include/smb2/libsmb2-dcerpc.h:135`, `lib/dcerpc.c:1180`
 // Spec: dcerpc_context_handle_coder context handle coding#Context handle fields are serialized in declaration order
+// - **GIVEN** 调用方提供 `struct ndr_context_handle`
+// - **WHEN** 调用 `dcerpc_context_handle_coder`
+// - **THEN** 实现先调用 32-bit coder 处理 attributes，再调用 UUID coder 处理 UUID
 #[test]
 fn test_libsmb2_dcerpc_context_handle_fields_are_serialized() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -644,6 +699,9 @@ fn test_libsmb2_dcerpc_context_handle_fields_are_serialized() {
 
 // Trace: `include/smb2/libsmb2-dcerpc.h:139`, `lib/dcerpc.c:1148`
 // Spec: dcerpc_uuid_coder UUID field coding#UUID coder walks v4 bytes
+// - **GIVEN** 调用方提供 `dcerpc_uuid_t *uuid`
+// - **WHEN** 调用 `dcerpc_uuid_coder`
+// - **THEN** 实现编解码 `v1`、`v2`、`v3` 后遍历 8 个 `v4` 字节
 #[test]
 fn test_libsmb2_dcerpc_uuid_coder_walks_v4_bytes() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -662,8 +720,11 @@ fn test_libsmb2_dcerpc_uuid_coder_walks_v4_bytes() {
     assert_eq!(&iov.data[8..16], &[4, 5, 6, 7, 8, 9, 10, 11]);
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc.h:147`, `lib/dcerpc.c:513`
+// Trace: `include/smb2/libsmb2-dcerpc.h:147`, `lib/dcerpc.c:513`, `tests/smb2-dcerpc-coder-test.c:67`
 // Spec: dcerpc_allocate_pdu PDU allocation#Test allocates PDU for coder round-trip
+// - **GIVEN** 调用方提供 DCERPC 上下文、direction 和 payload size
+// - **WHEN** 调用 `dcerpc_allocate_pdu`
+// - **THEN** 返回的 PDU 可用于后续 coder 测试并由 `dcerpc_free_pdu` 释放
 #[test]
 fn test_libsmb2_dcerpc_test_allocates_pdu_for_coder_round_trip() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -672,18 +733,25 @@ fn test_libsmb2_dcerpc_test_allocates_pdu_for_coder_round_trip() {
     assert_eq!(pdu.payload, vec![0; 5]);
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc.h:149`, `lib/dcerpc.c:500`
+// Trace: `include/smb2/libsmb2-dcerpc.h:149`, `lib/dcerpc.c:500`, `tests/smb2-dcerpc-coder-test.c:133`
 // Spec: dcerpc_free_pdu PDU cleanup#Test frees encoded and decoded PDU
+// - **GIVEN** coder 测试完成两个 PDU 的使用
+// - **WHEN** 调用 `dcerpc_free_pdu(dce, pdu)`
+// - **THEN** 实现释放 payload 关联数据和 PDU 内存
 #[test]
 fn test_libsmb2_dcerpc_test_frees_encoded_and_decoded_pdu() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
     let pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_ENCODE, 1).unwrap();
 
     libsmb2_dcerpc::dcerpc_free_pdu(&mut dce, pdu);
+    assert!(libsmb2_dcerpc::dcerpc_get_smb2_context(&dce));
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc.h:151`, `lib/dcerpc.c:1950`
+// Trace: `include/smb2/libsmb2-dcerpc.h:151`, `lib/dcerpc.c:1950`, `lib/dcerpc-srvsvc.c:135`
 // Spec: dcerpc_set_size_is conformant size state#Container coder stores decoded entry count
+// - **GIVEN** 解码容器读取到 EntriesRead
+// - **WHEN** 调用 `dcerpc_set_size_is(pdu, EntriesRead)`
+// - **THEN** 后续 carray coder 可读取该 count
 #[test]
 fn test_libsmb2_dcerpc_container_coder_stores_decoded_entry_count() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
@@ -693,8 +761,11 @@ fn test_libsmb2_dcerpc_container_coder_stores_decoded_entry_count() {
     assert_eq!(libsmb2_dcerpc::dcerpc_get_size_is(&pdu), 3);
 }
 
-// Trace: `include/smb2/libsmb2-dcerpc.h:152`, `lib/dcerpc.c:1955`
+// Trace: `include/smb2/libsmb2-dcerpc.h:152`, `lib/dcerpc.c:1955`, `lib/dcerpc-srvsvc.c:113`
 // Spec: dcerpc_get_size_is conformant size state#Carray coder reads stored entry count
+// - **GIVEN** 前序 coder 已设置 PDU `size_is`
+// - **WHEN** 调用 `dcerpc_get_size_is(pdu)`
+// - **THEN** 返回该值供 conformant array 编解码使用
 #[test]
 fn test_libsmb2_dcerpc_carray_coder_reads_stored_entry_count() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();

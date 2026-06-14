@@ -8,7 +8,11 @@ use libsmb2_sys::include::libsmb2_private::{
 };
 use libsmb2_sys::include::{portable_endian, slist};
 use libsmb2_sys::legacy::{
-    aes, aes128ccm, compat, errors, hmac_md5, md4, md5, sha, timestamps, unicode,
+    aes, aes128ccm, aes_reference, alloc, compat, errors, hmac_md5,
+    init::{self, iovector_add_probe, iovector_free_probe, iovector_overflow_probe, InitContext},
+    md4, md5, sha, smb2_command_probe, smb2_data_filesystem_info, spnego_wrapper, sync as sync_ffi,
+    timestamps, unicode,
+    utils::{smb2_cp, smb2_ls},
 };
 use libsmb2_sys::smb2::{
     libsmb2_dcerpc, libsmb2_dcerpc_lsa, libsmb2_dcerpc_srvsvc, smb2_errors, smb2_ioctl,
@@ -97,6 +101,50 @@ fn test_smoke_libsmb2_private_constants_and_layouts() {
     assert_eq!(tree_id_for_current_index(0, 0x1122_3344), 0x1122_3344);
     assert!(!is_server_for_owning_server(false));
     assert!(is_server_for_owning_server(true));
+}
+
+#[test]
+fn test_smoke_smb2_command_probe_contracts() {
+    let probe = smb2_command_probe::command_probe();
+
+    assert_eq!(probe.close_request_size, 24);
+    assert_eq!(probe.close_reply_size, 60);
+    assert_eq!(probe.create_request_size, 57);
+    assert_eq!(probe.create_reply_size, 89);
+    assert_eq!(probe.echo_request_size, 4);
+    assert_eq!(probe.echo_reply_size, 4);
+    assert_eq!(probe.ioctl_request_size, 57);
+    assert_eq!(probe.ioctl_reply_size, 49);
+    assert_eq!(probe.logoff_request_size, 4);
+    assert_eq!(probe.tree_disconnect_request_size, 4);
+    assert_eq!(probe.tree_disconnect_reply_size, 4);
+    assert_eq!(probe.write_request_size, 49);
+    assert_eq!(probe.write_reply_size, 17);
+
+    let builder_failure = smb2_command_probe::BUILDER_ALLOC_FAILURE
+        | smb2_command_probe::BUILDER_IOVECTOR_FAILURE
+        | smb2_command_probe::BUILDER_PADDING_FAILURE
+        | smb2_command_probe::BUILDER_FREES_PDU;
+    assert!(smb2_command_probe::CommandProbe::has(
+        probe.create_flags,
+        builder_failure | smb2_command_probe::BUILDER_NO_CALLBACK
+    ));
+    assert!(smb2_command_probe::CommandProbe::has(
+        probe.ioctl_flags,
+        smb2_command_probe::PASSTHROUGH | smb2_command_probe::UNSUPPORTED_ERROR
+    ));
+    assert!(smb2_command_probe::CommandProbe::has(
+        probe.oplock_break_flags,
+        builder_failure
+    ));
+    assert!(smb2_command_probe::CommandProbe::has(
+        probe.tree_disconnect_flags,
+        builder_failure
+    ));
+    assert!(smb2_command_probe::CommandProbe::has(
+        probe.write_flags,
+        builder_failure | smb2_command_probe::FIXED_ALLOC_FAILURE
+    ));
 }
 
 #[test]
@@ -189,6 +237,163 @@ fn test_smoke_slist_macro_wrappers() {
 }
 
 #[test]
+fn test_smoke_init_context_extended_accessors() {
+    let mut ctx = InitContext::new().expect("init smoke context allocation succeeds");
+
+    ctx.set_authentication(1);
+    ctx.set_timeout(30);
+    ctx.set_version(0x0311);
+    ctx.set_passthrough(1);
+    ctx.set_error_for_test("smoke error");
+
+    assert_eq!(ctx.authentication(), 1);
+    assert_eq!(ctx.timeout(), 30);
+    assert_eq!(ctx.version(), 0x0311);
+    assert_eq!(ctx.passthrough(), 1);
+    assert_eq!(ctx.error(), "smoke error");
+    assert_eq!(ctx.error_callback_probe(), 1);
+    assert!(ctx.oplock_callback_probe());
+    assert_eq!(InitContext::libversion().major, 4);
+}
+
+#[test]
+fn test_smoke_init_url_and_real_context_probes() {
+    let url = init::parse_url_snapshot("smb://domain;alice@server/share/path").unwrap();
+    assert_eq!(url.domain.as_deref(), Some("domain"));
+    assert_eq!(url.user.as_deref(), Some("alice"));
+    assert_eq!(url.server, "server");
+    assert_eq!(url.share, "share");
+    assert_eq!(url.path.as_deref(), Some("path"));
+
+    let query = init::parse_url_query_snapshot().unwrap();
+    assert_eq!(query.seal, 1);
+    assert_eq!(query.version, init::SMB2_VERSION_ANY3_VALUE);
+    assert_eq!(query.authentication, init::SMB2_SEC_NTLMSSP_VALUE);
+    assert_eq!(query.timeout, 5);
+    assert_eq!(
+        init::parse_url_error("notsmb://server/share"),
+        "URL does not start with 'smb://'"
+    );
+    assert_eq!(
+        init::parse_url_bad_query_error(),
+        "Unknown argument: unknown"
+    );
+
+    let defaults = init::real_context_defaults();
+    assert_eq!(defaults.allocated, 1);
+    assert_eq!(defaults.fd, init::SMB2_INVALID_SOCKET_DEFAULT);
+    assert_eq!(defaults.security, init::SMB2_SEC_UNDEFINED_DEFAULT);
+    assert_eq!(defaults.version, init::SMB2_VERSION_ANY_DEFAULT);
+    assert_eq!(defaults.ndr, 1);
+    assert_eq!(defaults.active, 1);
+    assert!(init::destroy_parsed_url_probe());
+    assert!(init::destroy_null_url_probe());
+    assert!(init::init_context_allocation_failure_probe());
+    assert!(init::destroy_active_context_probe());
+    assert!(init::destroy_null_context_probe());
+    assert!(init::active_contexts_probe());
+    assert!(init::real_context_active_probe());
+}
+
+#[test]
+fn test_smoke_init_iovector_probes() {
+    assert!(iovector_free_probe());
+    assert_eq!(iovector_add_probe(), Some(3));
+    assert!(iovector_overflow_probe());
+}
+
+#[test]
+fn test_smoke_filesystem_info_variable_name_wrappers() {
+    let volume = smb2_data_filesystem_info::FsVolumeInfo {
+        creation_time_seconds: 42,
+        creation_time_microseconds: 125_000,
+        volume_serial_number: 0x1234_5678,
+        supports_objects: 1,
+        reserved: 2,
+        volume_label: "VOL".to_string(),
+    };
+    let (volume_buf, volume_rc) = smb2_data_filesystem_info::encode_volume(&volume, 24).unwrap();
+    assert_eq!(volume_rc, 24);
+    assert_eq!(
+        smb2_data_filesystem_info::decode_volume(&volume_buf).unwrap(),
+        volume
+    );
+
+    let attribute = smb2_data_filesystem_info::FsAttributeInfo {
+        filesystem_attributes: 0x11,
+        maximum_component_name_length: 255,
+        filesystem_name: "NTFS".to_string(),
+    };
+    let (attribute_buf, attribute_rc) =
+        smb2_data_filesystem_info::encode_attribute(&attribute, 20).unwrap();
+    assert_eq!(attribute_rc, 20);
+    assert_eq!(
+        smb2_data_filesystem_info::decode_attribute(&attribute_buf).unwrap(),
+        attribute
+    );
+}
+
+#[test]
+fn test_smoke_spnego_wrapper_harnesses() {
+    let negotiate = spnego_wrapper::create_negotiate_reply(true);
+    assert!(negotiate.rc > 0);
+    assert!(negotiate.has_blob);
+    assert!(negotiate
+        .bytes
+        .windows(10)
+        .any(|window| { window == [0x2b, 0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x02, 0x02, 0x0a] }));
+
+    let auth_ok = spnego_wrapper::wrap_authenticate_result(true);
+    assert!(auth_ok.rc > 0);
+    assert!(auth_ok
+        .bytes
+        .windows(3)
+        .any(|window| window == [0x0a, 0x01, 0x00]));
+
+    let auth_rejected = spnego_wrapper::wrap_authenticate_result(false);
+    assert!(auth_rejected.rc > 0);
+    assert!(auth_rejected
+        .bytes
+        .windows(3)
+        .any(|window| window == [0x0a, 0x01, 0x03]));
+
+    let alloc_failure = spnego_wrapper::wrap_authenticate_result_alloc_failure();
+    assert_eq!(alloc_failure.rc, -12);
+    assert!(alloc_failure.set_error_called);
+    assert!(alloc_failure
+        .error
+        .contains("Failed to allocate spnego wrapper"));
+
+    let raw = spnego_wrapper::unwrap_blob(b"NTLMSSP\0auth", false);
+    assert_eq!(raw.rc, 12);
+    assert_eq!(raw.token_offset, None);
+    assert_eq!(raw.token_len, 12);
+}
+
+#[test]
+fn test_smoke_sync_wrapper_harnesses() {
+    let status = sync_ffi::run_status(sync_ffi::SyncOperation::Close, 9);
+    assert_eq!(status.rc, 9);
+    assert_eq!(status.async_called, 1);
+
+    let readlink = sync_ffi::run_status(sync_ffi::SyncOperation::Readlink, 0);
+    assert_eq!(readlink.rc, 0);
+    assert_eq!(readlink.async_called, 1);
+
+    let open = sync_ffi::run_pointer(sync_ffi::SyncOperation::Open);
+    assert!(open.returned_pointer);
+    assert_eq!(open.async_called, 1);
+
+    let echo = sync_ffi::run_disconnected(sync_ffi::SyncOperation::Echo);
+    assert_eq!(echo.rc, -12);
+    assert_eq!(echo.error, "Not Connected to Server");
+
+    let share_enum = sync_ffi::run_disconnected(sync_ffi::SyncOperation::ShareEnum);
+    assert!(!share_enum.returned_pointer);
+    assert_eq!(share_enum.error, "Not Connected to Server");
+}
+
+#[test]
 fn test_smoke_asprintf_header_wrappers() {
     // Smoke source: include/asprintf.h; target: header-only format helpers.
     assert_eq!(asprintf::vscprintf_two_ints("%d:%02d", 7, 5), 4);
@@ -270,6 +475,26 @@ fn test_smoke_aes_encrypt_block() {
             0x43, 0x5b,
         ]
     );
+}
+
+#[test]
+fn test_smoke_aes_reference_header_snapshots() {
+    // Smoke source: lib/aes_reference.h; target: AES reference compile-time declarations.
+    assert_eq!(aes_reference::default_cbc_value(), 0);
+    assert!(!aes_reference::default_cbc_declarations_enabled());
+    assert_eq!(aes_reference::external_ecb_value_when_disabled(), 0);
+    assert!(!aes_reference::external_ecb_declarations_enabled_when_disabled());
+}
+
+#[test]
+fn test_smoke_alloc_forced_failure_wrappers() {
+    // Smoke source: lib/alloc.c; target: allocation failure paths.
+    assert!(alloc::forced_init_failure_returns_null(8));
+
+    let failure = alloc::forced_child_failure(8);
+    assert!(failure.returned_null);
+    assert!(failure.set_error_called);
+    assert!(failure.message.starts_with("Failed to alloc "));
 }
 
 #[test]
@@ -585,6 +810,33 @@ fn test_smoke_md4_rfc1320_vector() {
 }
 
 #[test]
+fn test_smoke_md4_context_snapshots() {
+    // Smoke source: lib/md4.h/lib/md4c.c; target: MD4 context lifecycle snapshots.
+    assert_eq!(md4::context_layout(), (4, 2, 64));
+
+    let initial = md4::initial_context();
+    assert_eq!(initial.count, [0, 0]);
+    assert_eq!(
+        initial.state,
+        [0x6745_2301, 0xefcd_ab89, 0x98ba_dcfe, 0x1032_5476]
+    );
+
+    let updated = md4::snapshot_after_update(b"abc");
+    assert_eq!(updated.count, [24, 0]);
+    assert_eq!(&updated.buffer[..3], b"abc");
+
+    let (digest, final_context) = md4::digest_with_final_context(b"abc");
+    assert_eq!(
+        digest,
+        [
+            0xa4, 0x48, 0x01, 0x7a, 0xaf, 0x21, 0xd8, 0x52, 0x5f, 0xc1, 0x0a, 0xe8, 0x7a, 0xa6,
+            0x72, 0x9d,
+        ]
+    );
+    assert!(final_context.is_zeroed());
+}
+
+#[test]
 fn test_smoke_md5_rfc1321_vector() {
     // Smoke source: lib/md5.c; target: MD5 one-shot wrapper.
     assert_eq!(
@@ -594,6 +846,44 @@ fn test_smoke_md5_rfc1321_vector() {
             0x7f, 0x72,
         ]
     );
+}
+
+#[test]
+fn test_smoke_md5_context_snapshots_and_transform() {
+    // Smoke source: lib/md5.h/lib/md5.c; target: MD5 context lifecycle snapshots.
+    assert_eq!(md5::context_layout(), (4, 2, 16));
+
+    let initial = md5::initial_context();
+    assert_eq!(initial.bytes, [0, 0]);
+    assert_eq!(
+        initial.buf,
+        [0x6745_2301, 0xefcd_ab89, 0x98ba_dcfe, 0x1032_5476]
+    );
+
+    let updated = md5::snapshot_after_update(b"abc");
+    assert_eq!(updated.bytes, [3, 0]);
+    assert_eq!(updated.buffered_bytes(), b"abc");
+
+    let sixty_four = [b'a'; 64];
+    let transformed = md5::snapshot_after_update(&sixty_four);
+    assert_eq!(transformed.bytes, [64, 0]);
+    assert_ne!(transformed.buf, initial.buf);
+
+    let block = [0x8063_6261, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24, 0];
+    assert_eq!(
+        md5::transform(initial.buf, block),
+        [0x9850_0190, 0xb04f_d23c, 0x7d3f_96d6, 0x727f_e128]
+    );
+
+    let (digest, final_context) = md5::digest_with_final_context(b"abc");
+    assert_eq!(
+        digest,
+        [
+            0x90, 0x01, 0x50, 0x98, 0x3c, 0xd2, 0x4f, 0xb0, 0xd6, 0x96, 0x3f, 0x7d, 0x28, 0xe1,
+            0x7f, 0x72,
+        ]
+    );
+    assert!(final_context.is_zeroed());
 }
 
 #[test]
@@ -693,6 +983,76 @@ fn test_smoke_unicode_utf8_utf16_round_trip() {
     let utf16 = unicode::utf8_to_utf16_units("A\u{0142}").unwrap();
     assert_eq!(utf16, [0x0041, 0x0142]);
     assert_eq!(unicode::utf16_units_to_utf8(&utf16).unwrap(), "A\u{0142}");
+    assert!(unicode::utf8_to_utf16_allocation_failure_returns_none());
+    assert!(unicode::utf16_to_utf8_allocation_failure_returns_none());
+}
+
+#[test]
+fn test_smoke_smb2_cp_utility_harnesses() {
+    let usage = smb2_cp::usage_invalid_argc();
+    assert_eq!(usage.exit_code, 0);
+    assert!(usage.stderr.contains("Usage: smb2-cp <src> <dst>"));
+
+    let cleanup = smb2_cp::free_mixed_context();
+    assert_eq!(cleanup.smb2_close_calls, 1);
+    assert_eq!(cleanup.destroy_context_calls, 1);
+    assert_eq!(cleanup.destroy_url_calls, 1);
+
+    let stat = smb2_cp::fstat_smb2_mapping();
+    assert_eq!(stat.rc, 0);
+    assert_eq!(stat.ino, 77);
+    assert_eq!(stat.size, 12345);
+
+    assert_eq!(smb2_cp::pread_local().bytes, b"cde");
+    assert_eq!(smb2_cp::pread_smb2().offset, 9);
+    assert_eq!(smb2_cp::pwrite_local().bytes, b"abXYZf");
+    assert_eq!(smb2_cp::pwrite_smb2().count, 3);
+    assert!(smb2_cp::open_smb2_url().success);
+    assert_eq!(smb2_cp::chunk_plan(1_048_576 + 7).last_count, 7);
+}
+
+#[test]
+fn test_smoke_smb2_ls_utility_harnesses() {
+    let usage = smb2_ls::usage_missing_arg();
+    assert_eq!(usage.exit_code, 1);
+    assert!(usage.stderr.contains("smb2-ls-sync <smb2-url>"));
+
+    let mapping = smb2_ls::directory_type_mapping();
+    assert_eq!(mapping.link_type, "LINK");
+    assert_eq!(mapping.file_type, "FILE");
+    assert_eq!(mapping.directory_type, "DIRECTORY");
+    assert_eq!(mapping.unknown_type, "unknown");
+
+    let success = smb2_ls::list_directory_success();
+    assert_eq!(success.exit_code, 0);
+    assert!(success.stdout.contains("link"));
+    assert!(success.stdout.contains("target.txt"));
+
+    let readlink_failure = smb2_ls::readlink_failure();
+    assert!(readlink_failure.stdout.contains("readlink failed"));
+
+    let init_failure = smb2_ls::context_init_failure();
+    assert_eq!(init_failure.exit_code, 1);
+    assert!(init_failure.stderr.contains("Failed to init context"));
+
+    let parse_failure = smb2_ls::url_parse_failure();
+    assert_eq!(parse_failure.exit_code, 1);
+    assert!(parse_failure.stderr.contains("Failed to parse url"));
+
+    let connect_failure = smb2_ls::connect_share_failure();
+    assert_eq!(connect_failure.exit_code, 1);
+    assert!(connect_failure.stdout.contains("smb2_connect_share failed"));
+
+    let opendir_failure = smb2_ls::opendir_failure();
+    assert_eq!(opendir_failure.exit_code, 1);
+    assert!(opendir_failure.stdout.contains("smb2_opendir failed"));
+
+    let cleanup = smb2_ls::readdir_end_cleanup();
+    assert_eq!(cleanup.exit_code, 0);
+    assert_eq!(cleanup.closedir_calls, 1);
+    assert_eq!(cleanup.disconnect_calls, 1);
+    assert_eq!(cleanup.destroy_url_calls, 1);
+    assert_eq!(cleanup.destroy_context_calls, 1);
 }
 
 #[test]
@@ -705,7 +1065,10 @@ fn test_smoke_compat_resolver_vector_io_poll_and_strdup() {
     assert_eq!(compat::SRANDOM_NON_IOP_DELEGATE, "smb2_srandom");
     assert_eq!(compat::RANDOM_NON_IOP_DELEGATE, "smb2_random");
     assert_eq!(compat::ps2_iop_random_after_seed(1), 16_838);
-    assert_eq!(compat::GETPID_COMPAT_TARGETS.windows_target, "GetCurrentProcessId");
+    assert_eq!(
+        compat::GETPID_COMPAT_TARGETS.windows_target,
+        "GetCurrentProcessId"
+    );
     assert_eq!(compat::GETPID_COMPAT_TARGETS.xbox_value, 0);
     assert_eq!(compat::GETPID_COMPAT_TARGETS.ps2_iop_value, 27);
     assert_eq!(compat::GETLOGIN_COMPAT_TARGETS.default_status, "ENXIO");
@@ -725,12 +1088,14 @@ fn test_smoke_compat_resolver_vector_io_poll_and_strdup() {
     assert_eq!(write_output, b"SMB2");
     assert_eq!(write_errno, 0);
     assert!(compat::writev_overflow_sets_einval());
+    assert!(compat::writev_allocation_failure_returns_minus_one());
 
     let (read, read_output, read_errno) = compat::readv_from_pipe(b"abcdef", &[2, 4]).unwrap();
     assert_eq!(read, 6);
     assert_eq!(read_output, b"abcdef");
     assert_eq!(read_errno, 0);
     assert!(compat::readv_overflow_sets_einval());
+    assert!(compat::readv_allocation_failure_returns_minus_one());
 
     let readable = compat::poll_readable_pipe().unwrap();
     assert!(readable.rc > 0);
@@ -748,4 +1113,5 @@ fn test_smoke_compat_resolver_vector_io_poll_and_strdup() {
     );
 
     assert_eq!(compat::strdup_matches("compat-owned").unwrap(), 12);
+    assert!(compat::strdup_allocation_failure_returns_none());
 }

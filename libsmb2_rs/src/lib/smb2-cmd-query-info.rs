@@ -134,6 +134,15 @@ pub enum QueryInfoError {
     InvalidStructureSize,
     /// A checked offset or length calculation overflowed.
     LengthOverflow,
+    /// Query Info request input buffers are not supported by the legacy encoder.
+    UnsupportedInputBuffer,
+    /// Query Info output classes without a decoder/encoder require passthrough mode.
+    UnsupportedOutputClass {
+        /// QUERY_INFO info type.
+        info_type: u8,
+        /// QUERY_INFO file or filesystem information class.
+        info_class: u8,
+    },
     /// A typed payload was paired with a different QUERY_INFO type/class.
     PayloadClassMismatch {
         /// QUERY_INFO info type.
@@ -164,6 +173,10 @@ impl core::fmt::Display for QueryInfoError {
             Self::InvalidStructureSize => f.write_str("unexpected QUERY_INFO structure size"),
             Self::LengthOverflow => {
                 f.write_str("QUERY_INFO offset or length calculation overflowed")
+            }
+            Self::UnsupportedInputBuffer => f.write_str("QUERY_INFO input buffer is unsupported"),
+            Self::UnsupportedOutputClass { .. } => {
+                f.write_str("QUERY_INFO output class is unsupported without passthrough")
             }
             Self::PayloadClassMismatch { .. } => {
                 f.write_str("QUERY_INFO payload does not match the requested info type/class")
@@ -511,6 +524,9 @@ pub struct QueryInfoEncodePlan {
 /// Returns an error if declared lengths cannot fit in SMB2 fields.
 pub fn smb2_encode_query_info_request(req: &QueryInfoRequest) -> QueryInfoResult<Vec<u8>> {
     let input_len = req.input.len();
+    if input_len > 0 || req.input_buffer_length > 0 {
+        return Err(QueryInfoError::UnsupportedInputBuffer);
+    }
     let mut buf = vec![0; QueryInfoRequest::fixed_wire_len() + pad_to_64bit(input_len)];
     write_u16(&mut buf, 0, SMB2_QUERY_INFO_REQUEST_SIZE as u16)?;
     write_u8(&mut buf, 2, req.info_type)?;
@@ -552,7 +568,15 @@ pub fn smb2_encode_query_info_reply(
     rep: &QueryInfoReply,
     passthrough: bool,
 ) -> QueryInfoResult<(Vec<u8>, Option<u32>)> {
-    let _ = passthrough;
+    if rep.output_buffer.len() > 0
+        && recognized_payload_kind(req.info_type, req.file_info_class).is_none()
+        && !passthrough
+    {
+        return Err(QueryInfoError::UnsupportedOutputClass {
+            info_type: req.info_type,
+            info_class: req.file_info_class,
+        });
+    }
     let encoded = rep
         .output_buffer
         .encode_for(req.info_type, req.file_info_class)?;
@@ -666,10 +690,15 @@ pub fn smb2_process_query_info_variable(
     let len =
         usize::try_from(rep.output_buffer_length).map_err(|_| QueryInfoError::LengthOverflow)?;
     let bytes = slice_at(variable, offset, len)?.to_vec();
-    let _ = passthrough;
     rep.output_buffer = match recognized_payload_kind(info_type, file_info_class) {
         Some(kind) => decode_payload(kind, &bytes)?,
-        None => QueryInfoPayload::Raw(bytes),
+        None if passthrough => QueryInfoPayload::Raw(bytes),
+        None => {
+            return Err(QueryInfoError::UnsupportedOutputClass {
+                info_type,
+                info_class: file_info_class,
+            })
+        }
     };
     Ok(())
 }

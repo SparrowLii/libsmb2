@@ -289,3 +289,166 @@ fn test_config_xbox_360_sys_stat_header_capability_is_visible() {
 fn test_config_xbox_360_sys_time_header_remains_disabled() {
     assert_eq!(XBOX_360_CONFIG.have_sys_time_h, None);
 }
+
+// Trace: `include/xbox 360/config.h:HAVE_SYS_TYPES_H`, `lib/socket.c:66`
+// Spec: HAVE_SYS_TYPES_H declares sys types header availability#sys types header capability is visible
+// - **GIVEN** 源码以配置宏判断系统类型头能力
+// - **WHEN** 读取 `HAVE_SYS_TYPES_H`
+// - **THEN** 该宏 SHALL 以定义值 `1` 表示 `<sys/types.h>` 可用
+#[test]
+fn test_config_xbox_360_sys_types_header_capability_is_visible() {
+    assert_eq!(XBOX_360_CONFIG.have_sys_types_h, Some(1));
+}
+
+// Trace: `include/xbox 360/config.h:HAVE_SYS_UIO_H`, `configure.ac:HAVE_SYS_UIO_H`
+// Spec: HAVE_SYS_UIO_H declares sys uio header absence#sys uio header remains disabled
+// - **GIVEN** 源码以配置宏判断 scatter/gather I/O 头能力
+// - **WHEN** 读取 Xbox 360 配置头中的 `HAVE_SYS_UIO_H`
+// - **THEN** 该宏 SHALL 保持未定义状态
+#[test]
+fn test_config_xbox_360_sys_uio_header_remains_disabled() {
+    assert_eq!(XBOX_360_CONFIG.have_sys_uio_h, None);
+}
+
+// Trace: `include/xbox 360/config.h:HAVE_SYS_UNISTD_H`, `configure.ac:HAVE_SYS_UNISTD_H`
+// Spec: HAVE_SYS_UNISTD_H declares sys unistd header absence#sys unistd header remains disabled
+// - **GIVEN** 源码以配置宏判断系统 POSIX 头能力
+// - **WHEN** 读取 Xbox 360 配置头中的 `HAVE_SYS_UNISTD_H`
+// - **THEN** 该宏 SHALL 保持未定义状态
+#[test]
+fn test_config_xbox_360_sys_unistd_header_remains_disabled() {
+    assert_eq!(XBOX_360_CONFIG.have_sys_unistd_h, None);
+}
+
+// Trace: `include/xbox 360/config.h:HAVE_SYS__IOVEC_H`, `configure.ac:HAVE_SYS__IOVEC_H`
+// Spec: HAVE_SYS__IOVEC_H declares sys iovec header absence#sys iovec header remains disabled
+// - **GIVEN** 源码以配置宏判断私有 iovec 头能力
+// - **WHEN** 读取 Xbox 360 配置头中的 `HAVE_SYS__IOVEC_H`
+// - **THEN** 该宏 SHALL 保持未定义状态
+#[test]
+fn test_config_xbox_360_sys_iovec_header_remains_disabled() {
+    assert_eq!(XBOX_360_CONFIG.have_sys_iovec_h, None);
+}
+
+// Trace: `include/xbox 360/config.h:HAVE_TIME_H`, `lib/timestamps.c:38`, `configure.ac:HAVE_TIME_H`
+// Spec: HAVE_TIME_H declares time header availability#time header capability is visible
+// - **GIVEN** 源码以配置宏判断标准时间头能力
+// - **WHEN** 读取 `HAVE_TIME_H`
+// - **THEN** 该宏 SHALL 以定义值 `1` 表示 `<time.h>` 可用
+#[test]
+fn test_config_xbox_360_time_header_capability_is_visible() {
+    assert_eq!(XBOX_360_CONFIG.have_time_h, Some(1));
+}
+
+// Trace: `include/xbox 360/config.h:HAVE_UNISTD_H`, `configure.ac:HAVE_UNISTD_H`
+// Spec: HAVE_UNISTD_H declares unistd header absence#unistd header remains disabled
+// - **GIVEN** 源码以配置宏判断 POSIX 头能力
+// - **WHEN** 读取 Xbox 360 配置头中的 `HAVE_UNISTD_H`
+// - **THEN** 该宏 SHALL 保持未定义状态
+#[test]
+fn test_config_xbox_360_unistd_header_remains_disabled() {
+    assert_eq!(XBOX_360_CONFIG.have_unistd_h, None);
+}
+
+// Trace: `include/xbox 360/config.h:LT_OBJDIR`
+// Spec: LT_OBJDIR exposes libtool object directory#libtool object directory metadata is readable
+// - **GIVEN** 源码或诊断工具读取配置头元数据
+// - **WHEN** 读取 `LT_OBJDIR`
+// - **THEN** 该宏 SHALL 展开为字符串 `".libs/"`
+#[test]
+fn test_config_xbox_360_libtool_object_directory_metadata_is_readable() {
+    assert_eq!(XBOX_360_CONFIG.lt_objdir, ".libs/");
+}
+
+// Trace: `include/xbox 360/config.h:PACKAGE`
+// Spec: PACKAGE exposes package short name#package short name is readable
+// - **GIVEN** 源码或诊断工具读取包元数据
+// - **WHEN** 读取 `PACKAGE`
+// - **THEN** 该宏 SHALL 展开为字符串 `"libsmb2"`
+#[test]
+fn test_config_xbox_360_package_short_name_is_readable() {
+    assert_eq!(XBOX_360_CONFIG.package, "libsmb2");
+}
+
+// Trace: `include/xbox 360/config.h:PACKAGE_BUGREPORT`
+// Spec: PACKAGE_BUGREPORT exposes bug report contact#bug report contact is readable
+// - **GIVEN** 源码或诊断工具读取包元数据
+// - **WHEN** 读取 `PACKAGE_BUGREPORT`
+// - **THEN** 该宏 SHALL 展开为字符串 `"ronniesahlberg@gmail.com"`
+#[test]
+fn test_config_xbox_360_bug_report_contact_is_readable() {
+    assert_eq!(
+        XBOX_360_CONFIG.package_bugreport,
+        "ronniesahlberg@gmail.com"
+    );
+}
+
+// Trace: `include/xbox 360/config.h:PACKAGE_NAME`
+// Spec: PACKAGE_NAME exposes package full name#package full name is readable
+// - **GIVEN** 源码或诊断工具读取包元数据
+// - **WHEN** 读取 `PACKAGE_NAME`
+// - **THEN** 该宏 SHALL 展开为字符串 `"libsmb2"`
+#[test]
+fn test_config_xbox_360_package_full_name_is_readable() {
+    assert_eq!(XBOX_360_CONFIG.package_name, "libsmb2");
+}
+
+// Trace: `include/xbox 360/config.h:PACKAGE_STRING`
+// Spec: PACKAGE_STRING exposes package name and version#package string is readable
+// - **GIVEN** 源码或诊断工具读取包元数据
+// - **WHEN** 读取 `PACKAGE_STRING`
+// - **THEN** 该宏 SHALL 展开为字符串 `"libsmb2 4.0.0"`
+#[test]
+fn test_config_xbox_360_package_string_is_readable() {
+    assert_eq!(XBOX_360_CONFIG.package_string, "libsmb2 4.0.0");
+}
+
+// Trace: `include/xbox 360/config.h:PACKAGE_TARNAME`
+// Spec: PACKAGE_TARNAME exposes distribution tar name#distribution tar name is readable
+// - **GIVEN** 源码或诊断工具读取包元数据
+// - **WHEN** 读取 `PACKAGE_TARNAME`
+// - **THEN** 该宏 SHALL 展开为字符串 `"libsmb2"`
+#[test]
+fn test_config_xbox_360_distribution_tar_name_is_readable() {
+    assert_eq!(XBOX_360_CONFIG.package_tarname, "libsmb2");
+}
+
+// Trace: `include/xbox 360/config.h:PACKAGE_URL`
+// Spec: PACKAGE_URL exposes package URL string#package URL metadata is readable
+// - **GIVEN** 源码或诊断工具读取包元数据
+// - **WHEN** 读取 `PACKAGE_URL`
+// - **THEN** 该宏 SHALL 展开为空字符串
+#[test]
+fn test_config_xbox_360_package_url_metadata_is_readable() {
+    assert_eq!(XBOX_360_CONFIG.package_url, "");
+}
+
+// Trace: `include/xbox 360/config.h:PACKAGE_VERSION`
+// Spec: PACKAGE_VERSION exposes Xbox 360 package version#package version is readable
+// - **GIVEN** 源码或诊断工具读取包元数据
+// - **WHEN** 读取 `PACKAGE_VERSION`
+// - **THEN** 该宏 SHALL 展开为字符串 `"4.0.0"`
+#[test]
+fn test_config_xbox_360_package_version_is_readable() {
+    assert_eq!(XBOX_360_CONFIG.package_version, "4.0.0");
+}
+
+// Trace: `include/xbox 360/config.h:STDC_HEADERS`, `lib/timestamps.c:46`, `lib/socket.c:18`
+// Spec: STDC_HEADERS declares C90 standard header availability#standard header capability is visible
+// - **GIVEN** 源码以配置宏判断 C90 标准头集合能力
+// - **WHEN** 读取 `STDC_HEADERS`
+// - **THEN** 该宏 SHALL 以定义值 `1` 表示标准头集合可用
+#[test]
+fn test_config_xbox_360_standard_header_capability_is_visible() {
+    assert_eq!(XBOX_360_CONFIG.stdc_headers, Some(1));
+}
+
+// Trace: `include/xbox 360/config.h:VERSION`
+// Spec: VERSION exposes Xbox 360 version string#version string is readable
+// - **GIVEN** 源码或诊断工具读取版本元数据
+// - **WHEN** 读取 `VERSION`
+// - **THEN** 该宏 SHALL 展开为字符串 `"4.0.0"`
+#[test]
+fn test_config_xbox_360_version_string_is_readable() {
+    assert_eq!(XBOX_360_CONFIG.version, "4.0.0");
+}

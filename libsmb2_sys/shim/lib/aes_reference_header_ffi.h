@@ -1,0 +1,4 @@
+int aes_reference_ffi_default_cbc_value(void);
+int aes_reference_ffi_default_cbc_declarations_enabled(void);
+int aes_reference_ffi_external_ecb_value(void);
+int aes_reference_ffi_external_ecb_declarations_enabled(void);

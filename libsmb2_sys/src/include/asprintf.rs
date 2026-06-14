@@ -36,7 +36,10 @@ unsafe fn take_result(result: ffi::asprintf_ffi_result) -> Option<FormatResult> 
     let data = NonNull::new(result.data)?;
     let text = CStr::from_ptr(data.as_ptr()).to_string_lossy().into_owned();
     ffi::asprintf_ffi_free(data.as_ptr());
-    Some(FormatResult { rc: result.rc, text })
+    Some(FormatResult {
+        rc: result.rc,
+        text,
+    })
 }
 
 pub fn vscprintf_two_ints(format: &str, first: i32, second: i32) -> i32 {
@@ -51,12 +54,24 @@ pub fn vscprintf_reuse_after_length(format: &str, first: i32, second: i32) -> i3
 
 pub fn vasprintf_two_ints(format: &str, first: i32, second: i32) -> Option<FormatResult> {
     let format = c_format(format);
-    unsafe { take_result(ffi::asprintf_ffi_vasprintf_two_ints(format.as_ptr(), first, second)) }
+    unsafe {
+        take_result(ffi::asprintf_ffi_vasprintf_two_ints(
+            format.as_ptr(),
+            first,
+            second,
+        ))
+    }
 }
 
 pub fn asprintf_two_ints(format: &str, first: i32, second: i32) -> Option<FormatResult> {
     let format = c_format(format);
-    unsafe { take_result(ffi::asprintf_ffi_asprintf_two_ints(format.as_ptr(), first, second)) }
+    unsafe {
+        take_result(ffi::asprintf_ffi_asprintf_two_ints(
+            format.as_ptr(),
+            first,
+            second,
+        ))
+    }
 }
 
 pub fn vasprintf_null_format_failure() -> i32 {

@@ -22,6 +22,28 @@ fn test_hmac_one_shot_hmac_succeeds_through_reset_input_result_sequence() {
     );
 }
 
+// Trace: `lib/hmac.c:hmac`, `lib/hmac.c:hmacReset`, `lib/hmac.c:hmacInput`, `lib/hmac.c:hmacResult`
+// Spec: hmac one-shot digest calculation#One-shot HMAC propagates the first SHA error
+// - **GIVEN** `hmacReset`、`hmacInput` 或 `hmacResult` 中任一步骤返回非零 SHA 错误码
+// - **WHEN** 调用方调用 `hmac(whichSha, text, text_len, key, key_len, digest)`
+// - **THEN** 该接口 MUST 通过短路求值返回该非零错误码，并不继续执行后续 HMAC 阶段
+#[test]
+fn test_hmac_one_shot_hmac_propagates_the_first_sha_error() {
+    let status = sha::hmac_bad_param_status(b"message", b"key");
+
+    assert_eq!(status, sha::SHA_NULL);
+}
+
+// Trace: `lib/hmac.c:hmacReset`, `lib/sha.h:hmacReset`
+// Spec: hmacReset context initialization and key padding#Null HMAC context is rejected
+// - **GIVEN** 调用方传入 `ctx == NULL`
+// - **WHEN** 调用方调用 `hmacReset(ctx, whichSha, key, key_len)`
+// - **THEN** 该接口 MUST 返回 `shaNull` 且不访问 context 字段
+#[test]
+fn test_hmac_null_hmac_context_is_rejected() {
+    assert_eq!(sha::hmac_reset_null_sha256(b"key"), sha::SHA_NULL);
+}
+
 // Trace: `lib/hmac.c:hmacReset`, `lib/usha.c:USHAReset`, `lib/usha.c:USHAInput`, `lib/usha.c:USHAResult`
 // Spec: hmacReset context initialization and key padding#Long key is hashed before pad construction
 // - **GIVEN** 调用方传入的 `key_len` 大于 `USHABlockSize(whichSha)` 返回的 block size
@@ -64,4 +86,79 @@ fn test_hmac_pads_and_inner_hash_state_are_initialized() {
             0x64, 0xec, 0x38, 0x43,
         ]
     );
+}
+
+// Trace: `lib/hmac.c:hmacInput`, `lib/sha.h:hmacInput`
+// Spec: hmacInput message streaming#Null HMAC context input is rejected
+// - **GIVEN** 调用方传入 `ctx == NULL`
+// - **WHEN** 调用方调用 `hmacInput(ctx, text, text_len)`
+// - **THEN** 该接口 MUST 返回 `shaNull` 且不调用 `USHAInput`
+#[test]
+fn test_hmac_null_hmac_context_input_is_rejected() {
+    assert_eq!(sha::hmac_input_null(b"message"), sha::SHA_NULL);
+}
+
+// Trace: `lib/hmac.c:hmacInput`, `lib/usha.c:USHAInput`, `lib/libsmb2.c:smb2_derive_key`, `lib/smb2-signing.c:smb2_calc_signature`
+// Spec: hmacInput message streaming#Message bytes are forwarded to inner SHA context
+// - **GIVEN** 调用方已通过 `hmacReset` 初始化 context，并提供消息片段指针和长度
+// - **WHEN** 调用方调用 `hmacInput(ctx, text, text_len)`
+// - **THEN** 该接口 MUST 调用 `USHAInput(&ctx->shaContext, text, text_len)`，并返回底层 SHA 输入结果
+#[test]
+fn test_hmac_message_bytes_are_forwarded_to_inner_sha_context() {
+    let key = [0x0b; 20];
+    let text = b"Hi There";
+
+    let (status, digest) = sha::hmac_sha256_streaming(text, &key);
+
+    assert_eq!(status, sha::SHA_SUCCESS);
+    assert_eq!(digest, sha::hmac_sha256(text, &key));
+}
+
+// Trace: `lib/hmac.c:hmacFinalBits`, `lib/sha.h:hmacFinalBits`
+// Spec: hmacFinalBits final bit streaming#Null HMAC context final bits are rejected
+// - **GIVEN** 调用方传入 `ctx == NULL`
+// - **WHEN** 调用方调用 `hmacFinalBits(ctx, bits, bitcount)`
+// - **THEN** 该接口 MUST 返回 `shaNull` 且不调用 `USHAFinalBits`
+#[test]
+fn test_hmac_null_hmac_context_final_bits_are_rejected() {
+    assert_eq!(sha::hmac_final_bits_null(0b1000_0000, 1), sha::SHA_NULL);
+}
+
+// Trace: `lib/hmac.c:hmacFinalBits`, `lib/usha.c:USHAFinalBits`
+// Spec: hmacFinalBits final bit streaming#Final bits are forwarded to inner SHA context
+// - **GIVEN** 调用方已通过 `hmacReset` 初始化 context，并提供位于 byte 高位部分的 final bits 和 bit count
+// - **WHEN** 调用方调用 `hmacFinalBits(ctx, bits, bitcount)`
+// - **THEN** 该接口 MUST 调用 `USHAFinalBits(&ctx->shaContext, bits, bitcount)`，并返回底层 SHA final bits 结果
+#[test]
+fn test_hmac_final_bits_are_forwarded_to_inner_sha_context() {
+    let (status, digest) = sha::hmac_sha256_final_bits(b"key", 0b1000_0000, 1);
+
+    assert_eq!(status, sha::SHA_SUCCESS);
+    assert_ne!(digest, [0; 32]);
+}
+
+// Trace: `lib/hmac.c:hmacResult`, `lib/sha.h:hmacResult`
+// Spec: hmacResult outer digest completion#Null HMAC context result is rejected
+// - **GIVEN** 调用方传入 `ctx == NULL`
+// - **WHEN** 调用方调用 `hmacResult(ctx, digest)`
+// - **THEN** 该接口 MUST 返回 `shaNull` 且不访问 context 字段或 digest 缓冲区
+#[test]
+fn test_hmac_null_hmac_context_result_is_rejected() {
+    assert_eq!(sha::hmac_result_null(), sha::SHA_NULL);
+}
+
+// Trace: `lib/hmac.c:hmacResult`, `lib/usha.c:USHAResult`, `lib/usha.c:USHAReset`, `lib/usha.c:USHAInput`, `lib/libsmb2.c:smb2_derive_key`, `lib/smb2-signing.c:smb2_calc_signature`, `tests/prog_cat.c:pr_cb`, `tests/prog_cat_cancel.c:pr_cb`
+// Spec: hmacResult outer digest completion#HMAC result writes final digest through outer SHA pass
+// - **GIVEN** 调用方已通过 `hmacReset` 初始化 context 并通过 `hmacInput` 输入全部消息片段，且提供可写 digest 缓冲区
+// - **WHEN** 调用方调用 `hmacResult(ctx, digest)`
+// - **THEN** 该接口 MUST 先用 `USHAResult` 把 inner hash 写入 `digest` 临时缓冲区，再用 `ctx->k_opad`、`ctx->blockSize` 和 `ctx->hashSize` 执行 outer SHA，并把最终 HMAC digest 写回同一 `digest` 缓冲区
+#[test]
+fn test_hmac_hmac_result_writes_final_digest_through_outer_sha_pass() {
+    let key = b"Jefe";
+    let text = b"what do ya want for nothing?";
+
+    let (status, digest) = sha::hmac_sha256_streaming(text, key);
+
+    assert_eq!(status, sha::SHA_SUCCESS);
+    assert_eq!(digest, sha::hmac_sha256(text, key));
 }

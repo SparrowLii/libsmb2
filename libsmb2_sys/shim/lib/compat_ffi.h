@@ -39,6 +39,9 @@ ssize_t compat_ffi_readv_from_pipe(const unsigned char *input, size_t input_len,
                                    int *err_out);
 int compat_ffi_writev_overflow_sets_einval(void);
 int compat_ffi_readv_overflow_sets_einval(void);
+int compat_ffi_writev_allocation_failure_returns_minus_one(void);
+int compat_ffi_readv_allocation_failure_returns_minus_one(void);
+int compat_ffi_strdup_allocation_failure_returns_null(void);
 int compat_ffi_poll_readable_pipe(struct compat_ffi_poll_snapshot *snapshot);
 int compat_ffi_poll_writable_pipe(struct compat_ffi_poll_snapshot *snapshot);
 int compat_ffi_strdup_matches(const char *input, size_t *len_out);
