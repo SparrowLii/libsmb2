@@ -1,4 +1,4 @@
-use libsmb2_sys::smb2::smb2_ioctl as ioctl;
+use libsmb2_rs::include::smb2::smb2_ioctl as ioctl;
 
 // Trace: `include/smb2/smb2-ioctl.h:32`
 // Spec: FSCTL_CREATE_OR_GET_OBJECT_ID exposes stable ioctl code#object ID create-or-get code is available

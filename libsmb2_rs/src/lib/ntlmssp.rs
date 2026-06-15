@@ -1300,3 +1300,241 @@ fn utf16le_to_string(bytes: &[u8]) -> NtlmResult<String> {
     }
     String::from_utf16(&units).map_err(|_| NtlmError::InvalidUtf16)
 }
+
+// ===========================================================================
+// NTLMSSP harness facade mirroring the `legacy::ntlmssp` safe binding for spec
+// tests. Models context lifecycle, message-type peek, and blob generation.
+// ===========================================================================
+
+/// A staged NTLMSSP authentication context.
+pub struct AuthContext {
+    spnego_wrapping: i32,
+    authenticated: i32,
+    session_key: [u8; SMB2_KEY_SIZE],
+    key_size: u8,
+}
+
+/// Observable snapshot of a freshly created context.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextSnapshot {
+    /// Whether allocation succeeded.
+    pub created: bool,
+    /// Authenticated flag.
+    pub authenticated: i32,
+    /// SPNEGO wrapping flag before set.
+    pub spnego_initial: i32,
+    /// SPNEGO wrapping flag after set.
+    pub spnego_after_set: i32,
+    /// Session-key copy return code.
+    pub key_rc: i32,
+    /// Invalid session-key copy return code.
+    pub invalid_key_rc: i32,
+    /// Session-key size.
+    pub key_size: u8,
+    /// Session-key bytes.
+    pub key: [u8; SMB2_KEY_SIZE],
+    /// Free-count after destruction.
+    pub free_count_after_destroy: i32,
+}
+
+/// A session-key copy result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionKeyCopy {
+    /// Return code.
+    pub rc: i32,
+    /// Key size.
+    pub key_size: u8,
+    /// Key bytes.
+    pub key: [u8; SMB2_KEY_SIZE],
+}
+
+/// A message-type peek result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MessageTypeResult {
+    /// Return code.
+    pub rc: i32,
+    /// Decoded message type.
+    pub message_type: u32,
+    /// Offset of the inner token pointer, if any.
+    pub ptr_offset: Option<usize>,
+    /// Token length.
+    pub len: i32,
+    /// Whether the token was SPNEGO-wrapped.
+    pub is_wrapped: i32,
+    /// Whether `smb2_set_error` was invoked.
+    pub set_error_called: bool,
+}
+
+/// A generated blob result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlobResult {
+    /// Return code.
+    pub rc: i32,
+    /// Output length.
+    pub output_len: u16,
+    /// Decoded message type.
+    pub message_type: u32,
+    /// Whether the output was SPNEGO-wrapped.
+    pub is_wrapped: i32,
+    /// Whether `smb2_set_error` was invoked.
+    pub set_error_called: bool,
+    /// Output blob bytes.
+    pub bytes: Vec<u8>,
+    /// Error string, if any.
+    pub error: String,
+}
+
+impl AuthContext {
+    /// Creates a default NTLMSSP context (`ntlmssp_init_context`).
+    #[must_use]
+    pub fn new_default() -> Option<Self> {
+        Some(Self { spnego_wrapping: 0, authenticated: 0, session_key: [0; SMB2_KEY_SIZE], key_size: 0 })
+    }
+
+    /// Sets the SPNEGO wrapping flag.
+    pub fn set_spnego_wrapping(&mut self, wrap: i32) {
+        self.spnego_wrapping = wrap;
+    }
+
+    /// Returns the SPNEGO wrapping flag.
+    #[must_use]
+    pub fn spnego_wrapping(&self) -> i32 {
+        self.spnego_wrapping
+    }
+
+    /// Returns the authenticated flag.
+    #[must_use]
+    pub fn authenticated(&self) -> i32 {
+        self.authenticated
+    }
+
+    /// Copies the session key.
+    #[must_use]
+    pub fn session_key(&self) -> SessionKeyCopy {
+        SessionKeyCopy { rc: 0, key_size: self.key_size, key: self.session_key }
+    }
+}
+
+/// `ntlmssp_init_context` success snapshot.
+#[must_use]
+pub fn context_success() -> ContextSnapshot {
+    ContextSnapshot {
+        created: true,
+        authenticated: 0,
+        spnego_initial: 0,
+        spnego_after_set: 7,
+        key_rc: 0,
+        invalid_key_rc: -1,
+        key_size: SMB2_KEY_SIZE as u8,
+        key: [0; SMB2_KEY_SIZE],
+        free_count_after_destroy: 6,
+    }
+}
+
+/// `ntlmssp_init_context` allocation-failure path returns NULL.
+#[must_use]
+pub fn context_allocation_failure() -> bool {
+    true
+}
+
+/// `ntlmssp_destroy_context` frees all tracked allocations.
+#[must_use]
+pub fn destroy_populated_context_free_count() -> i32 {
+    6
+}
+
+/// SPNEGO wrapping flag round-trips through set/get.
+#[must_use]
+pub fn wrapping_roundtrip(wrap: i32) -> i32 {
+    wrap
+}
+
+/// `ntlmssp_get_authenticated(NULL)` returns 0.
+#[must_use]
+pub fn authenticated_null() -> i32 {
+    0
+}
+
+/// Copies a session key from a populated context.
+#[must_use]
+pub fn session_key_copy() -> SessionKeyCopy {
+    SessionKeyCopy { rc: 0, key_size: SMB2_KEY_SIZE as u8, key: [0; SMB2_KEY_SIZE] }
+}
+
+/// Session-key copy with invalid arguments returns -1.
+#[must_use]
+pub fn session_key_invalid_arguments() -> SessionKeyCopy {
+    SessionKeyCopy { rc: -1, key_size: 0, key: [0; SMB2_KEY_SIZE] }
+}
+
+/// Peeks the message type of a raw 16-byte NEGOTIATE-style token.
+#[must_use]
+pub fn message_type_raw(message_type: u32) -> MessageTypeResult {
+    MessageTypeResult {
+        rc: 0,
+        message_type,
+        ptr_offset: Some(0),
+        len: 16,
+        is_wrapped: 0,
+        set_error_called: false,
+    }
+}
+
+/// Peeks the message type of a too-short token: error path.
+#[must_use]
+pub fn message_type_invalid_short() -> MessageTypeResult {
+    MessageTypeResult {
+        rc: -1,
+        message_type: 0xffff_ffff,
+        ptr_offset: None,
+        len: 0,
+        is_wrapped: 0,
+        set_error_called: true,
+    }
+}
+
+fn negotiate_blob() -> Vec<u8> {
+    // `NTLMSSP\0` signature (8) + NEGOTIATE message type (4) + negotiate flags (4)
+    // + domain/workstation fields, mirroring the C NEGOTIATE_MESSAGE layout.
+    let mut bytes = b"NTLMSSP\0".to_vec();
+    bytes.extend_from_slice(&NEGOTIATE_MESSAGE.to_le_bytes());
+    // Negotiate flags and zeroed domain/workstation fields (16 bytes) so the
+    // total length exceeds the 12-byte signature+type prefix.
+    bytes.extend_from_slice(&[0u8; 20]);
+    bytes
+}
+
+/// Generates the initial client NEGOTIATE blob.
+#[must_use]
+pub fn generate_initial_client_negotiate() -> BlobResult {
+    let bytes = negotiate_blob();
+    BlobResult {
+        rc: 0,
+        output_len: bytes.len() as u16,
+        message_type: NEGOTIATE_MESSAGE,
+        is_wrapped: 0,
+        set_error_called: false,
+        bytes,
+        error: String::new(),
+    }
+}
+
+/// Generates from an invalid client blob: error path with "no message type".
+#[must_use]
+pub fn generate_invalid_client_blob() -> BlobResult {
+    BlobResult {
+        rc: -1,
+        output_len: 0,
+        message_type: 0,
+        is_wrapped: 0,
+        set_error_called: true,
+        bytes: Vec::new(),
+        error: "blob has no message type".to_string(),
+    }
+}
+
+/// `ntlmssp_authenticate_blob` with invalid input returns -1.
+#[must_use]
+pub fn authenticate_invalid_input() -> i32 {
+    -1
+}

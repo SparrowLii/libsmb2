@@ -3,11 +3,11 @@ use libsmb2_rs::include::smb2::libsmb2::{
     SMB2_ADD_FD, SMB2_DEL_FD,
 };
 use libsmb2_rs::lib::libsmb2::{ConnectData, Smb2Directory};
-use libsmb2_sys::legacy::init::{InitContext, InitFileHandle};
+use libsmb2_rs::lib::init::{InitContext, InitFileHandle};
 use std::sync::{Arc, Mutex};
 
 fn context() -> InitContext {
-    InitContext::new().expect("init test context allocation succeeds")
+    InitContext::new()
 }
 
 fn client() -> Smb2Client {

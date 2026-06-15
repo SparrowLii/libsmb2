@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::asn1_ber::{BerType, Decoder, Encoder, OidValue};
+use libsmb2_rs::lib::asn1_ber::{SnmpBerType as BerType, Decoder, Encoder, OidValue};
 
 // Trace: `lib/asn1-ber.c:asn1ber_save_out_state`
 // Spec: asn1ber_save_out_state snapshots encoder position#save valid output state

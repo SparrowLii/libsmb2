@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::timestamps::{self, Smb2Timeval};
+use libsmb2_rs::lib::timestamps::{self, Smb2Timeval};
 
 // Trace: `lib/timestamps.c:smb2_timeval_to_win`, `include/smb2/libsmb2.h:smb2_timeval_to_win`, `tests/ntlmssp_generate_blob.c:main`
 // Spec: smb2_timeval_to_win convert Unix timeval to Windows FILETIME#正常 timeval 转换为 FILETIME
@@ -8,8 +8,8 @@ use libsmb2_sys::legacy::timestamps::{self, Smb2Timeval};
 #[test]
 fn test_timestamps_timeval_filetime() {
     let input = Smb2Timeval {
-        seconds: 1_700_000_000,
-        microseconds: 123_456,
+        tv_sec: 1_700_000_000,
+        tv_usec: 123_456,
     };
 
     assert_eq!(
@@ -31,8 +31,8 @@ fn test_timestamps_filetime_timeval() {
     assert_eq!(
         timestamps::windows_time_to_timeval(windows_time),
         Smb2Timeval {
-            seconds: 1_700_000_000,
-            microseconds: 123_456,
+            tv_sec: 1_700_000_000,
+            tv_usec: 123_456,
         }
     );
 }

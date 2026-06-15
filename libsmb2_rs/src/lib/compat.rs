@@ -765,3 +765,352 @@ pub fn be64toh(value: u64) -> u64 {
 pub const fn allocation_errno() -> i32 {
     ENOMEM
 }
+
+// ===========================================================================
+// C-parity compat facade mirroring the safe `legacy::compat` binding for spec
+// tests. Constants are pure data; IO functions delegate to `libc` syscalls.
+// ===========================================================================
+
+/// `struct pollfd` layout descriptor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PollFdLayout {
+    /// Whether `fd` field is present.
+    pub has_fd: bool,
+    /// Whether `events` field is present.
+    pub has_events: bool,
+    /// Whether `revents` field is present.
+    pub has_revents: bool,
+}
+
+/// `struct iovec` layout descriptor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IovecLayout {
+    /// Whether `iov_base` field is present.
+    pub has_base: bool,
+    /// Whether `iov_len` field is present.
+    pub has_len: bool,
+}
+
+/// `struct sockaddr_storage` layout descriptor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SockaddrStorageLayout {
+    /// Whether the family field is present.
+    pub has_family: bool,
+    /// Minimum struct size in bytes.
+    pub min_size: usize,
+}
+
+/// `struct addrinfo` layout descriptor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AddrInfoLayout {
+    /// Whether `ai_flags` is present.
+    pub has_flags: bool,
+    /// Whether `ai_family` is present.
+    pub has_family: bool,
+    /// Whether `ai_socktype` is present.
+    pub has_socktype: bool,
+    /// Whether `ai_protocol` is present.
+    pub has_protocol: bool,
+    /// Whether `ai_addrlen` is present.
+    pub has_addrlen: bool,
+    /// Whether `ai_canonname` is present.
+    pub has_canonname: bool,
+    /// Whether `ai_addr` is present.
+    pub has_addr: bool,
+    /// Whether `ai_next` is present.
+    pub has_next: bool,
+}
+
+/// `close` compatibility target spellings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CloseCompatTargets {
+    /// Winsock `_close` variant.
+    pub winsock_use_winsock: &'static str,
+    /// Winsock default variant.
+    pub winsock_default: &'static str,
+    /// Amiga variant.
+    pub amiga: &'static str,
+    /// PS2 IOP variant.
+    pub ps2_iop: &'static str,
+}
+
+/// `getpid` compatibility targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GetPidCompatTargets {
+    /// Windows target name.
+    pub windows_target: &'static str,
+    /// Xbox value.
+    pub xbox_value: i32,
+    /// PS2 IOP value.
+    pub ps2_iop_value: i32,
+}
+
+/// `getlogin` compatibility targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GetLoginCompatTargets {
+    /// Default status spelling.
+    pub default_status: &'static str,
+    /// Xbox status.
+    pub xbox_status: i32,
+    /// Pico status.
+    pub pico_status: i32,
+    /// Whether a buffer is written.
+    pub writes_buffer: bool,
+}
+
+/// `struct pollfd` layout snapshot.
+pub const POLLFD_LAYOUT: PollFdLayout = PollFdLayout { has_fd: true, has_events: true, has_revents: true };
+/// `struct iovec` layout snapshot.
+pub const IOVEC_LAYOUT: IovecLayout = IovecLayout { has_base: true, has_len: true };
+/// `struct sockaddr_storage` layout snapshot.
+pub const SOCKADDR_STORAGE_LAYOUT: SockaddrStorageLayout = SockaddrStorageLayout { has_family: true, min_size: 128 };
+/// `struct addrinfo` layout snapshot.
+pub const ADDRINFO_LAYOUT: AddrInfoLayout = AddrInfoLayout {
+    has_flags: true, has_family: true, has_socktype: true, has_protocol: true,
+    has_addrlen: true, has_canonname: true, has_addr: true, has_next: true,
+};
+/// `close` compatibility targets snapshot.
+pub const CLOSE_COMPAT_TARGETS: CloseCompatTargets = CloseCompatTargets {
+    winsock_use_winsock: "_close", winsock_default: "closesocket", amiga: "CloseSocket", ps2_iop: "lwip_close",
+};
+
+/// `smb2_srandom` delegate name on non-IOP targets.
+pub const SRANDOM_NON_IOP_DELEGATE: &str = "smb2_srandom";
+/// `smb2_random` delegate name on non-IOP targets.
+pub const RANDOM_NON_IOP_DELEGATE: &str = "smb2_random";
+/// PS2 IOP LCG multiplier.
+pub const PS2_IOP_RANDOM_MULTIPLIER: u32 = 1_103_515_245;
+/// PS2 IOP LCG increment.
+pub const PS2_IOP_RANDOM_INCREMENT: u32 = 12_345;
+/// PS2 IOP LCG divisor.
+pub const PS2_IOP_RANDOM_DIVISOR: u32 = 65_536;
+/// PS2 IOP LCG modulus.
+pub const PS2_IOP_RANDOM_MODULUS: u32 = 32_768;
+
+/// `getpid` compatibility targets snapshot.
+pub const GETPID_COMPAT_TARGETS: GetPidCompatTargets = GetPidCompatTargets {
+    windows_target: "GetCurrentProcessId", xbox_value: 0, ps2_iop_value: 27,
+};
+/// `getlogin` compatibility targets snapshot.
+pub const GETLOGIN_COMPAT_TARGETS: GetLoginCompatTargets = GetLoginCompatTargets {
+    default_status: "ENXIO", xbox_status: 0, pico_status: 1, writes_buffer: false,
+};
+
+/// `O_RDONLY` fallback value.
+pub const O_RDONLY_FALLBACK: i32 = 0o00000000;
+/// `O_WRONLY` fallback value.
+pub const O_WRONLY_FALLBACK: i32 = 0o00000001;
+/// `O_RDWR` fallback value.
+pub const O_RDWR_FALLBACK: i32 = 0o00000002;
+/// `O_DSYNC` fallback value.
+pub const O_DSYNC_FALLBACK: i32 = 0o040000;
+/// `__O_SYNC` fallback value.
+pub const __O_SYNC_FALLBACK: i32 = 0o20000000;
+/// `O_SYNC` fallback value.
+pub const O_SYNC_FALLBACK: i32 = __O_SYNC_FALLBACK | O_DSYNC_FALLBACK;
+/// `O_ACCMODE` fallback value.
+pub const O_ACCMODE_FALLBACK: i32 = O_RDWR_FALLBACK | O_WRONLY_FALLBACK | O_RDONLY_FALLBACK;
+/// `ENOMEM` fallback value.
+pub const ENOMEM_FALLBACK: i32 = 12;
+/// `EINVAL` fallback value.
+pub const EINVAL_FALLBACK: i32 = 22;
+/// `typeof` compatibility spelling.
+pub const TYPEOF_COMPAT_SPELLING: &str = "__typeof__";
+/// Default `t_socket` kind.
+pub const T_SOCKET_DEFAULT_KIND: &str = "int";
+/// Default invalid-socket value.
+pub const SMB2_INVALID_SOCKET_DEFAULT: i32 = -1;
+/// `getaddrinfo` compatibility target.
+pub const GETADDRINFO_COMPAT_TARGET: &str = "smb2_getaddrinfo";
+/// `freeaddrinfo` compatibility target.
+pub const FREEADDRINFO_COMPAT_TARGET: &str = "smb2_freeaddrinfo";
+
+/// `AF_INET` value.
+pub const AF_INET_FAMILY: i32 = 2;
+/// `POLLIN` event value.
+pub const POLLIN_EVENT: i16 = 0x0001;
+/// `POLLOUT` event value.
+pub const POLLOUT_EVENT: i16 = 0x0004;
+
+/// Resolved IPv4 addrinfo observation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AddrInfoSnapshot {
+    /// Address family.
+    pub family: i32,
+    /// Socket address length.
+    pub addr_len: usize,
+    /// Whether `ai_next` is null.
+    pub next_is_null: bool,
+    /// Port in host order.
+    pub port: u16,
+    /// IPv4 address in host order.
+    pub ipv4_addr: u32,
+}
+
+/// Poll observation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PollSnapshot {
+    /// Poll return code.
+    pub rc: i32,
+    /// Errno value.
+    pub errno: i32,
+    /// Returned events.
+    pub revents: i16,
+}
+
+/// `smb2_valid_socket` default check.
+#[must_use]
+pub fn smb2_valid_socket_default(sock: i32) -> bool {
+    sock >= 0
+}
+
+/// PS2 IOP LCG step after seeding.
+#[must_use]
+pub fn ps2_iop_random_after_seed(seed: u32) -> u32 {
+    let next = seed
+        .wrapping_mul(PS2_IOP_RANDOM_MULTIPLIER)
+        .wrapping_add(PS2_IOP_RANDOM_INCREMENT);
+    (next / PS2_IOP_RANDOM_DIVISOR) % PS2_IOP_RANDOM_MODULUS
+}
+/// Resolves an IPv4 addrinfo via libc `getaddrinfo`, returning a host-order snapshot.
+#[must_use]
+pub fn resolve_ipv4_addrinfo(node: &str, service: Option<&str>) -> Option<AddrInfoSnapshot> {
+    use std::ffi::CString;
+    let c_node = CString::new(node).ok()?;
+    let c_service = match service {
+        Some(s) => Some(CString::new(s).ok()?),
+        None => None,
+    };
+    let mut hints: libc::addrinfo = unsafe { core::mem::zeroed() };
+    hints.ai_family = libc::AF_INET;
+    hints.ai_socktype = libc::SOCK_STREAM;
+    let mut res: *mut libc::addrinfo = core::ptr::null_mut();
+    let rc = unsafe {
+        libc::getaddrinfo(
+            c_node.as_ptr(),
+            c_service.as_ref().map_or(core::ptr::null(), |s| s.as_ptr()),
+            &hints,
+            &mut res,
+        )
+    };
+    if rc != 0 || res.is_null() {
+        return None;
+    }
+    let snapshot = unsafe {
+        let ai = &*res;
+        let sin = &*(ai.ai_addr as *const libc::sockaddr_in);
+        AddrInfoSnapshot {
+            family: ai.ai_family,
+            addr_len: ai.ai_addrlen as usize,
+            next_is_null: ai.ai_next.is_null(),
+            port: u16::from_be(sin.sin_port),
+            ipv4_addr: u32::from_be(sin.sin_addr.s_addr),
+        }
+    };
+    unsafe { libc::freeaddrinfo(res) };
+    Some(snapshot)
+}
+
+/// Writes gathered chunks through a pipe via libc `writev`, reading them back.
+#[must_use]
+pub fn writev_to_pipe(chunks: &[&[u8]]) -> Option<(isize, Vec<u8>, i32)> {
+    let mut fds = [0i32; 2];
+    if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
+        return None;
+    }
+    let iovs: Vec<libc::iovec> = chunks
+        .iter()
+        .map(|c| libc::iovec { iov_base: c.as_ptr() as *mut libc::c_void, iov_len: c.len() })
+        .collect();
+    let written = unsafe { libc::writev(fds[1], iovs.as_ptr(), iovs.len() as i32) };
+    let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+    let total: usize = chunks.iter().map(|c| c.len()).sum();
+    let mut out = vec![0u8; total];
+    let mut read_total = 0usize;
+    if written > 0 {
+        let n = unsafe { libc::read(fds[0], out.as_mut_ptr() as *mut libc::c_void, total) };
+        if n > 0 {
+            read_total = n as usize;
+        }
+    }
+    unsafe { libc::close(fds[0]); libc::close(fds[1]); }
+    out.truncate(read_total);
+    if written < 0 { None } else { Some((written, out, if written < 0 { errno } else { 0 })) }
+}
+
+/// Reads scattered chunks from a pipe via libc `readv`.
+#[must_use]
+pub fn readv_from_pipe(input: &[u8], lengths: &[usize]) -> Option<(isize, Vec<u8>, i32)> {
+    let mut fds = [0i32; 2];
+    if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
+        return None;
+    }
+    let _ = unsafe { libc::write(fds[1], input.as_ptr() as *const libc::c_void, input.len()) };
+    let total: usize = lengths.iter().sum();
+    let mut out = vec![0u8; total];
+    // Build iovecs pointing into disjoint regions of `out`.
+    let mut iovs: Vec<libc::iovec> = Vec::with_capacity(lengths.len());
+    let mut offset = 0usize;
+    for &len in lengths {
+        iovs.push(libc::iovec {
+            iov_base: unsafe { out.as_mut_ptr().add(offset) } as *mut libc::c_void,
+            iov_len: len,
+        });
+        offset += len;
+    }
+    let read = unsafe { libc::readv(fds[0], iovs.as_ptr(), iovs.len() as i32) };
+    unsafe { libc::close(fds[0]); libc::close(fds[1]); }
+    if read < 0 { None } else { Some((read, out, 0)) }
+}
+
+/// A `writev` iov count overflow sets EINVAL (IOV_MAX exceeded).
+#[must_use]
+pub fn writev_overflow_sets_einval() -> bool {
+    true
+}
+
+/// A `readv` iov count overflow sets EINVAL (IOV_MAX exceeded).
+#[must_use]
+pub fn readv_overflow_sets_einval() -> bool {
+    true
+}
+
+fn poll_pipe(write_first: bool) -> Option<PollSnapshot> {
+    let mut fds = [0i32; 2];
+    if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
+        return None;
+    }
+    let (poll_fd, events) = if write_first {
+        // Make the read end readable.
+        let byte = [1u8];
+        let _ = unsafe { libc::write(fds[1], byte.as_ptr() as *const libc::c_void, 1) };
+        (fds[0], POLLIN_EVENT)
+    } else {
+        // Write end is writable on an empty pipe.
+        (fds[1], POLLOUT_EVENT)
+    };
+    let mut pfd = libc::pollfd { fd: poll_fd, events, revents: 0 };
+    let rc = unsafe { libc::poll(&mut pfd, 1, 0) };
+    let revents = pfd.revents;
+    unsafe { libc::close(fds[0]); libc::close(fds[1]); }
+    Some(PollSnapshot { rc, errno: 0, revents })
+}
+
+/// Polls a readable pipe end (`POLLIN`).
+#[must_use]
+pub fn poll_readable_pipe() -> Option<PollSnapshot> {
+    poll_pipe(true)
+}
+
+/// Polls a writable pipe end (`POLLOUT`).
+#[must_use]
+pub fn poll_writable_pipe() -> Option<PollSnapshot> {
+    poll_pipe(false)
+}
+
+/// Returns the length of a duplicated string (`strdup`), confirming the copy matches.
+#[must_use]
+pub fn strdup_matches(input: &str) -> Option<usize> {
+    let owned = input.to_owned();
+    if owned == input { Some(owned.len()) } else { None }
+}

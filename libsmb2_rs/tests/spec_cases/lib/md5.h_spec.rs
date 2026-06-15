@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::md5;
+use libsmb2_rs::lib::md5;
 
 // Trace: `lib/md5.h:UWORD32`
 // Spec: UWORD32 32-bit word typedef#默认平台公开 MD5 32 位字类型

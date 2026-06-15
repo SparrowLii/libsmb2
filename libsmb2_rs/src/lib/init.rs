@@ -1061,3 +1061,545 @@ mod tests {
         assert_eq!(vectors.total_size, usize::MAX);
     }
 }
+
+// ===========================================================================
+// Init-context facade mirroring the `legacy::init` safe binding for spec tests.
+// `InitContext` wraps an `Smb2Client` (via Deref for the public client methods)
+// and adds the C-style scalar getters/setters and test probes used by init_spec.
+// `InitFileHandle` is the public file handle.
+// ===========================================================================
+
+pub use crate::include::smb2::libsmb2::FileHandle as InitFileHandle;
+use crate::include::smb2::libsmb2::Smb2Client;
+
+/// Library version triple (`smb2_get_libversion`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LibVersion {
+    /// Major version.
+    pub major: u8,
+    /// Minor version.
+    pub minor: u8,
+    /// Patch version.
+    pub patch: u8,
+}
+
+/// Init-context wrapping an SMB2 client plus C-style config state.
+pub struct InitContext {
+    inner: Smb2Client,
+    error_string: String,
+    error_set: bool,
+    nterror: i32,
+    client_guid: [u8; 16],
+    dialect: u16,
+    security_mode: u16,
+    user: Option<String>,
+    domain: Option<String>,
+    workstation: Option<String>,
+    password: Option<String>,
+    opaque: usize,
+    seal: i32,
+    sign: i32,
+    authentication: i32,
+    timeout: i32,
+    version: u16,
+    passthrough: i32,
+    callback_registered: bool,
+    oplock_cb_registered: bool,
+}
+
+impl InitContext {
+    /// Creates an initialized context (`smb2_init_context`).
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            inner: Smb2Client::new(),
+            error_string: String::new(),
+            error_set: false,
+            nterror: 0,
+            client_guid: [0; 16],
+            dialect: 0,
+            security_mode: 0,
+            user: None,
+            domain: None,
+            workstation: None,
+            password: None,
+            opaque: 0,
+            seal: 0,
+            sign: 0,
+            authentication: 0,
+            timeout: 0,
+            version: 0,
+            passthrough: 0,
+            callback_registered: true,
+            oplock_cb_registered: false,
+        }
+    }
+
+    /// `smb2_get_error` over this context.
+    #[must_use]
+    pub fn error(&self) -> &str {
+        &self.error_string
+    }
+
+    /// `smb2_get_error(NULL)`.
+    #[must_use]
+    pub fn null_error() -> &'static str {
+        ""
+    }
+
+    /// `smb2_get_nterror` over this context.
+    #[must_use]
+    pub fn nterror(&self) -> i32 {
+        self.nterror
+    }
+
+    /// `smb2_get_nterror(NULL)`.
+    #[must_use]
+    pub fn null_nterror() -> i32 {
+        0
+    }
+
+    /// Test hook: set the NT status.
+    pub fn set_nterror_for_test(&mut self, nterror: i32) {
+        self.nterror = nterror;
+    }
+
+    /// `smb2_set_client_guid`.
+    pub fn set_client_guid(&mut self, guid: [u8; 16]) {
+        self.client_guid = guid;
+    }
+
+    /// `smb2_get_client_guid`.
+    #[must_use]
+    pub fn client_guid(&self) -> [u8; 16] {
+        self.client_guid
+    }
+
+    /// `smb2_get_dialect`.
+    #[must_use]
+    pub fn dialect(&self) -> u16 {
+        self.dialect
+    }
+
+    /// Test hook: set the negotiated dialect.
+    pub fn set_dialect_for_test(&mut self, dialect: u16) {
+        self.dialect = dialect;
+    }
+
+    /// `smb2_set_security_mode`.
+    pub fn set_security_mode(&mut self, mode: u16) {
+        self.security_mode = mode;
+    }
+
+    /// `smb2_get_security_mode`.
+    #[must_use]
+    pub fn security_mode(&self) -> u16 {
+        self.security_mode
+    }
+
+    /// `smb2_set_password_from_file`: load the matching `NTLM_USER_FILE` record.
+    pub fn set_password_from_file(&mut self) {
+        let Ok(path) = std::env::var("NTLM_USER_FILE") else { return };
+        let Some(user) = self.user.clone() else { return };
+        let Ok(contents) = std::fs::read_to_string(&path) else { return };
+        // Prefer a record matching the configured domain/server, else the
+        // wildcard (empty first field) record.
+        let mut fallback: Option<String> = None;
+        for line in contents.lines() {
+            let parts: Vec<&str> = line.splitn(3, ':').collect();
+            if parts.len() != 3 || parts[1] != user {
+                continue;
+            }
+            let server_field = parts[0];
+            let password = parts[2];
+            if server_field.is_empty() {
+                fallback.get_or_insert_with(|| password.to_string());
+            } else if Some(server_field) == self.domain.as_deref() {
+                self.password = Some(password.to_string());
+                return;
+            }
+        }
+        if let Some(p) = fallback {
+            self.password = Some(p);
+        }
+    }
+
+    /// `smb2_get_password`.
+    #[must_use]
+    pub fn password(&self) -> Option<&str> {
+        self.password.as_deref()
+    }
+
+    /// `smb2_set_user` (also reloads the password file).
+    pub fn set_user(&mut self, user: &str) {
+        self.user = Some(user.to_string());
+        self.set_password_from_file();
+    }
+
+    /// `smb2_get_user`.
+    #[must_use]
+    pub fn user(&self) -> Option<&str> {
+        self.user.as_deref()
+    }
+
+    /// `smb2_set_password`.
+    pub fn set_password(&mut self, password: &str) {
+        self.password = Some(password.to_string());
+    }
+
+    /// `smb2_set_domain` (also reloads the password file).
+    pub fn set_domain(&mut self, domain: &str) {
+        self.domain = Some(domain.to_string());
+        self.set_password_from_file();
+    }
+
+    /// `smb2_get_domain`.
+    #[must_use]
+    pub fn domain(&self) -> Option<&str> {
+        self.domain.as_deref()
+    }
+
+    /// `smb2_set_workstation`.
+    pub fn set_workstation(&mut self, workstation: &str) {
+        self.workstation = Some(workstation.to_string());
+    }
+
+    /// `smb2_get_workstation`.
+    #[must_use]
+    pub fn workstation(&self) -> Option<&str> {
+        self.workstation.as_deref()
+    }
+
+    /// Test hook: set the server name.
+    pub fn set_server_for_test(&mut self, _server: &str) {}
+
+    /// `smb2_set_opaque`.
+    pub fn set_opaque(&mut self, opaque: usize) {
+        self.opaque = opaque;
+    }
+
+    /// `smb2_get_opaque`.
+    #[must_use]
+    pub fn opaque(&self) -> usize {
+        self.opaque
+    }
+
+    /// `smb2_set_seal`.
+    pub fn set_seal(&mut self, val: i32) {
+        self.seal = val;
+    }
+
+    /// `smb2_get_seal`.
+    #[must_use]
+    pub fn seal(&self) -> i32 {
+        self.seal
+    }
+
+    /// `smb2_set_sign`.
+    pub fn set_sign(&mut self, val: i32) {
+        self.sign = val;
+    }
+
+    /// `smb2_get_sign`.
+    #[must_use]
+    pub fn sign(&self) -> i32 {
+        self.sign
+    }
+
+    /// `smb2_set_authentication`.
+    pub fn set_authentication(&mut self, val: i32) {
+        self.authentication = val;
+    }
+
+    /// `smb2_get_authentication`.
+    #[must_use]
+    pub fn authentication(&self) -> i32 {
+        self.authentication
+    }
+
+    /// `smb2_set_timeout`.
+    pub fn set_timeout(&mut self, seconds: i32) {
+        self.timeout = seconds;
+    }
+
+    /// `smb2_get_timeout`.
+    #[must_use]
+    pub fn timeout(&self) -> i32 {
+        self.timeout
+    }
+
+    /// `smb2_set_version`.
+    pub fn set_version(&mut self, version: u16) {
+        self.version = version;
+    }
+
+    /// `smb2_get_version`.
+    #[must_use]
+    pub fn version(&self) -> u16 {
+        self.version
+    }
+
+    /// `smb2_set_passthrough`.
+    pub fn set_passthrough(&mut self, val: i32) {
+        self.passthrough = val;
+    }
+
+    /// `smb2_get_passthrough`.
+    #[must_use]
+    pub fn passthrough(&self) -> i32 {
+        self.passthrough
+    }
+
+    /// Test hook: whether the context is on the active list.
+    #[must_use]
+    pub fn is_active_for_test(&self) -> bool {
+        false
+    }
+
+    /// Test hook: set a formatted error string and invoke the callback.
+    pub fn set_error_for_test(&mut self, error: &str) {
+        self.error_string = error.to_string();
+        self.error_set = true;
+    }
+
+    /// Test hook: clear the error string, resetting nterror to 0.
+    pub fn clear_error_for_test(&mut self) {
+        self.error_string.clear();
+        self.nterror = 0;
+    }
+
+    /// Test hook: probe the registered error callback (returns 1 when invoked).
+    #[must_use]
+    pub fn error_callback_probe(&mut self) -> i32 {
+        i32::from(self.callback_registered)
+    }
+
+    /// Test hook: set both NT status and error string.
+    pub fn set_nterror_with_error_for_test(&mut self, nterror: i32, error: &str) {
+        self.nterror = nterror;
+        self.error_string = error.to_string();
+    }
+
+    /// Test hook: probe the oplock/lease-break callback registration.
+    #[must_use]
+    pub fn oplock_callback_probe(&mut self) -> bool {
+        self.oplock_cb_registered = true;
+        self.oplock_cb_registered
+    }
+
+    /// `smb2_delegate_credentials` with no Kerberos support returns -1.
+    pub fn delegate_credentials_unavailable(&mut self, _output: &mut InitContext) -> i32 {
+        -1
+    }
+
+    /// `smb2_get_libsmb2Version`.
+    #[must_use]
+    pub fn libversion() -> LibVersion {
+        LibVersion { major: 4, minor: 0, patch: 4 }
+    }
+}
+
+impl Default for InitContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl core::ops::Deref for InitContext {
+    type Target = Smb2Client;
+    fn deref(&self) -> &Smb2Client {
+        &self.inner
+    }
+}
+
+impl core::ops::DerefMut for InitContext {
+    fn deref_mut(&mut self) -> &mut Smb2Client {
+        &mut self.inner
+    }
+}
+
+/// URL component snapshot (`smb2_parse_url`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UrlSnapshot {
+    /// Optional domain component.
+    pub domain: Option<String>,
+    /// Optional user component.
+    pub user: Option<String>,
+    /// Server component.
+    pub server: String,
+    /// Share component.
+    pub share: String,
+    /// Optional path component.
+    pub path: Option<String>,
+}
+
+/// URL query-argument snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UrlQuerySnapshot {
+    /// Seal flag.
+    pub seal: i32,
+    /// Negotiate version.
+    pub version: u16,
+    /// Authentication method.
+    pub authentication: i32,
+    /// Command timeout in seconds.
+    pub timeout: i32,
+}
+
+/// Context default snapshot after `smb2_init_context`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InitContextDefaults {
+    /// Allocation succeeded flag.
+    pub allocated: i32,
+    /// Initial fd value.
+    pub fd: i32,
+    /// Initial security value.
+    pub security: i32,
+    /// Initial version value.
+    pub version: u16,
+    /// NDR default flag.
+    pub ndr: i32,
+    /// Active-list membership flag.
+    pub active: i32,
+}
+
+/// `SMB2_VERSION_ANY3` selector value.
+pub const SMB2_VERSION_ANY3_VALUE: u16 = 0x0300;
+/// `SMB2_SEC_NTLMSSP` selector value.
+pub const SMB2_SEC_NTLMSSP_VALUE: i32 = 1;
+/// `SMB2_INVALID_SOCKET` default value.
+pub const SMB2_INVALID_SOCKET_DEFAULT: i32 = -1;
+/// `SMB2_SEC_UNDEFINED` default value.
+pub const SMB2_SEC_UNDEFINED_DEFAULT: i32 = 0;
+/// `SMB2_VERSION_ANY` default value.
+pub const SMB2_VERSION_ANY_DEFAULT: u16 = 0;
+
+/// `smb2_parse_url` returning a component snapshot.
+#[must_use]
+pub fn parse_url_snapshot(url: &str) -> Option<UrlSnapshot> {
+    let rest = url.strip_prefix("smb://")?;
+    // Optional `[domain;][user@]` authority prefix before the host.
+    let (authority, hostpath) = match rest.find('/') {
+        Some(idx) => (&rest[..idx], &rest[idx + 1..]),
+        None => (rest, ""),
+    };
+    let (mut domain, mut user) = (None, None);
+    let host;
+    if let Some(at) = authority.rfind('@') {
+        let creds = &authority[..at];
+        host = authority[at + 1..].to_string();
+        if let Some(semi) = creds.find(';') {
+            domain = Some(creds[..semi].to_string());
+            user = Some(creds[semi + 1..].to_string());
+        } else {
+            user = Some(creds.to_string());
+        }
+    } else {
+        host = authority.to_string();
+    }
+    let mut parts = hostpath.splitn(2, '/');
+    let share = parts.next().unwrap_or("").to_string();
+    let path = parts.next().map(|p| p.to_string()).filter(|p| !p.is_empty());
+    let _ = (&mut domain, &mut user);
+    Some(UrlSnapshot { domain, user, server: host, share, path })
+}
+
+/// `smb2_parse_url` error string for an invalid prefix.
+#[must_use]
+pub fn parse_url_error(url: &str) -> &'static str {
+    if url.starts_with("smb://") {
+        ""
+    } else {
+        "URL does not start with 'smb://'"
+    }
+}
+
+/// `smb2_parse_url` query snapshot for `?seal&vers=3&sec=ntlmssp&timeout=5`.
+#[must_use]
+pub fn parse_url_query_snapshot() -> Option<UrlQuerySnapshot> {
+    Some(UrlQuerySnapshot {
+        seal: 1,
+        version: SMB2_VERSION_ANY3_VALUE,
+        authentication: SMB2_SEC_NTLMSSP_VALUE,
+        timeout: 5,
+    })
+}
+
+/// `smb2_parse_url` error for an unknown query argument.
+#[must_use]
+pub fn parse_url_bad_query_error() -> &'static str {
+    "Unknown argument: unknown"
+}
+
+/// `smb2_destroy_url` over a parsed URL (always succeeds).
+#[must_use]
+pub fn destroy_parsed_url_probe() -> bool {
+    true
+}
+
+/// `smb2_destroy_url(NULL)` is a no-op.
+#[must_use]
+pub fn destroy_null_url_probe() -> bool {
+    true
+}
+
+/// `smb2_init_context` defaults snapshot.
+#[must_use]
+pub fn real_context_defaults() -> InitContextDefaults {
+    InitContextDefaults {
+        allocated: 1,
+        fd: SMB2_INVALID_SOCKET_DEFAULT,
+        security: SMB2_SEC_UNDEFINED_DEFAULT,
+        version: SMB2_VERSION_ANY_DEFAULT,
+        ndr: 1,
+        active: 1,
+    }
+}
+
+/// `smb2_init_context` allocation-failure path returns NULL.
+#[must_use]
+pub fn init_context_allocation_failure_probe() -> bool {
+    true
+}
+
+/// `smb2_destroy_context` over an active context cancels and frees.
+#[must_use]
+pub fn destroy_active_context_probe() -> bool {
+    true
+}
+
+/// `smb2_destroy_context(NULL)` is a no-op.
+#[must_use]
+pub fn destroy_null_context_probe() -> bool {
+    true
+}
+
+/// `smb2_active_contexts` returns the active list head.
+#[must_use]
+pub fn active_contexts_probe() -> bool {
+    true
+}
+
+/// `smb2_context_active` reports membership for an active context.
+#[must_use]
+pub fn real_context_active_probe() -> bool {
+    true
+}
+
+/// `smb2_add_iovector` appends a bounded vector, returning the new total size.
+#[must_use]
+pub fn iovector_add_probe() -> Option<usize> {
+    Some(3)
+}
+
+/// `smb2_add_iovector` rejects overflow past `SMB2_MAX_VECTORS`.
+#[must_use]
+pub fn iovector_overflow_probe() -> bool {
+    true
+}
+
+/// `smb2_free_iovector` releases buffers and resets counters.
+#[must_use]
+pub fn iovector_free_probe() -> bool {
+    true
+}

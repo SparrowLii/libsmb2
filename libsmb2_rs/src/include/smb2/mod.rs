@@ -7,6 +7,12 @@ pub mod libsmb2_dcerpc;
 pub mod libsmb2_dcerpc_lsa;
 #[path = "libsmb2-dcerpc-srvsvc.rs"]
 pub mod libsmb2_dcerpc_srvsvc;
+/// Pure-Rust DCERPC NDR coder facade (matches the C `libsmb2-dcerpc` coder API).
+pub mod dcerpc_coder;
+/// Pure-Rust LSA coder facade.
+pub mod dcerpc_coder_lsa;
+/// Pure-Rust srvsvc coder facade.
+pub mod dcerpc_coder_srvsvc;
 #[path = "libsmb2-raw.rs"]
 pub mod libsmb2_raw;
 #[path = "smb2.rs"]

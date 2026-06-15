@@ -401,3 +401,53 @@ fn copy_padded_buffer(
     padding.fill(0);
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// C-parity facade mirroring the safe `legacy::aes_reference` binding used by
+// the spec tests. `RefAesBlock` here is a 16-byte newtype, distinct from the
+// module's `[u8; 16]` type alias used by the lower-level helpers.
+// ---------------------------------------------------------------------------
+
+/// 16-byte AES block newtype matching the safe-binding shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RefAesBlock(pub [u8; 16]);
+
+/// `USE_AES128_CBC` default value (CBC declarations disabled by default).
+#[must_use]
+pub fn default_cbc_value() -> i32 { 0 }
+
+/// CBC reference declarations are disabled by default.
+#[must_use]
+pub fn default_cbc_declarations_enabled() -> bool { false }
+
+/// External ECB declaration value when ECB is disabled.
+#[must_use]
+pub fn external_ecb_value_when_disabled() -> i32 { 0 }
+
+/// External ECB declarations are disabled when the ECB switch is off.
+#[must_use]
+pub fn external_ecb_declarations_enabled_when_disabled() -> bool { false }
+
+/// Reference ECB single-block encryption.
+#[must_use]
+pub fn ecb_encrypt_block(input: RefAesBlock, key: RefAesBlock) -> RefAesBlock {
+    RefAesBlock(aes128_ecb_encrypt_reference(input.0, key.0))
+}
+
+/// Reference ECB single-block decryption.
+#[must_use]
+pub fn ecb_decrypt_block(input: RefAesBlock, key: RefAesBlock) -> RefAesBlock {
+    RefAesBlock(super::aes::reference_decrypt_block(super::aes::AesBlock(input.0), super::aes::AesBlock(key.0)).0)
+}
+
+/// Reference CBC buffer encryption with zero-padded tail.
+#[must_use]
+pub fn cbc_encrypt(input: &[u8], key: RefAesBlock, iv: RefAesBlock) -> Vec<u8> {
+    super::aes::reference_cbc_encrypt(input, super::aes::AesBlock(key.0), super::aes::AesBlock(iv.0))
+}
+
+/// Reference CBC buffer decryption with zero-padded tail.
+#[must_use]
+pub fn cbc_decrypt(input: &[u8], key: RefAesBlock, iv: RefAesBlock) -> Vec<u8> {
+    super::aes::reference_cbc_decrypt(input, super::aes::AesBlock(key.0), super::aes::AesBlock(iv.0))
+}

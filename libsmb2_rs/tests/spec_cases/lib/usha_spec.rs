@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::sha;
+use libsmb2_rs::lib::sha;
 
 // Trace: `lib/usha.c:USHAReset`, `lib/sha.h:USHAReset`
 // Spec: USHAReset unified reset dispatch#non-null context dispatches reset

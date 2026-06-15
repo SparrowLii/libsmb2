@@ -1,4 +1,4 @@
-use libsmb2_sys::smb2::libsmb2_dcerpc_srvsvc::{
+use libsmb2_rs::include::smb2::dcerpc_coder_srvsvc::{
     srvsvc_netr_share_enum_rep_coder_harness, srvsvc_netr_share_enum_rep_decoder_harness,
     srvsvc_netr_share_enum_req_coder_harness, srvsvc_netr_share_enum_req_decoder_harness,
     srvsvc_netr_share_get_info_rep_coder_harness, srvsvc_netr_share_get_info_rep_decoder_harness,

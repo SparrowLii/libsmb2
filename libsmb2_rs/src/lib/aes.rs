@@ -1,6 +1,90 @@
 //! AES helpers migrated from `lib/aes.c`.
 
+use aes::cipher::{generic_array::GenericArray, BlockDecrypt, BlockEncrypt, KeyInit};
+use aes::Aes128;
 use core::fmt;
+
+/// Encrypts one AES-128 block, mirroring the C `AES128_ECB_encrypt` entry point.
+///
+/// Accepts the block and key as [`AesBlock`] values (16 bytes each) and returns the
+/// ECB-encrypted block. Backed by the `aes` crate for correctness.
+#[must_use]
+pub fn encrypt_block(input: AesBlock, key: AesBlock) -> AesBlock {
+    let cipher = Aes128::new(GenericArray::from_slice(&key.0));
+    let mut block = GenericArray::clone_from_slice(&input.0);
+    cipher.encrypt_block(&mut block);
+    AesBlock(block.into())
+}
+
+/// Encrypts one block via the reference backend (`AES128_ECB_encrypt_reference`).
+#[must_use]
+pub fn reference_encrypt_block(input: AesBlock, key: AesBlock) -> AesBlock {
+    encrypt_block(input, key)
+}
+
+/// Decrypts one block via the reference backend (`AES128_ECB_decrypt_reference`).
+#[must_use]
+pub fn reference_decrypt_block(input: AesBlock, key: AesBlock) -> AesBlock {
+    let cipher = Aes128::new(GenericArray::from_slice(&key.0));
+    let mut block = GenericArray::clone_from_slice(&input.0);
+    cipher.decrypt_block(&mut block);
+    AesBlock(block.into())
+}
+
+fn cbc_output_len(input_len: usize) -> usize {
+    let remainder = input_len % 16;
+    if remainder == 0 {
+        input_len
+    } else {
+        input_len + (16 - remainder)
+    }
+}
+
+/// CBC-encrypts a buffer with zero-padded trailing block, mirroring
+/// `AES128_CBC_encrypt_buffer_reference`.
+#[must_use]
+pub fn reference_cbc_encrypt(input: &[u8], key: AesBlock, iv: AesBlock) -> Vec<u8> {
+    let cipher = Aes128::new(GenericArray::from_slice(&key.0));
+    let mut buf = input.to_vec();
+    buf.resize(cbc_output_len(buf.len()), 0);
+    let mut prev = iv.0;
+    let mut out = Vec::with_capacity(buf.len());
+    for chunk in buf.chunks(16) {
+        let mut block = [0u8; 16];
+        for i in 0..16 {
+            block[i] = chunk[i] ^ prev[i];
+        }
+        let mut ga = GenericArray::clone_from_slice(&block);
+        cipher.encrypt_block(&mut ga);
+        prev = ga.into();
+        out.extend_from_slice(&prev);
+    }
+    out
+}
+
+/// CBC-decrypts a buffer with zero-padded trailing block, mirroring
+/// `AES128_CBC_decrypt_buffer_reference`.
+#[must_use]
+pub fn reference_cbc_decrypt(input: &[u8], key: AesBlock, iv: AesBlock) -> Vec<u8> {
+    let cipher = Aes128::new(GenericArray::from_slice(&key.0));
+    let mut buf = input.to_vec();
+    buf.resize(cbc_output_len(buf.len()), 0);
+    let mut prev = iv.0;
+    let mut out = Vec::with_capacity(buf.len());
+    for chunk in buf.chunks(16) {
+        let cipher_block: [u8; 16] = chunk.try_into().unwrap();
+        let mut ga = GenericArray::clone_from_slice(&cipher_block);
+        cipher.decrypt_block(&mut ga);
+        let dec: [u8; 16] = ga.into();
+        let mut plain = [0u8; 16];
+        for i in 0..16 {
+            plain[i] = dec[i] ^ prev[i];
+        }
+        out.extend_from_slice(&plain);
+        prev = cipher_block;
+    }
+    out
+}
 
 /// AES-128 key size in bytes.
 pub const AES128_KEY_LEN: usize = 16;

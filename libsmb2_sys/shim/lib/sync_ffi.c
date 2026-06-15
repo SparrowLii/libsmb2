@@ -242,7 +242,7 @@ const char *smb2_get_error(struct smb2_context *smb2)
         return smb2 ? smb2->error_string : "";
 }
 
-void smb2_free_pdu(struct smb2_context *smb2 _U_, struct smb2_pdu *pdu _U_)
+__attribute__((weak)) void smb2_free_pdu(struct smb2_context *smb2 _U_, struct smb2_pdu *pdu _U_)
 {
 }
 

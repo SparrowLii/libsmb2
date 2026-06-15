@@ -1020,7 +1020,9 @@ mod tests {
         body.extend_from_slice(&0u32.to_le_bytes());
         body.extend_from_slice(&1u16.to_le_bytes());
         body.push(0);
-        body.extend_from_slice(&[0, 0, 0]);
+        // Pad to the 4-byte boundary the BindAck parser aligns to after the
+        // 1-byte secondary address (position 11 -> 12 consumes a single byte).
+        body.push(0);
         body.push(1);
         body.push(0);
         body.extend_from_slice(&0u16.to_le_bytes());
@@ -1088,7 +1090,7 @@ mod tests {
     fn transport_state_machine_opens_binds_calls_and_decodes_response() {
         let reply_payload = b"srvsvc-reply";
         let (mut dce, mut transport) = connected_context(vec![
-            frame(1, 0, &[]),
+            frame(2, 0, &[]),
             bind_ack(),
             response_pdu(3, reply_payload),
         ]);
@@ -1100,7 +1102,7 @@ mod tests {
             &mut transport,
             Box::new(|ctx, result| {
                 assert!(result.is_ok());
-                assert_eq!(ctx.file_id()[..8], 1u64.to_be_bytes());
+                assert_eq!(ctx.file_id()[..8], 2u64.to_be_bytes());
             }),
         )
         .expect("bind response is accepted");

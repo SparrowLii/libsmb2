@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::md4;
+use libsmb2_rs::lib::md4c as md4;
 
 // Trace: `lib/md4c.c:MD4Init`
 // Spec: MD4Init initialize context state#initialize fresh context

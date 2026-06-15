@@ -269,3 +269,72 @@ fn decode_words(output: &mut [u32], input: &[u8], len: usize) {
         *word = u32::from_le_bytes(bytes);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Snapshot-style API mirroring the C `MD4_CTX` observation surface used by the
+// spec tests (matches the safe binding shape).
+// ---------------------------------------------------------------------------
+
+/// Observable snapshot of an `MD4_CTX`'s internal state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ContextSnapshot {
+    /// Current ABCD state words (`ctx->state`).
+    pub state: [u32; 4],
+    /// Processed-bit counter (`ctx->count`).
+    pub count: [u32; 2],
+    /// Pending input buffer (`ctx->buffer`).
+    pub buffer: [u8; 64],
+}
+
+impl ContextSnapshot {
+    fn from_context(ctx: &Md4Context) -> Self {
+        Self {
+            state: ctx.state,
+            count: ctx.count,
+            buffer: ctx.buffer,
+        }
+    }
+
+    /// Returns true if all context storage is zeroed (post-finalization cleanup).
+    #[must_use]
+    pub fn is_zeroed(&self) -> bool {
+        self.state == [0; 4] && self.count == [0; 2] && self.buffer == [0; 64]
+    }
+}
+
+/// Returns the `(state, count, buffer)` element counts of the context layout.
+#[must_use]
+pub fn context_layout() -> (usize, usize, usize) {
+    (4, 2, 64)
+}
+
+/// Returns a snapshot of a freshly initialized context (`MD4Init`).
+#[must_use]
+pub fn initial_context() -> ContextSnapshot {
+    ContextSnapshot::from_context(&Md4Context::new())
+}
+
+/// Returns a snapshot after a single `MD4Update` over `input`.
+#[must_use]
+pub fn snapshot_after_update(input: &[u8]) -> ContextSnapshot {
+    let mut ctx = Md4Context::new();
+    ctx.update(input);
+    ContextSnapshot::from_context(&ctx)
+}
+
+/// Returns the digest and the post-finalization (zeroed) context snapshot.
+#[must_use]
+pub fn digest_with_final_context(input: &[u8]) -> ([u8; 16], ContextSnapshot) {
+    let mut ctx = Md4Context::new();
+    ctx.update(input);
+    let digest = ctx.final_bytes();
+    (digest, ContextSnapshot::from_context(&ctx))
+}
+
+/// Computes the MD4 digest of `input` in one shot.
+#[must_use]
+pub fn digest(input: &[u8]) -> [u8; 16] {
+    let mut ctx = Md4Context::new();
+    ctx.update(input);
+    ctx.final_bytes()
+}

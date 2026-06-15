@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::aes::{encrypt_block, AesBlock};
+use libsmb2_rs::lib::aes::{encrypt_block, AesBlock};
 
 // Trace: `lib/aes_apple.c:AES128_ECB_encrypt_apple`, `lib/aes_apple.h:AES128_ECB_encrypt_apple`
 // Spec: AES128_ECB_encrypt_apple encrypts one AES-128 ECB block on Apple#Apple CommonCrypto encryption succeeds

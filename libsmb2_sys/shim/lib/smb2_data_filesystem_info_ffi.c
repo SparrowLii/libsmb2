@@ -177,18 +177,27 @@ int smb2_data_filesystem_info_ffi_decode_volume(const uint8_t *buf, size_t len,
 {
         struct smb2_file_fs_volume_info fs;
         struct smb2_iovec vec;
+        void *memctx;
 
         memset(&fs, 0, sizeof(fs));
         vec.buf = discard_const(buf);
         vec.len = len;
 
-        if (smb2_data_filesystem_info_ffi_real_decode_volume(NULL, label_buf, &fs, &vec) < 0) {
+        /* smb2_decode_file_fs_volume_info uses smb2_alloc_data, which
+           interprets memctx as an smb2_alloc_header. Pass a real allocation
+           context (not the caller's raw label buffer) so the C allocator does
+           not corrupt Rust-owned memory. */
+        memctx = smb2_alloc_init(NULL, 0);
+        if (memctx == NULL) {
+                return -1;
+        }
+
+        if (smb2_data_filesystem_info_ffi_real_decode_volume(NULL, memctx, &fs, &vec) < 0) {
+                smb2_free_data(NULL, memctx);
                 return -1;
         }
         if (fs.volume_label_length > 0 && fs.volume_label == NULL) {
-                return -1;
-        }
-        if (fs.volume_label_length > 0 && strlen(fs.volume_label) + 1 > label_buf_len) {
+                smb2_free_data(NULL, memctx);
                 return -1;
         }
 
@@ -197,7 +206,21 @@ int smb2_data_filesystem_info_ffi_decode_volume(const uint8_t *buf, size_t len,
         out->volume_serial_number = fs.volume_serial_number;
         out->supports_objects = fs.supports_objects;
         out->reserved = fs.reserved;
-        out->volume_label = fs.volume_label;
+        if (fs.volume_label != NULL) {
+                if (strlen(fs.volume_label) + 1 > label_buf_len) {
+                        smb2_free_data(NULL, memctx);
+                        return -1;
+                }
+                strcpy(label_buf, fs.volume_label);
+                out->volume_label = label_buf;
+        } else {
+                if (label_buf_len > 0) {
+                        label_buf[0] = '\0';
+                }
+                out->volume_label = label_buf_len > 0 ? label_buf : NULL;
+        }
+
+        smb2_free_data(NULL, memctx);
         return 0;
 }
 
@@ -227,21 +250,43 @@ int smb2_data_filesystem_info_ffi_decode_attribute(const uint8_t *buf, size_t le
 {
         struct smb2_file_fs_attribute_info fs;
         struct smb2_iovec vec;
+        void *memctx;
 
         memset(&fs, 0, sizeof(fs));
         vec.buf = discard_const(buf);
         vec.len = len;
 
-        if (smb2_data_filesystem_info_ffi_real_decode_attribute(NULL, name_buf, &fs, &vec) < 0) {
+        /* smb2_decode_file_fs_attribute_info uses smb2_alloc_data, which
+           interprets memctx as an smb2_alloc_header. Pass a real allocation
+           context (not the caller's raw name buffer) so the C allocator does
+           not corrupt Rust-owned memory. */
+        memctx = smb2_alloc_init(NULL, 0);
+        if (memctx == NULL) {
                 return -1;
         }
-        if (fs.filesystem_name != NULL && strlen(fs.filesystem_name) + 1 > name_buf_len) {
+
+        if (smb2_data_filesystem_info_ffi_real_decode_attribute(NULL, memctx, &fs, &vec) < 0) {
+                smb2_free_data(NULL, memctx);
                 return -1;
         }
 
         out->filesystem_attributes = fs.filesystem_attributes;
         out->maximum_component_name_length = fs.maximum_component_name_length;
-        out->filesystem_name = fs.filesystem_name;
+        if (fs.filesystem_name != NULL) {
+                if (strlen(fs.filesystem_name) + 1 > name_buf_len) {
+                        smb2_free_data(NULL, memctx);
+                        return -1;
+                }
+                strcpy(name_buf, fs.filesystem_name);
+                out->filesystem_name = name_buf;
+        } else {
+                if (name_buf_len > 0) {
+                        name_buf[0] = '\0';
+                }
+                out->filesystem_name = name_buf_len > 0 ? name_buf : NULL;
+        }
+
+        smb2_free_data(NULL, memctx);
         return 0;
 }
 

@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::unicode;
+use libsmb2_rs::lib::unicode;
 
 // Trace: `lib/unicode.c:smb2_utf8_to_utf16`, `include/smb2/libsmb2.h:smb2_utf8_to_utf16`
 // Spec: smb2_utf8_to_utf16 valid UTF-8 conversion#ASCII and multibyte conversion

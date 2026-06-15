@@ -1,4 +1,4 @@
-use libsmb2_sys::include::slist::{SListHead, SListNode};
+use libsmb2_rs::include::slist::{SListHead, SListNode};
 
 // Trace: `include/slist.h:SMB2_LIST_ADD`, `lib/init.c:smb2_init_context`, `lib/libsmb2.c:decode_dirents`
 // Spec: SMB2_LIST_ADD head insertion behavior#prepend item to list

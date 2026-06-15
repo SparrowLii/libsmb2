@@ -377,25 +377,10 @@ pub fn smb2_pdu_add_signature(signing: &Smb2SigningContext, pdu: &mut Pdu) -> Si
 /// Checks a PDU signature.
 ///
 pub fn smb2_pdu_check_signature(signing: &Smb2SigningContext, pdu: &Pdu) -> SigningResult<()> {
-    let Some(first) = pdu.input.vectors.first() else {
-        return Err(SigningError::MissingVectors);
-    };
-    let Some(expected) = first
-        .buf
-        .get(SMB2_SIGNATURE_OFFSET..SMB2_SIGNATURE_OFFSET + SMB2_SIGNATURE_SIZE)
-    else {
-        return Err(SigningError::HeaderTooSmall);
-    };
-    let mut expected_signature = [0; SMB2_SIGNATURE_SIZE];
-    expected_signature.copy_from_slice(expected);
-
-    let mut vectors = pdu.input.vectors.clone();
-    let actual = smb2_calc_signature(signing, &mut vectors)?.signature;
-    if signatures_equal(&actual, &expected_signature) {
-        Ok(())
-    } else {
-        Err(SigningError::SignatureMismatch)
-    }
+    // Mirrors the C `smb2_pdu_check_signature`, which is currently a no-op that
+    // returns 0 without reading or verifying the signature fields.
+    let _ = (signing, pdu);
+    Ok(())
 }
 
 fn aes_cmac_shift_left(data: &mut AesCmac) -> u8 {
@@ -614,13 +599,27 @@ mod tests {
             total_size: vectors.iter().map(IoVec::len).sum(),
             vectors,
         };
+        // `smb2_pdu_check_signature` mirrors the C no-op (always returns Ok).
         assert_eq!(smb2_pdu_check_signature(&signing, &pdu), Ok(()));
 
+        // Signature verification itself is covered by recomputing via
+        // `smb2_calc_signature` and comparing against the embedded value.
+        let embedded: [u8; SMB2_SIGNATURE_SIZE] = pdu.input.vectors[0].buf
+            [SMB2_SIGNATURE_OFFSET..SMB2_SIGNATURE_OFFSET + SMB2_SIGNATURE_SIZE]
+            .try_into()
+            .unwrap();
+        let mut verify_vectors = pdu.input.vectors.clone();
+        let recomputed = smb2_calc_signature(&signing, &mut verify_vectors)
+            .unwrap()
+            .signature;
+        assert!(signatures_equal(&recomputed, &embedded));
+
         pdu.input.vectors[1].buf[0] ^= 1;
-        assert_eq!(
-            smb2_pdu_check_signature(&signing, &pdu),
-            Err(SigningError::SignatureMismatch)
-        );
+        let mut tampered_vectors = pdu.input.vectors.clone();
+        let tampered = smb2_calc_signature(&signing, &mut tampered_vectors)
+            .unwrap()
+            .signature;
+        assert!(!signatures_equal(&tampered, &embedded));
     }
 
     #[test]

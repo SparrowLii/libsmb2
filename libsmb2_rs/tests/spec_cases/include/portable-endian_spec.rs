@@ -1,4 +1,4 @@
-use libsmb2_sys::include::portable_endian::{
+use libsmb2_rs::include::portable_endian::{
     be16_to_host, be32_to_host, be64_to_host, host_to_be16, host_to_be32, host_to_be64,
     host_to_le16, host_to_le32, host_to_le64, le16_to_host, le32_to_host, le64_to_host,
 };

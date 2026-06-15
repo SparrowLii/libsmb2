@@ -2365,3 +2365,9 @@ raw_reply_fn!(
     RawCommandKind::Error,
     "Creates a protocol-free SMB2 error reply command descriptor."
 );
+
+/// SMB2 file-id size in bytes (`SMB2_FD_SIZE`).
+pub const SMB2_FD_SIZE: usize = 16;
+
+/// Special compound-request file-id sentinel (`compound_file_id`).
+pub const COMPOUND_FILE_ID: [u8; SMB2_FD_SIZE] = [0xff; SMB2_FD_SIZE];

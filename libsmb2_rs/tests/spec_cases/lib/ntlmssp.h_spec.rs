@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::ntlmssp::{
+use libsmb2_rs::lib::ntlmssp::{
     self, AuthContext, AUTHENTICATION_MESSAGE, CHALLENGE_MESSAGE, NEGOTIATE_MESSAGE, SMB2_KEY_SIZE,
 };
 

@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::hmac_md5;
+use libsmb2_rs::lib::hmac_md5;
 
 // Trace: `lib/hmac-md5.c:smb2_hmac_md5`, `lib/hmac-md5.h:smb2_hmac_md5`, `tests/ntlmssp_generate_blob.c:main`
 // Spec: smb2_hmac_md5 compute RFC2104 MD5 HMAC#短密钥直接参与内外层 MD5

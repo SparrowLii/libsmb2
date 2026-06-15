@@ -135,7 +135,7 @@ fn test_smb2_cmd_write_valid_write_request_fixed_area_populates_request() {
 #[test]
 fn test_smb2_cmd_write_request_variable_length_is_reported() {
     let mut request = Smb2WriteRequest::new([0; SMB2_FD_SIZE], 0, &[1, 2]);
-    request.write_channel_info_offset = 112;
+    request.write_channel_info_offset = 128;
     request.write_channel_info_length = 3;
 
     assert_eq!(request.expected_variable_len().unwrap(), 16 + 8 + 2);
@@ -167,7 +167,7 @@ fn test_smb2_cmd_write_overlapping_channel_info_is_rejected() {
 #[test]
 fn test_smb2_cmd_write_variable_area_maps_channel_info_and_write_data() {
     let mut request = Smb2WriteRequest::new([0; SMB2_FD_SIZE], 0, &[0; 2]);
-    request.write_channel_info_offset = 112;
+    request.write_channel_info_offset = 128;
     request.write_channel_info_length = 3;
     request.length = 2;
     let mut variable = vec![0; 26];

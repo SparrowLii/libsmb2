@@ -1,4 +1,4 @@
-use libsmb2_sys::include::config::AMIGA_OS_CONFIG;
+use libsmb2_rs::include::config::AMIGA_OS_CONFIG;
 
 // Trace: `include/amiga_os/config.h:CONFIGURE_OPTION_TCP_LINGER`, `lib/socket.c:connect_async_ai`
 // Spec: CONFIGURE_OPTION_TCP_LINGER TCP linger 编译配置#Amiga OS 构建读取 TCP linger 配置

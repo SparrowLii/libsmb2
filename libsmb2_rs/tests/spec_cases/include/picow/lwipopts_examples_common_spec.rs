@@ -1,4 +1,4 @@
-use libsmb2_sys::include::config::{PICOW_LWIPOPTS, PICOW_LWIP_COMMON};
+use libsmb2_rs::include::config::{PICOW_LWIPOPTS, PICOW_LWIP_COMMON};
 
 // Trace: `include/picow/lwipopts_examples_common.h:NO_SYS`, `include/picow/lwipopts.h:NO_SYS`
 // Spec: NO_SYS default and override behavior#默认启用 NO_SYS

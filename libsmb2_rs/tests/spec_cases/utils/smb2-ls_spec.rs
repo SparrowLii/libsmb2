@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::utils::smb2_ls;
+use libsmb2_rs::lib::utils::smb2_ls;
 
 // Trace: `utils/smb2-ls.c:usage`, `utils/smb2-ls.c:main`
 // Spec: usage print command syntax and terminate#参数不足时输出用法

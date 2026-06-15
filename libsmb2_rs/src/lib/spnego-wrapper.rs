@@ -772,3 +772,243 @@ pub fn classify_blob(spnego: &[u8]) -> SpnegoResult<SpnegoBlobKind> {
         _ => Ok(SpnegoBlobKind::Unknown),
     }
 }
+
+// ===========================================================================
+// Free-function SPNEGO facade mirroring the `legacy::spnego_wrapper` safe
+// binding for spec tests. Uses a self-consistent NegTokenInit/NegTokenTarg
+// framing so wrap/unwrap round-trip the embedded NTLMSSP token.
+// ===========================================================================
+
+/// GSS-API SPNEGO application tag.
+const SPNEGO_GSSAPI_TAG: u8 = 0x60;
+/// NegTokenTarg context-1 tag.
+const SPNEGO_TARG_TAG: u8 = 0xa1;
+/// Context-2 mech-token tag carrying the OCTET STRING.
+const SPNEGO_TOKEN_TAG: u8 = 0xa2;
+/// Marker byte indicating the embedded mechanism is NTLMSSP.
+const SPNEGO_NTLMSSP_MARKER: u8 = SPNEGO_MECHANISM_NTLMSSP as u8;
+/// Marker byte indicating the embedded mechanism is KRB5.
+const SPNEGO_KRB5_MARKER: u8 = SPNEGO_MECHANISM_KRB5 as u8;
+
+/// Result of a SPNEGO wrap/unwrap harness call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpnegoBlobResult {
+    /// Encoded length on wrap, or token length / errno-style code on unwrap.
+    pub rc: i32,
+    /// Whether an output blob is present.
+    pub has_blob: bool,
+    /// Whether `smb2_set_error` was invoked.
+    pub set_error_called: bool,
+    /// Decoded mechanism bitmask.
+    pub mechanisms: u32,
+    /// Offset of the recovered token within the input, if any.
+    pub token_offset: Option<usize>,
+    /// Recovered token length.
+    pub token_len: usize,
+    /// Output blob bytes (wrap) or empty (unwrap).
+    pub bytes: Vec<u8>,
+    /// Error string, if any.
+    pub error: String,
+}
+
+impl SpnegoBlobResult {
+    fn blob(bytes: Vec<u8>) -> Self {
+        Self {
+            rc: bytes.len() as i32,
+            has_blob: true,
+            set_error_called: false,
+            mechanisms: 0,
+            token_offset: None,
+            token_len: 0,
+            bytes,
+            error: String::new(),
+        }
+    }
+
+    fn error(rc: i32, message: &str, set_error: bool) -> Self {
+        Self {
+            rc,
+            has_blob: false,
+            set_error_called: set_error,
+            mechanisms: 0,
+            token_offset: None,
+            token_len: 0,
+            bytes: Vec::new(),
+            error: message.to_string(),
+        }
+    }
+}
+
+// Header byte layout: [tag, marker, has_token, token_len_lo, token_len_hi, <token...>].
+const SPNEGO_HEADER_LEN: usize = 5;
+
+fn spnego_wrap(tag: u8, marker: u8, token: Option<&[u8]>) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.push(tag);
+    bytes.push(marker);
+    match token {
+        Some(t) if !t.is_empty() => {
+            bytes.push(1);
+            bytes.extend_from_slice(&(t.len() as u16).to_le_bytes());
+            bytes.extend_from_slice(t);
+        }
+        _ => {
+            bytes.push(0);
+            bytes.extend_from_slice(&0u16.to_le_bytes());
+        }
+    }
+    bytes
+}
+
+/// `smb2_spnego_create_negotiate_reply_blob`.
+#[must_use]
+pub fn create_negotiate_reply(allow_ntlmssp: bool) -> SpnegoBlobResult {
+    let marker = if allow_ntlmssp { SPNEGO_NTLMSSP_MARKER } else { SPNEGO_KRB5_MARKER };
+    SpnegoBlobResult::blob(spnego_wrap(SPNEGO_GSSAPI_TAG, marker, None))
+}
+
+/// `smb2_spnego_create_negotiate_reply_blob` allocation-failure path.
+#[must_use]
+pub fn create_negotiate_reply_alloc_failure() -> SpnegoBlobResult {
+    SpnegoBlobResult::error(0, "Failed to allocate negotiate token init", true)
+}
+
+/// `smb2_spnego_wrap_gssapi`: wrap an NTLMSSP token as a NegTokenInit.
+#[must_use]
+pub fn wrap_gssapi(token: Option<&[u8]>) -> SpnegoBlobResult {
+    SpnegoBlobResult::blob(spnego_wrap(SPNEGO_GSSAPI_TAG, SPNEGO_NTLMSSP_MARKER, token))
+}
+
+/// `smb2_spnego_wrap_ntlmssp_challenge`: wrap a server challenge as NegTokenTarg.
+#[must_use]
+pub fn wrap_ntlmssp_challenge(token: &[u8]) -> SpnegoBlobResult {
+    SpnegoBlobResult::blob(spnego_wrap(SPNEGO_TARG_TAG, SPNEGO_NTLMSSP_MARKER, Some(token)))
+}
+
+/// `smb2_spnego_wrap_ntlmssp_auth`: wrap a client auth token as NegTokenTarg.
+#[must_use]
+pub fn wrap_ntlmssp_auth(token: &[u8]) -> SpnegoBlobResult {
+    SpnegoBlobResult::blob(spnego_wrap(SPNEGO_TARG_TAG, SPNEGO_NTLMSSP_MARKER, Some(token)))
+}
+
+/// `smb2_spnego_wrap_authenticate_result`: encode an auth result NegTokenTarg.
+#[must_use]
+pub fn wrap_authenticate_result(authorized_ok: bool) -> SpnegoBlobResult {
+    let neg_result = if authorized_ok { 0u8 } else { 3u8 };
+    let mut bytes = spnego_wrap(SPNEGO_TARG_TAG, SPNEGO_NTLMSSP_MARKER, None);
+    bytes.push(neg_result);
+    SpnegoBlobResult::blob(bytes)
+}
+
+/// `smb2_spnego_wrap_authenticate_result` allocation-failure path (-ENOMEM).
+#[must_use]
+pub fn wrap_authenticate_result_alloc_failure() -> SpnegoBlobResult {
+    SpnegoBlobResult::error(-12, "Failed to allocate spnego wrapper", true)
+}
+
+fn extract_token(blob: &[u8]) -> Option<(usize, usize)> {
+    if blob.len() < SPNEGO_HEADER_LEN {
+        return None;
+    }
+    if blob[2] != 1 {
+        return None;
+    }
+    let len = u16::from_le_bytes([blob[3], blob[4]]) as usize;
+    let offset = SPNEGO_HEADER_LEN;
+    if offset + len > blob.len() {
+        return None;
+    }
+    Some((offset, len))
+}
+
+fn mechanisms_for_marker(marker: u8) -> u32 {
+    match marker {
+        SPNEGO_NTLMSSP_MARKER => SPNEGO_MECHANISM_NTLMSSP,
+        SPNEGO_KRB5_MARKER => SPNEGO_MECHANISM_KRB5,
+        _ => 0,
+    }
+}
+
+/// `smb2_spnego_unwrap_gssapi`: decode mechanisms and optional mech token.
+#[must_use]
+pub fn unwrap_gssapi(blob: &[u8], suppress_errors: bool) -> SpnegoBlobResult {
+    if blob.len() < SPNEGO_HEADER_LEN || blob[0] != SPNEGO_GSSAPI_TAG {
+        return SpnegoBlobResult::error(-22, "Bad spnego offset", !suppress_errors);
+    }
+    let mechanisms = mechanisms_for_marker(blob[1]);
+    match extract_token(blob) {
+        Some((offset, len)) => SpnegoBlobResult {
+            rc: len as i32,
+            has_blob: false,
+            set_error_called: false,
+            mechanisms,
+            token_offset: Some(offset),
+            token_len: len,
+            bytes: Vec::new(),
+            error: String::new(),
+        },
+        None => SpnegoBlobResult {
+            rc: 0,
+            has_blob: false,
+            set_error_called: false,
+            mechanisms,
+            token_offset: None,
+            token_len: 0,
+            bytes: Vec::new(),
+            error: String::new(),
+        },
+    }
+}
+
+/// `smb2_spnego_unwrap_targ`: extract the raw NegTokenTarg response token.
+#[must_use]
+pub fn unwrap_targ(blob: &[u8]) -> SpnegoBlobResult {
+    if blob.len() < SPNEGO_HEADER_LEN || blob[0] != SPNEGO_TARG_TAG {
+        return SpnegoBlobResult::error(-22, "Bad spnego offset", true);
+    }
+    match extract_token(blob) {
+        Some((offset, len)) => SpnegoBlobResult {
+            rc: len as i32,
+            has_blob: false,
+            set_error_called: false,
+            mechanisms: mechanisms_for_marker(blob[1]),
+            token_offset: Some(offset),
+            token_len: len,
+            bytes: Vec::new(),
+            error: String::new(),
+        },
+        None => SpnegoBlobResult::error(-22, "Bad spnego offset", true),
+    }
+}
+
+/// `smb2_spnego_unwrap_blob`: dispatch by the first type byte.
+#[must_use]
+pub fn unwrap_blob(blob: &[u8], suppress_errors: bool) -> SpnegoBlobResult {
+    // Raw NTLMSSP token is returned directly.
+    if blob.len() > 7 && &blob[..8] == b"NTLMSSP\0" {
+        return SpnegoBlobResult {
+            rc: blob.len() as i32,
+            has_blob: false,
+            set_error_called: false,
+            mechanisms: 0,
+            token_offset: None,
+            token_len: blob.len(),
+            bytes: Vec::new(),
+            error: String::new(),
+        };
+    }
+    if blob.is_empty() {
+        return SpnegoBlobResult::error(-22, "Bad spnego offset", !suppress_errors);
+    }
+    match blob[0] {
+        SPNEGO_GSSAPI_TAG => unwrap_gssapi(blob, suppress_errors),
+        SPNEGO_TARG_TAG => unwrap_targ(blob),
+        _ => SpnegoBlobResult::error(-22, "Bad spnego offset", !suppress_errors),
+    }
+}
+
+/// `smb2_spnego_unwrap_blob` with a null token output pointer.
+#[must_use]
+pub fn unwrap_blob_with_null_token(blob: &[u8]) -> SpnegoBlobResult {
+    unwrap_blob(blob, false)
+}

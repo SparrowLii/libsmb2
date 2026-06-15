@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::aes128ccm;
+use libsmb2_rs::lib::aes128ccm;
 
 // Trace: `lib/aes128ccm.h:aes128ccm_encrypt`, `lib/aes128ccm.c:aes128ccm_encrypt`, `tests/aes128ccm-test.c:test_1`
 // Spec: aes128ccm_encrypt 原地加密并生成认证标签#RFC 样例 4 字节认证标签

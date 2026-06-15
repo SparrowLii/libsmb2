@@ -42,9 +42,13 @@ static void *compat_ffi_malloc_maybe_fail(size_t size)
 #define poll compat_ffi_poll
 #define strdup compat_ffi_strdup
 #define malloc compat_ffi_malloc_maybe_fail
+/* compat.c writes sockaddr_in.sin_len (BSD-only); glibc lacks that member.
+   Redirect the single write to the harmless sin_zero padding. */
+#define sin_len sin_zero[0]
 
 #include "../../../lib/compat.c"
 
+#undef sin_len
 #undef malloc
 
 int compat_ffi_resolve_ipv4(const char *node, const char *service,

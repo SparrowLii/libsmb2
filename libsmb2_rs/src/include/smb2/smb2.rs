@@ -1976,3 +1976,79 @@ pub trait FileNotifyChangeInformationDecoder {
         next_entry_offset: u32,
     ) -> Option<Smb2FileNotifyChangeInformation>;
 }
+
+/// SMB2 command opcodes (`smb2_command`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u16)]
+pub enum Smb2Command {
+    /// NEGOTIATE.
+    Negotiate = 0,
+    /// SESSION_SETUP.
+    SessionSetup = 1,
+    /// LOGOFF.
+    Logoff = 2,
+    /// TREE_CONNECT.
+    TreeConnect = 3,
+    /// TREE_DISCONNECT.
+    TreeDisconnect = 4,
+    /// CREATE.
+    Create = 5,
+    /// CLOSE.
+    Close = 6,
+    /// FLUSH.
+    Flush = 7,
+    /// READ.
+    Read = 8,
+    /// WRITE.
+    Write = 9,
+    /// LOCK.
+    Lock = 10,
+    /// IOCTL.
+    Ioctl = 11,
+    /// CANCEL.
+    Cancel = 12,
+    /// ECHO.
+    Echo = 13,
+    /// QUERY_DIRECTORY.
+    QueryDirectory = 14,
+    /// CHANGE_NOTIFY.
+    ChangeNotify = 15,
+    /// QUERY_INFO.
+    QueryInfo = 16,
+    /// SET_INFO.
+    SetInfo = 17,
+    /// OPLOCK_BREAK.
+    OplockBreak = 18,
+    /// SMB1 negotiate sentinel.
+    Smb1Negotiate = 114,
+}
+
+impl Smb2Command {
+    /// Maps a raw opcode to its command, returning `None` for unknown values.
+    #[must_use]
+    pub const fn from_u16(value: u16) -> Option<Self> {
+        match value {
+            0 => Some(Self::Negotiate),
+            1 => Some(Self::SessionSetup),
+            2 => Some(Self::Logoff),
+            3 => Some(Self::TreeConnect),
+            4 => Some(Self::TreeDisconnect),
+            5 => Some(Self::Create),
+            6 => Some(Self::Close),
+            7 => Some(Self::Flush),
+            8 => Some(Self::Read),
+            9 => Some(Self::Write),
+            10 => Some(Self::Lock),
+            11 => Some(Self::Ioctl),
+            12 => Some(Self::Cancel),
+            13 => Some(Self::Echo),
+            14 => Some(Self::QueryDirectory),
+            15 => Some(Self::ChangeNotify),
+            16 => Some(Self::QueryInfo),
+            17 => Some(Self::SetInfo),
+            18 => Some(Self::OplockBreak),
+            114 => Some(Self::Smb1Negotiate),
+            _ => None,
+        }
+    }
+}

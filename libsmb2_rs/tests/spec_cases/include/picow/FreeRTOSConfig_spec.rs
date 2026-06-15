@@ -1,4 +1,4 @@
-use libsmb2_sys::include::config::PICOW_FREERTOS_CONFIG;
+use libsmb2_rs::include::config::PICOW_FREERTOS_CONFIG;
 
 // Trace: `include/picow/FreeRTOSConfig.h:configUSE_PREEMPTION`
 // Spec: configUSE_PREEMPTION scheduler mode#抢占式调度启用

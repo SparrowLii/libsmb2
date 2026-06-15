@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::init::{
+use libsmb2_rs::lib::init::{
     self as init, iovector_add_probe, iovector_free_probe, iovector_overflow_probe, InitContext,
     LibVersion,
 };
@@ -7,7 +7,7 @@ use std::sync::Mutex;
 static NTLM_USER_FILE_LOCK: Mutex<()> = Mutex::new(());
 
 fn context() -> InitContext {
-    InitContext::new().expect("init test context allocation succeeds")
+    InitContext::new()
 }
 
 // Trace: `lib/init.c:smb2_parse_url`, `include/smb2/libsmb2.h:smb2_parse_url`

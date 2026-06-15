@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::alloc::{
+use libsmb2_rs::lib::alloc::{
     forced_child_failure, forced_init_failure_returns_null, free_null_is_noop, AllocContext,
 };
 

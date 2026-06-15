@@ -87,6 +87,9 @@ fn main() {
     build.define("USE_SHA384_SHA512", Some("1"));
     build.define("CBC", Some("1"));
     build.define("_U_", Some("__attribute__((unused))"));
+    if cfg!(target_os = "linux") {
+        build.define("_GNU_SOURCE", None);
+    }
     build.flag_if_supported("-std=c99");
     build.flag("-include");
     build.flag("stddef.h");

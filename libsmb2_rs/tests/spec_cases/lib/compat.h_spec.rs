@@ -1,4 +1,5 @@
-use libsmb2_sys::{include::portable_endian, legacy::compat};
+use libsmb2_rs::include::portable_endian;
+use libsmb2_rs::lib::compat;
 
 // Trace: `lib/compat.h:275`, `lib/compat.h:277`, `lib/compat.h:343`, `lib/compat.h:475`
 // Spec: close macro maps POSIX close to platform socket close#platform rewrites close call

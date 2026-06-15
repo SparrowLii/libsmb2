@@ -71,10 +71,11 @@ fn test_smb2_cmd_lock_construct_successful_lock_reply() {
     let pdu = lock::smb2_cmd_lock_reply_async().expect("lock reply pdu");
 
     assert_eq!(pdu.out.len(), 1);
-    assert_eq!(
-        pdu.out[0].as_slice(),
-        &lock::SMB2_LOCK_REPLY_SIZE.to_le_bytes()
-    );
+    // The fixed lock reply body is SMB2_LOCK_REPLY_SIZE (4) bytes with the
+    // structure size in the first 2 bytes.
+    let mut expected = vec![0u8; usize::from(lock::SMB2_LOCK_REPLY_SIZE & 0xfffe)];
+    expected[0..2].copy_from_slice(&lock::SMB2_LOCK_REPLY_SIZE.to_le_bytes());
+    assert_eq!(pdu.out[0].as_slice(), expected.as_slice());
 }
 
 // Trace: `lib/smb2-cmd-lock.c:smb2_process_lock_fixed`, `lib/pdu.c:smb2_process_reply_payload_fixed`
@@ -84,7 +85,10 @@ fn test_smb2_cmd_lock_construct_successful_lock_reply() {
 // - **THEN** the function returns `0` without allocating command data
 #[test]
 fn test_smb2_cmd_lock_accept_valid_lock_reply_size() {
-    assert!(lock::smb2_process_lock_fixed(&lock::SMB2_LOCK_REPLY_SIZE.to_le_bytes()).is_ok());
+    // The fixed reply body is SMB2_LOCK_REPLY_SIZE (4) bytes wide.
+    let mut fixed = vec![0u8; usize::from(lock::SMB2_LOCK_REPLY_SIZE & 0xfffe)];
+    fixed[0..2].copy_from_slice(&lock::SMB2_LOCK_REPLY_SIZE.to_le_bytes());
+    assert!(lock::smb2_process_lock_fixed(&fixed).is_ok());
 }
 
 // Trace: `lib/smb2-cmd-lock.c:smb2_process_lock_fixed`, `include/smb2/smb2.h:SMB2_LOCK_REPLY_SIZE`
@@ -94,8 +98,11 @@ fn test_smb2_cmd_lock_accept_valid_lock_reply_size() {
 // - **THEN** the function records an unexpected-size error and returns `-1`
 #[test]
 fn test_smb2_cmd_lock_reject_invalid_lock_reply_size() {
+    // A 4-byte body whose declared structure size is wrong must be rejected.
+    let mut fixed = vec![0u8; usize::from(lock::SMB2_LOCK_REPLY_SIZE & 0xfffe)];
+    fixed[0..2].copy_from_slice(&(lock::SMB2_LOCK_REPLY_SIZE + 2).to_le_bytes());
     assert!(matches!(
-        lock::smb2_process_lock_fixed(&(lock::SMB2_LOCK_REPLY_SIZE + 2).to_le_bytes()),
+        lock::smb2_process_lock_fixed(&fixed),
         Err(Smb2LockError::InvalidStructureSize { .. })
     ));
 }

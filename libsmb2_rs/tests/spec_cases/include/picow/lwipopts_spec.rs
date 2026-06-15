@@ -1,4 +1,4 @@
-use libsmb2_sys::include::config::{PICOW_LWIPOPTS, PICOW_LWIP_COMMON};
+use libsmb2_rs::include::config::{PICOW_LWIPOPTS, PICOW_LWIP_COMMON};
 
 // Trace: `include/picow/lwipopts.h:LWIP_SO_RCVBUF`
 // Spec: LWIP_SO_RCVBUF enable receive buffers#Pico W socket receive-buffer option

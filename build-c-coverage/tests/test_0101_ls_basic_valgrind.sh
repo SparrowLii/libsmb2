@@ -1,0 +1,1 @@
+/home/liyuan/tmp/libsmb2/tests/test_0101_ls_basic_valgrind.sh

@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::md5;
+use libsmb2_rs::lib::md5;
 
 // Trace: `lib/md5.c:byteSwap`, `lib/md5.h:WORDS_BIGENDIAN`
 // Spec: byteSwap platform word normalization#Little-endian builds do not alter buffers

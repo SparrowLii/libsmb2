@@ -311,3 +311,97 @@ fn md5_step(
         .rotate_left(shift)
         .wrapping_add(x);
 }
+
+// ---------------------------------------------------------------------------
+// Snapshot-style API mirroring the C `struct MD5Context` observation surface
+// used by the spec tests (matches the safe binding shape).
+// ---------------------------------------------------------------------------
+
+/// Observable snapshot of an `MD5Context`'s internal state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ContextSnapshot {
+    /// Four-word accumulator (`ctx->buf`).
+    pub buf: [u32; 4],
+    /// Low/high 32-bit byte counters (`ctx->bytes`).
+    pub bytes: [u32; 2],
+    /// Staged input block words (`ctx->in`).
+    pub input: [u32; 16],
+}
+
+impl ContextSnapshot {
+    fn from_context(ctx: &Md5Context) -> Self {
+        Self {
+            buf: *ctx.buf(),
+            bytes: *ctx.bytes(),
+            input: *ctx.input(),
+        }
+    }
+
+    /// Returns the buffered bytes currently staged in the input block.
+    #[must_use]
+    pub fn buffered_bytes(&self) -> Vec<u8> {
+        let len = (self.bytes[0] & 0x3f) as usize;
+        let mut bytes = Vec::with_capacity(64);
+        for word in self.input {
+            bytes.extend_from_slice(&word.to_ne_bytes());
+        }
+        bytes.truncate(len);
+        bytes
+    }
+
+    /// Returns true if all context storage is zeroed (post-finalization cleanup).
+    #[must_use]
+    pub fn is_zeroed(&self) -> bool {
+        self.buf == [0; 4] && self.bytes == [0; 2] && self.input == [0; 16]
+    }
+}
+
+/// Returns whether the build treats words as big-endian (`WORDS_BIGENDIAN`).
+#[must_use]
+pub fn words_bigendian_enabled() -> bool {
+    cfg!(target_endian = "big")
+}
+
+/// Returns the `(buf, bytes, in)` word counts of the context layout.
+#[must_use]
+pub fn context_layout() -> (usize, usize, usize) {
+    (4, 2, 16)
+}
+
+/// Returns a snapshot of a freshly initialized context (`MD5Init`).
+#[must_use]
+pub fn initial_context() -> ContextSnapshot {
+    ContextSnapshot::from_context(&Md5Context::new())
+}
+
+/// Returns a snapshot after a single `MD5Update` over `input`.
+#[must_use]
+pub fn snapshot_after_update(input: &[u8]) -> ContextSnapshot {
+    let mut ctx = Md5Context::new();
+    ctx.update(input);
+    ContextSnapshot::from_context(&ctx)
+}
+
+/// Returns the digest and the post-finalization (zeroed) context snapshot.
+#[must_use]
+pub fn digest_with_final_context(input: &[u8]) -> ([u8; 16], ContextSnapshot) {
+    let mut ctx = Md5Context::new();
+    ctx.update(input);
+    let digest = ctx.finalize();
+    (digest, ContextSnapshot::from_context(&ctx))
+}
+
+/// Applies one MD5 compression block to `state`, mirroring `MD5Transform`.
+#[must_use]
+pub fn transform(mut state: [u32; 4], block: [u32; 16]) -> [u32; 4] {
+    md5_transform(&mut state, &block);
+    state
+}
+
+/// Computes the MD5 digest of `input` in one shot.
+#[must_use]
+pub fn digest(input: &[u8]) -> [u8; 16] {
+    let mut ctx = Md5Context::new();
+    ctx.update(input);
+    ctx.finalize()
+}

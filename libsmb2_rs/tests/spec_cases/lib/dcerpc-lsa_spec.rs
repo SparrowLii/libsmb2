@@ -12,8 +12,8 @@ use libsmb2_rs::lib::dcerpc_lsa::{
     RpcSid, RpcUnicodeString, SidNameUse, LSA_LOOKUP_SIDS2_CLIENT_REVISION,
     LSA_LOOKUP_SIDS2_LOOKUP_OPTIONS, LSA_STATUS_SUCCESS, NT_SID_AUTHORITY as SAFE_NT_SID_AUTHORITY,
 };
-use libsmb2_sys::smb2::libsmb2_dcerpc::LSA_INTERFACE;
-use libsmb2_sys::smb2::libsmb2_dcerpc_lsa::{LSA_UUID_PARTS, NT_SID_AUTHORITY};
+use libsmb2_rs::include::smb2::dcerpc_coder::LSA_INTERFACE;
+use libsmb2_rs::include::smb2::dcerpc_coder_lsa::{LSA_UUID_PARTS, NT_SID_AUTHORITY};
 
 // Trace: `lib/dcerpc-lsa.c:LSA_UUID`, `lib/dcerpc-lsa.c:lsa_interface`
 // Spec: LSA_UUID defines the LSA transfer syntax UUID#LSA UUID initializes syntax identifier

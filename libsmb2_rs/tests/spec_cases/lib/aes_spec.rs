@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::aes::{encrypt_block, AesBlock};
+use libsmb2_rs::lib::aes::{encrypt_block, AesBlock};
 
 // Trace: `lib/aes.c:AES128_ECB_encrypt`, `lib/aes_apple.c:AES128_ECB_encrypt_apple`
 // Spec: AES128_ECB_encrypt platform backend dispatch#Apple build dispatches to CommonCrypto backend

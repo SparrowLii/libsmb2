@@ -1,4 +1,4 @@
-use libsmb2_sys::smb2::libsmb2_dcerpc_srvsvc::*;
+use libsmb2_rs::include::smb2::dcerpc_coder_srvsvc::*;
 use libsmb2_rs::include::smb2::libsmb2::Smb2Client;
 use libsmb2_rs::lib::sync::{self, SyncPayload, SyncRequestKind};
 

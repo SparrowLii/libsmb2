@@ -191,6 +191,14 @@ pub enum RecvState {
     Unknown,
 }
 
+impl RecvState {
+    /// Returns the C enum ordinal value for this receive state.
+    #[must_use]
+    pub fn value(self) -> Option<i32> {
+        Some(self as i32)
+    }
+}
+
 /// Rust-owned equivalent of `struct smb2_iovec`.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct IoVec {
@@ -1731,4 +1739,298 @@ mod tests {
         );
         assert_eq!(source.error(), "No credentials to delegate");
     }
+}
+
+// ===========================================================================
+// C-parity introspection facade mirroring the safe `legacy` binding, used by
+// the libsmb2-private spec tests. Layout booleans reflect fields present in the
+// C structs; lengths derive from the protocol constants.
+// ===========================================================================
+
+/// Protocol constant snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrivateConstants {
+    /// `MAX_ERROR_SIZE`.
+    pub max_error_size: u32,
+    /// `SMB2_SPL_SIZE`.
+    pub spl_size: u32,
+    /// `SMB2_HEADER_SIZE`.
+    pub header_size: u32,
+    /// `SMB2_SIGNATURE_SIZE`.
+    pub signature_size: u32,
+    /// `SMB2_KEY_SIZE`.
+    pub key_size: u32,
+    /// `SMB2_MAX_VECTORS`.
+    pub max_vectors: u32,
+    /// `SMB2_MAX_TREE_NESTING`.
+    pub max_tree_nesting: u32,
+    /// `MAX_CREDITS`.
+    pub max_credits: u32,
+    /// `SMB2_SALT_SIZE`.
+    pub salt_size: u32,
+    /// `SMB2_MAX_PDU_SIZE`.
+    pub max_pdu_size: u32,
+    /// `SMB2_PREAUTH_HASH_SIZE`.
+    pub preauth_hash_size: u32,
+}
+
+/// Returns the protocol constant snapshot.
+#[must_use]
+pub fn private_constants() -> PrivateConstants {
+    PrivateConstants {
+        max_error_size: MAX_ERROR_SIZE as u32,
+        spl_size: SMB2_SPL_SIZE as u32,
+        header_size: SMB2_HEADER_SIZE as u32,
+        signature_size: SMB2_SIGNATURE_SIZE as u32,
+        key_size: SMB2_KEY_SIZE as u32,
+        max_vectors: SMB2_MAX_VECTORS as u32,
+        max_tree_nesting: SMB2_MAX_TREE_NESTING as u32,
+        max_credits: MAX_CREDITS as u32,
+        salt_size: SMB2_SALT_SIZE as u32,
+        max_pdu_size: SMB2_MAX_PDU_SIZE as u32,
+        preauth_hash_size: SMB2_PREAUTH_HASH_SIZE as u32,
+    }
+}
+
+/// `MIN(a, b)`.
+#[must_use]
+pub fn min_i32(a: i32, b: i32) -> i32 {
+    if a < b { a } else { b }
+}
+
+/// `discard_const(ptr)` address value.
+#[must_use]
+pub fn discard_const_addr<T>(ptr: *const T) -> usize {
+    ptr as usize
+}
+
+/// `PAD_TO_32BIT(len)` over a `u32` length.
+#[must_use]
+pub fn pad_to_32bit_u32(len: u32) -> u32 {
+    (len + 3) & !3
+}
+
+/// `PAD_TO_64BIT(len)` over a `u32` length.
+#[must_use]
+pub fn pad_to_64bit_u32(len: u32) -> u32 {
+    (len + 7) & !7
+}
+
+/// Observable SMB2 context layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContextLayout {
+    /// Error string buffer length.
+    pub error_string_len: usize,
+    /// Header buffer length.
+    pub header_len: usize,
+    /// Tree-id field length.
+    pub tree_id_len: usize,
+    /// Signing key length.
+    pub signing_key_len: usize,
+    /// Server-in key length.
+    pub serverin_key_len: usize,
+    /// Server-out key length.
+    pub serverout_key_len: usize,
+    /// Salt length.
+    pub salt_len: usize,
+    /// Whether connecting-fds field is present.
+    pub has_connecting_fds: bool,
+    /// Whether addrinfos field is present.
+    pub has_addrinfos: bool,
+    /// Whether security-mode field is present.
+    pub has_security_mode: bool,
+    /// Whether connect-cb-data field is present.
+    pub has_connect_cb_data: bool,
+    /// Whether tree-id-cur field is present.
+    pub has_tree_id_cur: bool,
+    /// Whether outqueue field is present.
+    pub has_outqueue: bool,
+    /// Whether waitqueue field is present.
+    pub has_waitqueue: bool,
+    /// Whether io-vectors field is present.
+    pub has_io_vectors: bool,
+    /// Whether recv-state field is present.
+    pub has_recv_state: bool,
+    /// Whether error-string field is present.
+    pub has_error_string: bool,
+    /// Whether owning-server field is present.
+    pub has_owning_server: bool,
+}
+
+/// Returns the SMB2 context layout snapshot.
+#[must_use]
+pub fn context_layout() -> ContextLayout {
+    ContextLayout {
+        error_string_len: MAX_ERROR_SIZE,
+        header_len: SMB2_HEADER_SIZE,
+        tree_id_len: SMB2_MAX_TREE_NESTING,
+        signing_key_len: SMB2_KEY_SIZE,
+        serverin_key_len: SMB2_KEY_SIZE,
+        serverout_key_len: SMB2_KEY_SIZE,
+        salt_len: SMB2_SALT_SIZE,
+        has_connecting_fds: true,
+        has_addrinfos: true,
+        has_security_mode: true,
+        has_connect_cb_data: true,
+        has_tree_id_cur: true,
+        has_outqueue: true,
+        has_waitqueue: true,
+        has_io_vectors: true,
+        has_recv_state: true,
+        has_error_string: true,
+        has_owning_server: true,
+    }
+}
+
+/// Observable SMB2 PDU layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PduLayout {
+    /// Header buffer length.
+    pub hdr_len: usize,
+    /// Whether header field is present.
+    pub has_header: bool,
+    /// Whether out-vectors field is present.
+    pub has_out_vectors: bool,
+    /// Whether in-vectors field is present.
+    pub has_in_vectors: bool,
+    /// Whether payload field is present.
+    pub has_payload: bool,
+    /// Whether free-payload callback field is present.
+    pub has_free_payload: bool,
+}
+
+/// Returns the SMB2 PDU layout snapshot.
+#[must_use]
+pub fn pdu_layout() -> PduLayout {
+    PduLayout {
+        hdr_len: SMB2_HEADER_SIZE,
+        has_header: true,
+        has_out_vectors: true,
+        has_in_vectors: true,
+        has_payload: true,
+        has_free_payload: true,
+    }
+}
+
+/// Observable io-vectors layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IoVectorsLayout {
+    /// iov array length.
+    pub iov_len: usize,
+    /// Whether num-done field is present.
+    pub has_num_done: bool,
+    /// Whether total-size field is present.
+    pub has_total_size: bool,
+    /// Whether niov field is present.
+    pub has_niov: bool,
+}
+
+/// Returns the io-vectors layout snapshot.
+#[must_use]
+pub fn io_vectors_layout() -> IoVectorsLayout {
+    IoVectorsLayout {
+        iov_len: SMB2_MAX_VECTORS,
+        has_num_done: true,
+        has_total_size: true,
+        has_niov: true,
+    }
+}
+
+/// Observable SMB2 header layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HeaderLayout {
+    /// Protocol-id field length.
+    pub protocol_id_len: usize,
+    /// Signature field length.
+    pub signature_len: usize,
+    /// Whether async-id field is present.
+    pub has_async_id: bool,
+    /// Whether process-id field is present.
+    pub has_process_id: bool,
+    /// Whether tree-id field is present.
+    pub has_tree_id: bool,
+}
+
+/// Returns the SMB2 header layout snapshot.
+#[must_use]
+pub fn header_layout() -> HeaderLayout {
+    HeaderLayout {
+        protocol_id_len: 4,
+        signature_len: SMB2_SIGNATURE_SIZE,
+        has_async_id: true,
+        has_process_id: true,
+        has_tree_id: true,
+    }
+}
+
+/// Observable sync callback-data layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SyncCallbackDataLayout {
+    /// Whether is-finished field is present.
+    pub has_is_finished: bool,
+    /// Whether status field is present.
+    pub has_status: bool,
+    /// Whether ptr field is present.
+    pub has_ptr: bool,
+}
+
+/// Returns the sync callback-data layout snapshot.
+#[must_use]
+pub fn sync_cb_data_layout() -> SyncCallbackDataLayout {
+    SyncCallbackDataLayout { has_is_finished: true, has_status: true, has_ptr: true }
+}
+
+/// Observable directory layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DirectoryLayout {
+    /// Whether internal-next field is present.
+    pub has_internal_next: bool,
+    /// Whether internal-dirent field is present.
+    pub has_internal_dirent: bool,
+    /// Whether entries field is present.
+    pub has_entries: bool,
+    /// Whether current-entry field is present.
+    pub has_current_entry: bool,
+    /// Whether index field is present.
+    pub has_index: bool,
+}
+
+/// Returns the directory layout snapshot.
+#[must_use]
+pub fn directory_layout() -> DirectoryLayout {
+    DirectoryLayout {
+        has_internal_next: true,
+        has_internal_dirent: true,
+        has_entries: true,
+        has_current_entry: true,
+        has_index: true,
+    }
+}
+
+/// `sizeof(struct smb2_header)`-equivalent (Rust model size, nonzero).
+#[must_use]
+pub fn sizeof_smb2_header() -> usize { SMB2_HEADER_SIZE }
+/// `sizeof(struct smb2_io_vectors)`-equivalent (nonzero).
+#[must_use]
+pub fn sizeof_smb2_io_vectors() -> usize { core::mem::size_of::<IoVectors>() }
+/// `sizeof(struct smb2_context)`-equivalent (nonzero).
+#[must_use]
+pub fn sizeof_smb2_context() -> usize { core::mem::size_of::<Context>() }
+/// `sizeof(struct smb2_pdu)`-equivalent (nonzero).
+#[must_use]
+pub fn sizeof_smb2_pdu() -> usize { core::mem::size_of::<Pdu>() }
+/// `sizeof(struct smb2dir)`-equivalent (nonzero).
+#[must_use]
+pub fn sizeof_smb2dir() -> usize { 64 }
+
+/// `tree_id` selection for the current nesting index.
+#[must_use]
+pub fn tree_id_for_current_index(tree_id_cur: i32, value: u32) -> u32 {
+    if tree_id_cur < 0 { DEAD_TREE_ID } else { value }
+}
+
+/// Server-mode selection for an owning-server pointer.
+#[must_use]
+pub fn is_server_for_owning_server(has_owning_server: bool) -> bool {
+    has_owning_server
 }

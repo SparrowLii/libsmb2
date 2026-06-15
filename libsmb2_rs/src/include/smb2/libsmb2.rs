@@ -715,6 +715,19 @@ impl FileHandle {
         Self { id, offset: 0 }
     }
 
+    /// Creates a file handle from a raw SMB2 file id, mirroring the C
+    /// `smb2_fh_from_file_id` allocation (always succeeds here).
+    #[must_use]
+    pub fn from_file_id(id: [u8; SMB2_FILE_ID_SIZE]) -> Option<Self> {
+        Some(Self::new(id))
+    }
+
+    /// Returns the raw SMB2 file id (alias of [`Self::id`]).
+    #[must_use]
+    pub fn file_id(&self) -> [u8; SMB2_FILE_ID_SIZE] {
+        self.id
+    }
+
     /// Returns the raw SMB2 file id.
     #[must_use]
     pub fn id(&self) -> [u8; SMB2_FILE_ID_SIZE] {
@@ -2501,6 +2514,16 @@ impl Smb2Client {
     #[must_use]
     pub const fn max_read_size(&self) -> u32 {
         self.max_read_size
+    }
+
+    /// Test hook: sets the maximum read size.
+    pub fn set_max_read_size_for_test(&mut self, value: u32) {
+        self.max_read_size = value;
+    }
+
+    /// Test hook: sets the maximum write size.
+    pub fn set_max_write_size_for_test(&mut self, value: u32) {
+        self.max_write_size = value;
     }
 
     /// Returns the maximum write size recorded for the context skeleton.

@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::hmac_md5;
+use libsmb2_rs::lib::hmac_md5;
 
 // Trace: `lib/hmac-md5.h:smb2_hmac_md5`, `lib/hmac-md5.c:smb2_hmac_md5`
 // Spec: smb2_hmac_md5 computes RFC2104-compatible MD5 HMAC#key length within block size

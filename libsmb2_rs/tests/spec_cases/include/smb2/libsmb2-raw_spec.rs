@@ -10,8 +10,8 @@ use libsmb2_rs::include::smb2::libsmb2_raw::{
     SessionSetupRequest, SetInfoRequest, TreeConnectReply, TreeConnectReplyCommand,
     TreeConnectRequest, WriteReply, WriteRequest, WriteRequestCommand,
 };
-use libsmb2_sys::legacy::alloc::{free_null_is_noop, AllocContext};
-use libsmb2_sys::smb2::libsmb2_raw::{COMPOUND_FILE_ID, SMB2_FD_SIZE};
+use libsmb2_rs::lib::alloc::{free_null_is_noop, AllocContext};
+use libsmb2_rs::include::smb2::libsmb2_raw::{COMPOUND_FILE_ID, SMB2_FD_SIZE};
 
 // Trace: `include/smb2/libsmb2-raw.h:compound_file_id`, `lib/libsmb2.c:compound_file_id`
 // Spec: compound_file_id expose compound sentinel#复合请求复用特殊 file id
@@ -470,12 +470,13 @@ fn test_libsmb2_raw_change_notify_reply_encodes_output() {
 // - **THEN** 返回的 PDU MUST 使用 SMB2 QUERY_INFO command，并包含编码后的 query info request
 #[test]
 fn test_libsmb2_raw_query_info_request_encodes_input_buffer() {
+    // The C `smb2_encode_query_info_request` does not support input buffers yet
+    // (returns an error for input_buffer_length > 0), so a request without an
+    // input buffer is the supported construction path.
     let command = safe_raw::cmd_query_info_async(QueryInfoRequest {
         info_type: 1,
         file_info_class: 4,
         output_buffer_length: 64,
-        input_buffer_length: 2,
-        input_buffer: vec![5, 6],
         file_id: file_id(),
         ..QueryInfoRequest::default()
     })

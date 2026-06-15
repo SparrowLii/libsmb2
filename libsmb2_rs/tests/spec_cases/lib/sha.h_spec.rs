@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::sha;
+use libsmb2_rs::lib::sha;
 
 fn success() -> i32 {
     sha::sha_error_codes().success
@@ -472,9 +472,11 @@ fn test_sha_h_unified_hash_size_bits_query_declaration_is_visible() {
 // - **THEN** 声明接受 `SHAversion`、消息指针和长度、key 指针和长度、`uint8_t digest[USHAMaxHashSize]` 并返回 SHA 错误码
 #[test]
 fn test_sha_h_one_shot_hmac_declaration_is_visible() {
+    // The C one-shot `hmac()` collapses any nonzero step result to 1 (shaNull)
+    // via short-circuit `||`, matching `hmac_spec`'s expectation.
     assert_eq!(
         sha::hmac_bad_param_status(b"text", b"key"),
-        sha::SHA_BAD_PARAM
+        sha::SHA_NULL
     );
 }
 

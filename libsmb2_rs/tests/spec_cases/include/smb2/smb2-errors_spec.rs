@@ -1,5 +1,5 @@
-use libsmb2_sys::legacy::errors::nt_error_to_str;
-use libsmb2_sys::smb2::smb2_errors as errors;
+use libsmb2_rs::lib::errors::nterror_to_str as nt_error_to_str;
+use libsmb2_rs::include::smb2::smb2_errors as errors;
 
 // Trace: `include/smb2/smb2-errors.h:SMB2_STATUS_SEVERITY_MASK`, `lib/pdu.c:smb2_is_error_response`
 // Spec: SMB2_STATUS_SEVERITY_MASK preserve severity bits#classify error severity

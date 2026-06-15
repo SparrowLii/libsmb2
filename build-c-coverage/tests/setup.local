@@ -1,0 +1,2 @@
+TESTURL=smb://libsmb2cov@127.0.0.1/Share
+NTLM_USER_FILE=/home/liyuan/tmp/libsmb2/build-c-coverage/tests/NTLM

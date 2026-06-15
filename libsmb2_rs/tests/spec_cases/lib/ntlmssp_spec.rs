@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::ntlmssp::{self, AuthContext, NEGOTIATE_MESSAGE, SMB2_KEY_SIZE};
+use libsmb2_rs::lib::ntlmssp::{self, AuthContext, NEGOTIATE_MESSAGE, SMB2_KEY_SIZE};
 
 // Trace: `lib/ntlmssp.c:ntlmssp_init_context`, `tests/ntlmssp_generate_blob.c:main`
 // Spec: ntlmssp_init_context initializes NTLMSSP state#successful initialization

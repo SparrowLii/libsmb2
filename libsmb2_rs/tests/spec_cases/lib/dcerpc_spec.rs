@@ -1,5 +1,5 @@
-use libsmb2_sys::smb2::libsmb2_dcerpc::{
-    self, DceRpcContext, DceRpcHeader, DceRpcPayload, DceRpcPdu, DceRpcUtf16, DceRpcUuid,
+use libsmb2_rs::include::smb2::dcerpc_coder::{
+    self as libsmb2_dcerpc, DceRpcContext, DceRpcHeader, DceRpcPayload, DceRpcPdu, DceRpcUtf16, DceRpcUuid,
     NdrContextHandle, Smb2Iovec, DCERPC_DECODE, DCERPC_DR_LITTLE_ENDIAN, DCERPC_ENCODE,
     LSA_INTERFACE,
 };
@@ -20,14 +20,20 @@ fn test_dcerpc_test_round_trips_nul_terminated_utf_16_text() {
         ..DceRpcUtf16::default()
     };
 
-    libsmb2_dcerpc::dcerpc_utf16z_coder(
-        &mut dce,
-        &mut encode_pdu,
-        &mut encode_iov,
-        &mut encode_offset,
-        &mut encoded,
-    )
-    .unwrap();
+    // The UTF-16 coder is conformance-aware: the conformance run writes the
+    // count header, the data run writes the code units. `dcerpc_do_coder`
+    // drives both; here we drive them directly to mirror that.
+    for run in [true, false] {
+        encode_pdu.is_conformance_run = run;
+        libsmb2_dcerpc::dcerpc_utf16z_coder(
+            &mut dce,
+            &mut encode_pdu,
+            &mut encode_iov,
+            &mut encode_offset,
+            &mut encoded,
+        )
+        .unwrap();
+    }
 
     let mut decode_pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_DECODE, 0).unwrap();
     let mut decode_iov = Smb2Iovec {
@@ -36,14 +42,17 @@ fn test_dcerpc_test_round_trips_nul_terminated_utf_16_text() {
     let mut decode_offset = 0;
     let mut decoded = DceRpcUtf16::default();
 
-    libsmb2_dcerpc::dcerpc_utf16z_coder(
-        &mut dce,
-        &mut decode_pdu,
-        &mut decode_iov,
-        &mut decode_offset,
-        &mut decoded,
-    )
-    .unwrap();
+    for run in [true, false] {
+        decode_pdu.is_conformance_run = run;
+        libsmb2_dcerpc::dcerpc_utf16z_coder(
+            &mut dce,
+            &mut decode_pdu,
+            &mut decode_iov,
+            &mut decode_offset,
+            &mut decoded,
+        )
+        .unwrap();
+    }
 
     assert_eq!(decoded.utf8.as_deref(), Some("\\win16-1"));
     assert_eq!(decoded.utf16.last().copied(), Some(0));
@@ -65,14 +74,17 @@ fn test_dcerpc_nonterminated_utf_16_coder_dispatches_by_direction() {
         ..DceRpcUtf16::default()
     };
 
-    libsmb2_dcerpc::dcerpc_utf16_coder(
-        &mut dce,
-        &mut encode_pdu,
-        &mut encode_iov,
-        &mut encode_offset,
-        &mut encoded,
-    )
-    .unwrap();
+    for run in [true, false] {
+        encode_pdu.is_conformance_run = run;
+        libsmb2_dcerpc::dcerpc_utf16_coder(
+            &mut dce,
+            &mut encode_pdu,
+            &mut encode_iov,
+            &mut encode_offset,
+            &mut encoded,
+        )
+        .unwrap();
+    }
 
     let mut decode_pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_DECODE, 0).unwrap();
     let mut decode_iov = Smb2Iovec {
@@ -81,14 +93,17 @@ fn test_dcerpc_nonterminated_utf_16_coder_dispatches_by_direction() {
     let mut decode_offset = 0;
     let mut decoded = DceRpcUtf16::default();
 
-    libsmb2_dcerpc::dcerpc_utf16_coder(
-        &mut dce,
-        &mut decode_pdu,
-        &mut decode_iov,
-        &mut decode_offset,
-        &mut decoded,
-    )
-    .unwrap();
+    for run in [true, false] {
+        decode_pdu.is_conformance_run = run;
+        libsmb2_dcerpc::dcerpc_utf16_coder(
+            &mut dce,
+            &mut decode_pdu,
+            &mut decode_iov,
+            &mut decode_offset,
+            &mut decoded,
+        )
+        .unwrap();
+    }
 
     assert_eq!(encoded.actual_count, 2);
     assert_eq!(decoded.utf8.as_deref(), Some("hi"));
@@ -712,7 +727,10 @@ fn test_dcerpc_data_pass_skips_conformance_field() {
     libsmb2_dcerpc::dcerpc_conformance_coder(&mut dce, &mut pdu, &mut iov, &mut offset, &mut value)
         .expect("conformance coder should succeed");
 
-    assert_eq!(&iov.data[..4], &4u32.to_le_bytes());
+    // Outside a conformance run the coder is a no-op (mirrors C returning 0
+    // without writing): no bytes emitted and the offset is unchanged.
+    assert!(iov.data.is_empty());
+    assert_eq!(offset, 0);
 }
 
 // Trace: `lib/dcerpc.c:899`, `lib/dcerpc.c:913`
@@ -724,6 +742,9 @@ fn test_dcerpc_data_pass_skips_conformance_field() {
 fn test_dcerpc_array_count_mismatch_fails() {
     let mut dce = libsmb2_dcerpc::dcerpc_create_context();
     let mut pdu = libsmb2_dcerpc::dcerpc_allocate_pdu(&mut dce, DCERPC_DECODE, 0).unwrap();
+    // The conformant count is read from the wire during the conformance run;
+    // mirror that here so the count/num mismatch is observed (as in C).
+    pdu.is_conformance_run = true;
     let mut iov = Smb2Iovec {
         data: 1u32.to_le_bytes().to_vec(),
     };
@@ -769,8 +790,10 @@ fn test_dcerpc_test_round_trips_reference_pointer() {
     )
     .expect("reference pointer encode should succeed");
 
-    assert_eq!(&iov.data[..4], &0x7274_7052u32.to_le_bytes());
-    assert_eq!(iov.data[4], 0x42);
+    // A top-level PTR_REF codes its referent inline with NO referent id
+    // (mirrors C `dcerpc_encode_ptr` top_level branch): only the object byte.
+    assert_eq!(iov.data, vec![0x42]);
+    assert_eq!(offset, 1);
 }
 
 fn payload_byte_coder(

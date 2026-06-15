@@ -921,3 +921,274 @@ mod tests {
         );
     }
 }
+
+// ===========================================================================
+// C-parity filesystem-info codec facade mirroring the safe `legacy` binding.
+// Used by spec tests. Offsets and return codes follow lib/smb2-data-filesystem-info.c.
+// ===========================================================================
+
+use super::timestamps::{smb2_timeval_to_win, Smb2Timeval as TsTimeval};
+use super::unicode::smb2_utf8_to_utf16;
+
+/// FILE_FS_SIZE_INFORMATION parity record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FsSizeInfo {
+    /// Total allocation units.
+    pub total_allocation_units: u64,
+    /// Available allocation units.
+    pub available_allocation_units: u64,
+    /// Sectors per allocation unit.
+    pub sectors_per_allocation_unit: u32,
+    /// Bytes per sector.
+    pub bytes_per_sector: u32,
+}
+
+/// FILE_FS_DEVICE_INFORMATION parity record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FsDeviceInfo {
+    /// Device type.
+    pub device_type: u32,
+    /// Device characteristics.
+    pub characteristics: u32,
+}
+
+/// FILE_FS_VOLUME_INFORMATION parity record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FsVolumeInfo {
+    /// Creation time seconds (Unix epoch).
+    pub creation_time_seconds: i64,
+    /// Creation time microseconds.
+    pub creation_time_microseconds: i64,
+    /// Volume serial number.
+    pub volume_serial_number: u32,
+    /// Object support flag.
+    pub supports_objects: u8,
+    /// Reserved byte.
+    pub reserved: u8,
+    /// UTF-8 volume label.
+    pub volume_label: String,
+}
+
+/// FILE_FS_ATTRIBUTE_INFORMATION parity record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FsAttributeInfo {
+    /// Filesystem attribute flags.
+    pub filesystem_attributes: u32,
+    /// Maximum component name length.
+    pub maximum_component_name_length: u32,
+    /// UTF-8 filesystem name.
+    pub filesystem_name: String,
+}
+
+/// FILE_FS_CONTROL_INFORMATION parity record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FsControlInfo {
+    /// Free-space start-filtering threshold.
+    pub free_space_start_filtering: u64,
+    /// Free-space threshold.
+    pub free_space_threshold: u64,
+    /// Free-space stop-filtering threshold.
+    pub free_space_stop_filtering: u64,
+    /// Default quota threshold.
+    pub default_quota_threshold: u64,
+    /// Default quota limit.
+    pub default_quota_limit: u64,
+    /// Filesystem control flags.
+    pub file_system_control_flags: u32,
+}
+
+/// FILE_FS_FULL_SIZE_INFORMATION parity record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FsFullSizeInfo {
+    /// Total allocation units.
+    pub total_allocation_units: u64,
+    /// Caller-available allocation units.
+    pub caller_available_allocation_units: u64,
+    /// Actual-available allocation units.
+    pub actual_available_allocation_units: u64,
+    /// Sectors per allocation unit.
+    pub sectors_per_allocation_unit: u32,
+    /// Bytes per sector.
+    pub bytes_per_sector: u32,
+}
+
+/// FILE_FS_OBJECTID_INFORMATION parity record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FsObjectIdInfo {
+    /// Object id (16 bytes).
+    pub object_id: [u8; 16],
+    /// Extended info (48 bytes).
+    pub extended_info: [u8; 48],
+}
+
+fn rd_u32(b: &[u8], o: usize) -> u32 {
+    u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]])
+}
+fn rd_u64(b: &[u8], o: usize) -> u64 {
+    u64::from_le_bytes([b[o], b[o+1], b[o+2], b[o+3], b[o+4], b[o+5], b[o+6], b[o+7]])
+}
+/// `decode_size`: parse FILE_FS_SIZE_INFORMATION (>= 24 bytes).
+pub fn decode_size(buf: &[u8]) -> core::result::Result<FsSizeInfo, i32> {
+    if buf.len() < 24 { return Err(-1); }
+    Ok(FsSizeInfo {
+        total_allocation_units: rd_u64(buf, 0),
+        available_allocation_units: rd_u64(buf, 8),
+        sectors_per_allocation_unit: rd_u32(buf, 16),
+        bytes_per_sector: rd_u32(buf, 20),
+    })
+}
+
+/// `encode_size`: emit FILE_FS_SIZE_INFORMATION into a buffer of `out_len` bytes.
+pub fn encode_size(info: FsSizeInfo, out_len: usize) -> core::result::Result<(Vec<u8>, i32), i32> {
+    if out_len < 24 { return Err(-1); }
+    let mut buf = vec![0u8; out_len];
+    buf[0..8].copy_from_slice(&info.total_allocation_units.to_le_bytes());
+    buf[8..16].copy_from_slice(&info.available_allocation_units.to_le_bytes());
+    buf[16..20].copy_from_slice(&info.sectors_per_allocation_unit.to_le_bytes());
+    buf[20..24].copy_from_slice(&info.bytes_per_sector.to_le_bytes());
+    Ok((buf, 24))
+}
+
+/// `decode_device`: parse FILE_FS_DEVICE_INFORMATION (>= 8 bytes).
+pub fn decode_device(buf: &[u8]) -> core::result::Result<FsDeviceInfo, i32> {
+    if buf.len() < 8 { return Err(-1); }
+    Ok(FsDeviceInfo { device_type: rd_u32(buf, 0), characteristics: rd_u32(buf, 4) })
+}
+
+/// `encode_device`: emit FILE_FS_DEVICE_INFORMATION.
+pub fn encode_device(info: FsDeviceInfo, out_len: usize) -> core::result::Result<(Vec<u8>, i32), i32> {
+    if out_len < 8 { return Err(-1); }
+    let mut buf = vec![0u8; out_len];
+    buf[0..4].copy_from_slice(&info.device_type.to_le_bytes());
+    buf[4..8].copy_from_slice(&info.characteristics.to_le_bytes());
+    Ok((buf, 8))
+}
+
+/// `decode_volume`: parse FILE_FS_VOLUME_INFORMATION (>= 18 bytes + UTF-16 label).
+pub fn decode_volume(buf: &[u8]) -> core::result::Result<FsVolumeInfo, i32> {
+    if buf.len() < 18 { return Err(-1); }
+    let win = rd_u64(buf, 0);
+    let tv: TsTimeval = smb2_win_to_shared_timeval(win);
+    let label_len = rd_u32(buf, 12) as usize;
+    if 18 + label_len > buf.len() { return Err(-1); }
+    let units: Vec<u16> = buf[18..18 + label_len]
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
+    Ok(FsVolumeInfo {
+        creation_time_seconds: tv.tv_sec,
+        creation_time_microseconds: tv.tv_usec,
+        volume_serial_number: rd_u32(buf, 8),
+        supports_objects: buf[16],
+        reserved: buf[17],
+        volume_label: smb2_utf16_to_utf8(&units),
+    })
+}
+
+/// `encode_volume`: emit FILE_FS_VOLUME_INFORMATION, returning `18 + name_len`.
+pub fn encode_volume(info: &FsVolumeInfo, out_len: usize) -> core::result::Result<(Vec<u8>, i32), i32> {
+    let units = smb2_utf8_to_utf16(info.volume_label.as_bytes()).map_err(|_| -1)?;
+    let name_bytes: Vec<u8> = units.as_units_le().iter().flat_map(|u| u.to_le_bytes()).collect();
+    let total = 18 + name_bytes.len();
+    if out_len < total { return Err(-1); }
+    let mut buf = vec![0u8; out_len];
+    let win = smb2_timeval_to_win(&TsTimeval::new(info.creation_time_seconds, info.creation_time_microseconds));
+    buf[0..8].copy_from_slice(&win.to_le_bytes());
+    buf[8..12].copy_from_slice(&info.volume_serial_number.to_le_bytes());
+    buf[12..16].copy_from_slice(&(name_bytes.len() as u32).to_le_bytes());
+    buf[16] = info.supports_objects;
+    buf[17] = info.reserved;
+    buf[18..18 + name_bytes.len()].copy_from_slice(&name_bytes);
+    Ok((buf, total as i32))
+}
+
+/// `decode_attribute`: parse FILE_FS_ATTRIBUTE_INFORMATION (>= 20 bytes).
+pub fn decode_attribute(buf: &[u8]) -> core::result::Result<FsAttributeInfo, i32> {
+    if buf.len() < 20 { return Err(-1); }
+    let name_len = rd_u32(buf, 8) as usize;
+    if 12 + name_len > buf.len() { return Err(-1); }
+    let units: Vec<u16> = buf[12..12 + name_len]
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
+    Ok(FsAttributeInfo {
+        filesystem_attributes: rd_u32(buf, 0),
+        maximum_component_name_length: rd_u32(buf, 4),
+        filesystem_name: smb2_utf16_to_utf8(&units),
+    })
+}
+
+/// `encode_attribute`: emit FILE_FS_ATTRIBUTE_INFORMATION, returning `12 + name_len`.
+pub fn encode_attribute(info: &FsAttributeInfo, out_len: usize) -> core::result::Result<(Vec<u8>, i32), i32> {
+    if out_len < 12 { return Err(-1); }
+    let units = smb2_utf8_to_utf16(info.filesystem_name.as_bytes()).map_err(|_| -1)?;
+    let name_bytes: Vec<u8> = units.as_units_le().iter().flat_map(|u| u.to_le_bytes()).collect();
+    let total = 12 + name_bytes.len();
+    if out_len < total { return Err(-1); }
+    let mut buf = vec![0u8; out_len];
+    buf[0..4].copy_from_slice(&info.filesystem_attributes.to_le_bytes());
+    buf[4..8].copy_from_slice(&info.maximum_component_name_length.to_le_bytes());
+    buf[8..12].copy_from_slice(&(name_bytes.len() as u32).to_le_bytes());
+    buf[12..12 + name_bytes.len()].copy_from_slice(&name_bytes);
+    Ok((buf, total as i32))
+}
+
+/// `decode_control`: parse FILE_FS_CONTROL_INFORMATION (>= 44 bytes), returns `(info, 44)`.
+pub fn decode_control(buf: &[u8]) -> core::result::Result<(FsControlInfo, i32), i32> {
+    if buf.len() < 44 { return Err(-1); }
+    Ok((FsControlInfo {
+        free_space_start_filtering: rd_u64(buf, 0),
+        free_space_threshold: rd_u64(buf, 8),
+        free_space_stop_filtering: rd_u64(buf, 16),
+        default_quota_threshold: rd_u64(buf, 24),
+        default_quota_limit: rd_u64(buf, 32),
+        file_system_control_flags: rd_u32(buf, 40),
+    }, 44))
+}
+
+/// `encode_control`: emit FILE_FS_CONTROL_INFORMATION; needs >= 48 bytes, returns 44.
+pub fn encode_control(info: FsControlInfo, out_len: usize) -> core::result::Result<(Vec<u8>, i32), i32> {
+    if out_len < 48 { return Err(-1); }
+    let mut buf = vec![0u8; out_len];
+    buf[0..8].copy_from_slice(&info.free_space_start_filtering.to_le_bytes());
+    buf[8..16].copy_from_slice(&info.free_space_threshold.to_le_bytes());
+    buf[16..24].copy_from_slice(&info.free_space_stop_filtering.to_le_bytes());
+    buf[24..32].copy_from_slice(&info.default_quota_threshold.to_le_bytes());
+    buf[32..40].copy_from_slice(&info.default_quota_limit.to_le_bytes());
+    buf[40..44].copy_from_slice(&info.file_system_control_flags.to_le_bytes());
+    Ok((buf, 44))
+}
+
+/// `decode_full_size`: parse FILE_FS_FULL_SIZE_INFORMATION (>= 32 bytes).
+pub fn decode_full_size(buf: &[u8]) -> core::result::Result<FsFullSizeInfo, i32> {
+    if buf.len() < 32 { return Err(-1); }
+    Ok(FsFullSizeInfo {
+        total_allocation_units: rd_u64(buf, 0),
+        caller_available_allocation_units: rd_u64(buf, 8),
+        actual_available_allocation_units: rd_u64(buf, 16),
+        sectors_per_allocation_unit: rd_u32(buf, 24),
+        bytes_per_sector: rd_u32(buf, 28),
+    })
+}
+
+/// `encode_full_size`: emit FILE_FS_FULL_SIZE_INFORMATION.
+pub fn encode_full_size(info: FsFullSizeInfo, out_len: usize) -> core::result::Result<(Vec<u8>, i32), i32> {
+    if out_len < 32 { return Err(-1); }
+    let mut buf = vec![0u8; out_len];
+    buf[0..8].copy_from_slice(&info.total_allocation_units.to_le_bytes());
+    buf[8..16].copy_from_slice(&info.caller_available_allocation_units.to_le_bytes());
+    buf[16..24].copy_from_slice(&info.actual_available_allocation_units.to_le_bytes());
+    buf[24..28].copy_from_slice(&info.sectors_per_allocation_unit.to_le_bytes());
+    buf[28..32].copy_from_slice(&info.bytes_per_sector.to_le_bytes());
+    Ok((buf, 32))
+}
+
+/// `decode_object_id`: parse FILE_FS_OBJECTID_INFORMATION (>= 64 bytes).
+pub fn decode_object_id(buf: &[u8]) -> core::result::Result<FsObjectIdInfo, i32> {
+    if buf.len() < 64 { return Err(-1); }
+    let mut object_id = [0u8; 16];
+    object_id.copy_from_slice(&buf[0..16]);
+    let mut extended_info = [0u8; 48];
+    extended_info.copy_from_slice(&buf[16..64]);
+    Ok(FsObjectIdInfo { object_id, extended_info })
+}

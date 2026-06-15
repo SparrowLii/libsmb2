@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::sha;
+use libsmb2_rs::lib::sha;
 
 // Trace: `lib/sha-private.h:SHA_Ch`
 // Spec: SHA_Ch choice function macro#默认 choice 公式展开

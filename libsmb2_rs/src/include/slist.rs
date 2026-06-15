@@ -124,3 +124,125 @@ impl<T> Extend<T> for Smb2SList<T> {
         self.entries.extend(iter);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Pointer-based intrusive singly-linked list facade mirroring `include/slist.h`
+// macros (SMB2_LIST_ADD / ADD_END / REMOVE / LENGTH). Used by spec tests.
+// ---------------------------------------------------------------------------
+
+use core::cell::Cell;
+
+/// An intrusive list node holding a raw `next` pointer (`struct *->next`).
+pub struct SListNode {
+    next: Cell<*const SListNode>,
+}
+
+impl SListNode {
+    /// Creates a node with a null `next`.
+    #[must_use]
+    pub fn new() -> Self {
+        Self { next: Cell::new(core::ptr::null()) }
+    }
+
+    /// Returns true if `next` points at `other` (or null when `other` is None).
+    #[must_use]
+    pub fn next_is(&self, other: Option<&SListNode>) -> bool {
+        self.next.get() == other.map_or(core::ptr::null(), |n| n as *const SListNode)
+    }
+}
+
+impl Default for SListNode {
+    fn default() -> Self { Self::new() }
+}
+
+/// A list head holding a raw pointer to the first node (`*list`).
+pub struct SListHead {
+    head: Cell<*const SListNode>,
+}
+
+impl SListHead {
+    /// Creates an empty list head.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self { head: Cell::new(core::ptr::null()) }
+    }
+
+    /// Creates a list head pointing at `head`.
+    #[must_use]
+    pub fn from_head(head: &mut SListNode) -> Self {
+        Self { head: Cell::new(head as *const SListNode) }
+    }
+
+    /// Returns true if the head points at `node` (or null when `node` is None).
+    #[must_use]
+    pub fn head_is(&self, node: Option<&SListNode>) -> bool {
+        self.head.get() == node.map_or(core::ptr::null(), |n| n as *const SListNode)
+    }
+
+    /// `SMB2_LIST_ADD`: prepend `item`.
+    pub fn add(&mut self, item: &mut SListNode) {
+        item.next.set(self.head.get());
+        self.head.set(item as *const SListNode);
+    }
+
+    /// `SMB2_LIST_ADD_END`: append `item` (falls back to `add` when empty).
+    pub fn add_end(&mut self, item: &mut SListNode) {
+        if self.head.get().is_null() {
+            self.add(item);
+            return;
+        }
+        // Walk to the tail.
+        let mut cur = self.head.get();
+        unsafe {
+            while !(*cur).next.get().is_null() {
+                cur = (*cur).next.get();
+            }
+            (*cur).next.set(item as *const SListNode);
+        }
+        item.next.set(core::ptr::null());
+    }
+
+    /// `SMB2_LIST_REMOVE`: unlink `item` if present.
+    pub fn remove(&mut self, item: &mut SListNode) {
+        let target = item as *const SListNode;
+        if self.head.get() == target {
+            self.head.set(item.next.get());
+            return;
+        }
+        let mut cur = self.head.get();
+        unsafe {
+            while !cur.is_null() {
+                let nxt = (*cur).next.get();
+                if nxt == target {
+                    (*cur).next.set((*target).next.get());
+                    return;
+                }
+                cur = nxt;
+            }
+        }
+    }
+
+    /// `SMB2_LIST_LENGTH`: count reachable nodes.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        let mut count = 0;
+        let mut cur = self.head.get();
+        unsafe {
+            while !cur.is_null() {
+                count += 1;
+                cur = (*cur).next.get();
+            }
+        }
+        count
+    }
+
+    /// Returns true if the list is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.head.get().is_null()
+    }
+}
+
+impl Default for SListHead {
+    fn default() -> Self { Self::empty() }
+}

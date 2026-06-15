@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::sha::{self, Sha1Context};
+use libsmb2_rs::lib::sha::{self, Sha1Context};
 
 // Trace: `lib/sha1.c:SHA1Reset`, `lib/sha.h:SHA1Reset`
 // Spec: SHA1Reset context initialization#reset rejects null context

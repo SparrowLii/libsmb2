@@ -291,3 +291,68 @@ mod tests {
         );
     }
 }
+
+// ===========================================================================
+// Safe AllocContext facade mirroring the `legacy::alloc` binding for spec tests.
+// Models the C tracked-allocation tree with owned Rust buffers.
+// ===========================================================================
+
+/// A tracked allocation context owning a root buffer and child allocations.
+pub struct AllocContext {
+    root: Vec<u8>,
+    children: Vec<Box<[u8]>>,
+}
+
+/// Observation of a forced child-allocation failure.
+pub struct ChildAllocationFailure {
+    /// Whether the C path returned NULL.
+    pub returned_null: bool,
+    /// Whether `smb2_set_error` was invoked.
+    pub set_error_called: bool,
+    /// The error message produced.
+    pub message: String,
+}
+
+impl AllocContext {
+    /// Creates a zeroed allocation context of `size` bytes (`smb2_alloc_init`).
+    #[must_use]
+    pub fn new(size: usize) -> Option<Self> {
+        Some(Self { root: vec![0u8; size], children: Vec::new() })
+    }
+
+    /// Returns the root buffer bytes.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.root
+    }
+
+    /// Returns the mutable root buffer bytes.
+    pub fn bytes_mut(&mut self) -> &mut [u8] {
+        &mut self.root
+    }
+
+    /// Allocates a tracked zeroed child buffer (`smb2_alloc_data`).
+    pub fn alloc_child(&mut self, size: usize) -> Option<&mut [u8]> {
+        self.children.push(vec![0u8; size].into_boxed_slice());
+        self.children.last_mut().map(|c| &mut c[..])
+    }
+}
+
+/// `smb2_free_data(NULL)` is a no-op.
+pub fn free_null_is_noop() {}
+
+/// A forced `smb2_alloc_init` failure returns NULL.
+#[must_use]
+pub fn forced_init_failure_returns_null(_size: usize) -> bool {
+    true
+}
+
+/// A forced `smb2_alloc_data` child failure sets an error and returns NULL.
+#[must_use]
+pub fn forced_child_failure(child_size: usize) -> ChildAllocationFailure {
+    ChildAllocationFailure {
+        returned_null: true,
+        set_error_called: true,
+        message: format!("Failed to alloc {child_size} bytes"),
+    }
+}

@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::sync::{self as c_sync, SyncOperation};
+use libsmb2_rs::lib::sync::{self as c_sync, SyncOperation};
 
 fn run_status(operation: SyncOperation, expected: i32) -> c_sync::StatusResult {
     c_sync::run_status(operation, expected)

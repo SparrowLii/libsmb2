@@ -201,7 +201,7 @@ pub fn smb2_process_tree_disconnect_request_fixed(
     pdu: &mut Smb2TreeDisconnectPdu,
     fixed: &[u8],
 ) -> TreeDisconnectResult<()> {
-    validate_fixed_size(fixed, SMB2_TREE_DISCONNECT_REQUEST_SIZE)?;
+    validate_request_fixed_size(fixed, SMB2_TREE_DISCONNECT_REQUEST_SIZE)?;
     pdu.request = Some(Smb2TreeDisconnectRequest::new());
     Ok(())
 }
@@ -213,6 +213,28 @@ fn encode_fixed_payload(structure_size: u16) -> TreeDisconnectResult<Vec<u8>> {
 }
 
 fn validate_fixed_size(buf: &[u8], expected: u16) -> TreeDisconnectResult<()> {
+    // A buffer shorter than the fixed structure is reported as too short,
+    // matching the C length pre-check before the structure-size comparison.
+    if buf.len() < usize::from(expected) {
+        return Err(TreeDisconnectError::BufferTooShort {
+            needed: usize::from(expected),
+            actual: buf.len(),
+        });
+    }
+    let wire_size = read_u16(buf, 0)?;
+    if wire_size != expected || buf.len() != usize::from(expected) {
+        return Err(TreeDisconnectError::InvalidStructureSize {
+            expected,
+            actual: buf.len(),
+        });
+    }
+    Ok(())
+}
+
+// The request-fixed path validates the declared structure-size field against the
+// actual buffer length, reporting a size mismatch (rather than too-short) when
+// the field is present but the buffer length does not match.
+fn validate_request_fixed_size(buf: &[u8], expected: u16) -> TreeDisconnectResult<()> {
     let wire_size = read_u16(buf, 0)?;
     if wire_size != expected || buf.len() != usize::from(expected) {
         return Err(TreeDisconnectError::InvalidStructureSize {

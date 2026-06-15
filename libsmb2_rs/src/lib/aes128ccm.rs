@@ -473,3 +473,161 @@ fn tag_matches(expected: &[u8; AES_BLOCK_LEN], actual: &[u8; AES_BLOCK_LEN], len
     }
     diff == 0
 }
+
+// ---------------------------------------------------------------------------
+// Free-function CCM API matching the C `aes128ccm_encrypt` / `aes128ccm_decrypt`
+// contract, mirroring the safe signatures used by the spec tests.
+// ---------------------------------------------------------------------------
+
+/// Error type returned by the free-function CCM API.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Error {
+    /// The requested MAC length exceeds the 16-byte block size.
+    InvalidMacLength,
+    /// Tag verification failed during decryption.
+    AuthenticationFailed,
+}
+
+/// Result alias for the free-function CCM API.
+pub type CcmResult<T> = core::result::Result<T, Error>;
+
+fn ccm_block_encrypt(key: &[u8; 16], block: &[u8; 16]) -> [u8; 16] {
+    super::aes::encrypt_block(super::aes::AesBlock(*block), super::aes::AesBlock(*key)).0
+}
+
+// Number of octets used to encode the message-length field L.
+fn ccm_l(nonce_len: usize) -> usize {
+    15 - nonce_len
+}
+
+fn ccm_format_b0(nonce: &[u8], aad_len: usize, payload_len: usize, mac_len: usize) -> [u8; 16] {
+    let l = ccm_l(nonce.len());
+    let mut b0 = [0u8; 16];
+    let adata = if aad_len > 0 { 1u8 } else { 0u8 };
+    // Flags: Adata(6) | M'(5..3) = (mac_len-2)/2 | L'(2..0) = L-1
+    b0[0] = (adata << 6) | ((((mac_len as u8).wrapping_sub(2)) / 2) << 3) | ((l as u8) - 1);
+    b0[1..1 + nonce.len()].copy_from_slice(nonce);
+    // Encode payload_len in the last L octets, big-endian.
+    let mut len = payload_len as u64;
+    for i in 0..l {
+        b0[15 - i] = (len & 0xff) as u8;
+        len >>= 8;
+    }
+    b0
+}
+
+fn ccm_cbc_mac(key: &[u8; 16], nonce: &[u8], aad: &[u8], payload: &[u8], mac_len: usize) -> [u8; 16] {
+    let mut x = ccm_format_b0(nonce, aad.len(), payload.len(), mac_len);
+    x = ccm_block_encrypt(key, &x);
+
+    // Authenticate AAD with its length-prefix encoding.
+    if !aad.is_empty() {
+        let mut buf: Vec<u8> = Vec::new();
+        if aad.len() < 0xff00 {
+            buf.extend_from_slice(&(aad.len() as u16).to_be_bytes());
+        } else {
+            buf.push(0xff);
+            buf.push(0xfe);
+            buf.extend_from_slice(&(aad.len() as u32).to_be_bytes());
+        }
+        buf.extend_from_slice(aad);
+        for chunk in buf.chunks(16) {
+            for (i, b) in chunk.iter().enumerate() {
+                x[i] ^= b;
+            }
+            x = ccm_block_encrypt(key, &x);
+        }
+    }
+
+    // Authenticate payload.
+    for chunk in payload.chunks(16) {
+        for (i, b) in chunk.iter().enumerate() {
+            x[i] ^= b;
+        }
+        x = ccm_block_encrypt(key, &x);
+    }
+    x
+}
+
+fn ccm_ctr_block(nonce: &[u8], counter: u64) -> [u8; 16] {
+    let l = ccm_l(nonce.len());
+    let mut a = [0u8; 16];
+    a[0] = (l as u8) - 1;
+    a[1..1 + nonce.len()].copy_from_slice(nonce);
+    let mut c = counter;
+    for i in 0..l {
+        a[15 - i] = (c & 0xff) as u8;
+        c >>= 8;
+    }
+    a
+}
+
+fn ccm_apply_ctr(key: &[u8; 16], nonce: &[u8], payload: &mut [u8]) {
+    for (block_index, chunk) in payload.chunks_mut(16).enumerate() {
+        let a = ccm_ctr_block(nonce, (block_index as u64) + 1);
+        let s = ccm_block_encrypt(key, &a);
+        for (i, b) in chunk.iter_mut().enumerate() {
+            *b ^= s[i];
+        }
+    }
+}
+
+fn ccm_tag(key: &[u8; 16], nonce: &[u8], t: &[u8; 16], mac_len: usize) -> Vec<u8> {
+    let a0 = ccm_ctr_block(nonce, 0);
+    let s0 = ccm_block_encrypt(key, &a0);
+    let mut mac = vec![0u8; mac_len];
+    for i in 0..mac_len {
+        mac[i] = t[i] ^ s0[i];
+    }
+    mac
+}
+
+/// Encrypts `payload` in place and returns the `mac_len`-byte authentication tag.
+///
+/// Mirrors the C `aes128ccm_encrypt` contract used by SMB3 sealing.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidMacLength`] if `mac_len > 16`.
+pub fn encrypt(
+    key: &mut [u8; 16],
+    nonce: &mut [u8],
+    aad: &mut [u8],
+    payload: &mut [u8],
+    mac_len: usize,
+) -> CcmResult<Vec<u8>> {
+    if mac_len > 16 {
+        return Err(Error::InvalidMacLength);
+    }
+    let t = ccm_cbc_mac(key, nonce, aad, payload, mac_len);
+    ccm_apply_ctr(key, nonce, payload);
+    Ok(ccm_tag(key, nonce, &t, mac_len))
+}
+
+/// Decrypts `payload` in place and verifies the `mac` tag.
+///
+/// Mirrors the C `aes128ccm_decrypt` contract.
+///
+/// # Errors
+///
+/// Returns [`Error::AuthenticationFailed`] if the recomputed tag does not match `mac`.
+pub fn decrypt(
+    key: &mut [u8; 16],
+    nonce: &mut [u8],
+    aad: &mut [u8],
+    payload: &mut [u8],
+    mac: &mut [u8],
+) -> CcmResult<()> {
+    ccm_apply_ctr(key, nonce, payload);
+    let t = ccm_cbc_mac(key, nonce, aad, payload, mac.len());
+    let expected = ccm_tag(key, nonce, &t, mac.len());
+    let mut diff = 0u8;
+    for (a, b) in expected.iter().zip(mac.iter()) {
+        diff |= a ^ b;
+    }
+    if diff == 0 {
+        Ok(())
+    } else {
+        Err(Error::AuthenticationFailed)
+    }
+}

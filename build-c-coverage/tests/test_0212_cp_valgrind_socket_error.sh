@@ -1,0 +1,1 @@
+/home/liyuan/tmp/libsmb2/tests/test_0212_cp_valgrind_socket_error.sh

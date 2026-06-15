@@ -1,0 +1,1 @@
+/bin/bash: symbol lookup error: ./ld_sockerr.so: undefined symbol: __gcov_merge_add

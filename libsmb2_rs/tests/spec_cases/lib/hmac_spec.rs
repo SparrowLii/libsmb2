@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::sha;
+use libsmb2_rs::lib::sha;
 
 // Trace: `lib/hmac.c:hmac`, `lib/sha.h:hmac`
 // Spec: hmac one-shot digest calculation#One-shot HMAC succeeds through reset input result sequence

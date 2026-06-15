@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::utils::smb2_cp;
+use libsmb2_rs::lib::utils::smb2_cp;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};

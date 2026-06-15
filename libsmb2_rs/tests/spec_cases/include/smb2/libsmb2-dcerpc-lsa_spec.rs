@@ -11,7 +11,7 @@ use libsmb2_rs::lib::dcerpc_lsa::{
     RpcUnicodeString, SidNameUse, LSA_LOOKUP_SIDS2_CLIENT_REVISION, LSA_STATUS_SUCCESS,
     NT_SID_AUTHORITY as SAFE_NT_SID_AUTHORITY,
 };
-use libsmb2_sys::smb2::libsmb2_dcerpc_lsa::{
+use libsmb2_rs::include::smb2::dcerpc_coder_lsa::{
     CloseRequest, CloseResponse, LookupSids2Request, LookupSids2Response, LsapLookupLevel,
     NdrContextHandle, ObjectAttributes, OpenPolicy2Request, OpenPolicy2Response,
     ReferencedDomainList, RpcSid, SidEnumBuffer, TranslatedNameEx, TranslatedNamesEx,

@@ -1,4 +1,5 @@
-use libsmb2_sys::{include::portable_endian, legacy::compat};
+use libsmb2_rs::include::portable_endian;
+use libsmb2_rs::lib::compat;
 
 // Trace: `lib/compat.c:331`
 // Spec: random returns platform random values#non-IOP random delegates to platform source

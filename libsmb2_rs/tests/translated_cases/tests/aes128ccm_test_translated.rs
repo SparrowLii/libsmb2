@@ -2,7 +2,7 @@
 // Translated from legacy test file: tests/aes128ccm-test.c
 // Manifest source key is normalized to tests/aes128ccm_test.c because Rust module paths cannot contain '-'.
 
-use libsmb2_sys::legacy::aes128ccm;
+use libsmb2_rs::lib::aes128ccm;
 
 // Translated from assert-based: test_1
 // Source: tests/aes128ccm_test.c:10-57

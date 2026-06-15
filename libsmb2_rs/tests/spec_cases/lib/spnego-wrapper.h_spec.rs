@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::spnego_wrapper::{
+use libsmb2_rs::lib::spnego_wrapper::{
     self as spnego, SPNEGO_MECHANISM_KRB5, SPNEGO_MECHANISM_NTLMSSP,
 };
 

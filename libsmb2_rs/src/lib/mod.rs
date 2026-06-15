@@ -39,6 +39,8 @@ pub mod sha384_512;
 pub mod sha_private;
 #[path = "smb2-cmd-close.rs"]
 pub mod smb2_cmd_close;
+#[path = "smb2-command-probe.rs"]
+pub mod smb2_command_probe;
 #[path = "smb2-cmd-create.rs"]
 pub mod smb2_cmd_create;
 #[path = "smb2-cmd-echo.rs"]
@@ -96,3 +98,4 @@ pub mod sync;
 pub mod timestamps;
 pub mod unicode;
 pub mod usha;
+pub mod utils;

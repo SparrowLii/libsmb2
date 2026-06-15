@@ -961,3 +961,441 @@ pub struct BerTypeLen {
     /// BER payload length.
     pub len: u32,
 }
+
+// ===========================================================================
+// C-style Decoder/Encoder facade mirroring `lib/asn1-ber.c`, used by spec tests.
+// Error codes are negative errno values: -EINVAL = -22, -E2BIG = -7.
+// ===========================================================================
+
+const E2BIG: i32 = -7;
+const EINVAL: i32 = -22;
+
+/// BER type codes (SNMP-flavoured), mirroring the C `ber_type_t` enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SnmpBerType {
+    /// `BER_INTEGER`.
+    Integer = 0x02,
+    /// `BER_OCTET_STRING`.
+    OctetString = 0x04,
+    /// `BER_NULL`.
+    Null = 0x05,
+    /// `BER_OBJECT_ID`.
+    ObjectId = 0x06,
+    /// `BER_COUNTER`.
+    Counter = 0x41,
+    /// `BER_UNSIGNED`.
+    Unsigned = 0x42,
+    /// `BER_COUNTER64`.
+    Counter64 = 0x46,
+    /// `BER_INTEGER64`.
+    Integer64 = 0x4a,
+    /// `BER_UNSIGNED64`.
+    Unsigned64 = 0x4b,
+    /// Constructed structure (`asnSTRUCT`).
+    Struct = 0x30,
+}
+
+impl SnmpBerType {
+    fn raw(self) -> u8 { self as u8 }
+}
+
+/// An object identifier value (`asn1ber_oid_value`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OidValue {
+    /// Decoded OID arcs.
+    pub elements: Vec<u32>,
+}
+
+fn ber_encode_length(out: &mut Vec<u8>, len: u32) -> u32 {
+    if len < 0x80 {
+        out.push(len as u8);
+        1
+    } else {
+        let be = len.to_be_bytes();
+        let first = be.iter().position(|&b| b != 0).unwrap_or(3);
+        let bytes = &be[first..];
+        out.push(0x80 | (bytes.len() as u8));
+        out.extend_from_slice(bytes);
+        1 + bytes.len() as u32
+    }
+}
+
+/// BER decoder over an owned source buffer.
+pub struct Decoder {
+    src: Vec<u8>,
+    pos: usize,
+    last_error: i32,
+}
+
+impl Decoder {
+    /// Creates a decoder over a copy of `src`.
+    #[must_use]
+    pub fn new(src: &[u8]) -> Self {
+        Self { src: src.to_vec(), pos: 0, last_error: 0 }
+    }
+
+    /// Returns the last recorded error code.
+    #[must_use]
+    pub fn last_error(&self) -> i32 { self.last_error }
+
+    fn fail(&mut self, code: i32) -> i32 {
+        self.last_error = code;
+        code
+    }
+
+    fn next(&mut self) -> Result<u8, i32> {
+        if self.pos < self.src.len() {
+            let b = self.src[self.pos];
+            self.pos += 1;
+            Ok(b)
+        } else {
+            Err(self.fail(EINVAL))
+        }
+    }
+
+    /// Decodes a BER length field.
+    pub fn decode_length(&mut self) -> Result<u32, i32> {
+        let b = self.next()?;
+        if b & 0x80 == 0 {
+            return Ok(u32::from(b));
+        }
+        let count = (b & 0x7f) as usize;
+        if count > 4 {
+            return Err(self.fail(E2BIG));
+        }
+        let mut len = 0u32;
+        for _ in 0..count {
+            let nb = self.next()?;
+            len = (len << 8) | u32::from(nb);
+        }
+        Ok(len)
+    }
+
+    /// Decodes a single type-code byte.
+    pub fn decode_typecode(&mut self) -> Result<u32, i32> {
+        let b = self.next()?;
+        Ok(u32::from(b))
+    }
+
+    /// Decodes a type code followed by a length.
+    pub fn decode_typelen(&mut self) -> Result<(u32, u32), i32> {
+        let ty = self.decode_typecode()?;
+        let len = self.decode_length()?;
+        Ok((ty, len))
+    }
+
+    /// Decodes a request header (type + length).
+    pub fn decode_request(&mut self) -> Result<(u32, u32), i32> {
+        self.decode_typelen()
+    }
+
+    /// Decodes a structure header, requiring `asnSTRUCT`.
+    pub fn decode_struct_len(&mut self) -> Result<u32, i32> {
+        let (ty, len) = self.decode_typelen()?;
+        if ty != u32::from(SnmpBerType::Struct.raw()) {
+            return Err(self.fail(EINVAL));
+        }
+        Ok(len)
+    }
+
+    /// Decodes a NULL header, requiring `asnNULL`.
+    pub fn decode_null_len(&mut self) -> Result<u32, i32> {
+        let (ty, len) = self.decode_typelen()?;
+        if ty != u32::from(SnmpBerType::Null.raw()) {
+            return Err(self.fail(EINVAL));
+        }
+        Ok(len)
+    }
+
+    fn read_int_bytes(&mut self, max: usize) -> Result<(u64, usize, u8), i32> {
+        let (_ty, len) = self.decode_typelen()?;
+        let len = len as usize;
+        if len == 0 || len > max {
+            return Err(self.fail(E2BIG));
+        }
+        let first = self.next()?;
+        let mut acc = u64::from(first);
+        for _ in 1..len {
+            let b = self.next()?;
+            acc = (acc << 8) | u64::from(b);
+        }
+        Ok((acc, len, first))
+    }
+
+    /// Decodes a signed 32-bit integer.
+    pub fn decode_int32(&mut self) -> Result<i32, i32> {
+        let (acc, len, first) = self.read_int_bytes(4)?;
+        let mut v = acc as i64;
+        if first & 0x80 != 0 {
+            v -= 1i64 << (8 * len);
+        }
+        Ok(v as i32)
+    }
+
+    /// Decodes an unsigned 32-bit integer.
+    pub fn decode_uint32(&mut self) -> Result<u32, i32> {
+        let (acc, _len, _first) = self.read_int_bytes(4)?;
+        Ok(acc as u32)
+    }
+
+    /// Decodes a signed 64-bit integer.
+    pub fn decode_int64(&mut self) -> Result<i64, i32> {
+        let (acc, len, first) = self.read_int_bytes(8)?;
+        let mut v = acc as i128;
+        if first & 0x80 != 0 {
+            v -= 1i128 << (8 * len);
+        }
+        Ok(v as i64)
+    }
+
+    /// Decodes an unsigned 64-bit integer.
+    pub fn decode_uint64(&mut self) -> Result<u64, i32> {
+        let (acc, _len, _first) = self.read_int_bytes(8)?;
+        Ok(acc)
+    }
+
+    /// Decodes an object identifier.
+    pub fn decode_oid(&mut self) -> Result<OidValue, i32> {
+        let (ty, len) = self.decode_typelen()?;
+        let _ = ty;
+        let len = len as usize;
+        if len == 0 || len > 32 {
+            return Err(self.fail(E2BIG));
+        }
+        let mut raw = Vec::with_capacity(len);
+        for _ in 0..len {
+            raw.push(self.next()?);
+        }
+        let mut elements = Vec::new();
+        // First byte encodes the first two arcs: x*40 + y.
+        elements.push(u32::from(raw[0]) / 40);
+        elements.push(u32::from(raw[0]) % 40);
+        let mut acc = 0u32;
+        for &b in &raw[1..] {
+            acc = (acc << 7) | u32::from(b & 0x7f);
+            if b & 0x80 == 0 {
+                elements.push(acc);
+                acc = 0;
+            }
+        }
+        Ok(OidValue { elements })
+    }
+
+    /// Decodes an octet string into a buffer of length `max_len`, returning `(buf, len)`.
+    pub fn decode_bytes(&mut self, max_len: usize) -> Result<(Vec<u8>, u32), i32> {
+        let (_ty, len) = self.decode_typelen()?;
+        let len = len as usize;
+        let mut out = vec![0u8; max_len];
+        for i in 0..len {
+            let b = self.next()?;
+            if i < max_len {
+                out[i] = b;
+            }
+        }
+        // C writes a NUL terminator when room remains.
+        if len < max_len {
+            out[len] = 0;
+        }
+        Ok((out, len as u32))
+    }
+
+    /// Decodes an octet string as a UTF-8 string, returning `(string, len)`.
+    pub fn decode_string(&mut self, max_len: usize) -> Result<(String, u32), i32> {
+        let (buf, len) = self.decode_bytes(max_len)?;
+        let s = String::from_utf8_lossy(&buf[..len as usize]).into_owned();
+        Ok((s, len))
+    }
+}
+
+/// BER encoder accumulating into a bounded destination buffer.
+pub struct Encoder {
+    dst: Vec<u8>,
+    capacity: usize,
+    last_error: i32,
+}
+
+impl Encoder {
+    /// Creates an encoder with a fixed output capacity.
+    #[must_use]
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self { dst: Vec::new(), capacity, last_error: 0 }
+    }
+
+    /// Returns the encoded bytes.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] { &self.dst }
+
+    /// Returns the last recorded error code.
+    #[must_use]
+    pub fn last_error(&self) -> i32 { self.last_error }
+
+    fn room(&self, additional: usize) -> bool {
+        self.dst.len() + additional <= self.capacity
+    }
+
+    /// Snapshots the current output cursor (`asn1ber_save_out_state`).
+    pub fn save_out_state(&mut self) -> Result<i32, i32> {
+        if self.dst.len() >= self.capacity {
+            return Err(self.last_error);
+        }
+        Ok(self.dst.len() as i32)
+    }
+
+    /// Reserves `len` placeholder zero bytes.
+    pub fn reserve_length(&mut self, len: u32) -> Result<(), i32> {
+        if !self.room(len as usize) { return Err(self.last_error); }
+        for _ in 0..len { self.dst.push(0); }
+        Ok(())
+    }
+
+    /// Backfills a reserved length field at `out_pos`, compacting unused reserve.
+    pub fn annotate_length(&mut self, out_pos: i32, reserved: i32) -> Result<(), i32> {
+        let out_pos = out_pos as usize;
+        let reserved = reserved as usize;
+        let payload_len = self.dst.len() - out_pos - reserved;
+        // Encode the actual length into a temporary buffer.
+        let mut lenbuf = Vec::new();
+        ber_encode_length(&mut lenbuf, payload_len as u32);
+        // Move payload to sit directly after the length field.
+        let payload: Vec<u8> = self.dst[out_pos + reserved..].to_vec();
+        self.dst.truncate(out_pos);
+        self.dst.extend_from_slice(&lenbuf);
+        self.dst.extend_from_slice(&payload);
+        Ok(())
+    }
+
+    /// Encodes a BER length, returning the number of bytes written.
+    pub fn encode_length(&mut self, len: u32) -> Result<u32, i32> {
+        let mut buf = Vec::new();
+        let n = ber_encode_length(&mut buf, len);
+        if !self.room(buf.len()) { return Err(self.last_error); }
+        self.dst.extend_from_slice(&buf);
+        Ok(n)
+    }
+
+    /// Encodes a single type-code byte.
+    pub fn encode_typecode(&mut self, ty: SnmpBerType) -> Result<(), i32> {
+        if !self.room(1) { return Err(self.last_error); }
+        self.dst.push(ty.raw());
+        Ok(())
+    }
+
+    /// Encodes a type code followed by a length; returns lenfield bytes + 1.
+    pub fn encode_typelen(&mut self, ty: SnmpBerType, len: u32) -> Result<u32, i32> {
+        self.encode_typecode(ty)?;
+        let n = self.encode_length(len)?;
+        Ok(n + 1)
+    }
+
+    fn min_int_bytes_signed(val: i64) -> Vec<u8> {
+        let be = val.to_be_bytes();
+        let mut i = 0;
+        // Trim redundant sign-extension bytes.
+        while i < 7 {
+            let cur = be[i];
+            let next = be[i + 1];
+            if (cur == 0x00 && next & 0x80 == 0) || (cur == 0xff && next & 0x80 != 0) {
+                i += 1;
+            } else {
+                break;
+            }
+        }
+        be[i..].to_vec()
+    }
+
+    fn min_int_bytes_unsigned(val: u64) -> Vec<u8> {
+        let be = val.to_be_bytes();
+        let first = be.iter().position(|&b| b != 0).unwrap_or(7);
+        be[first..].to_vec()
+    }
+
+    fn encode_tlv(&mut self, ty: SnmpBerType, value: &[u8]) -> Result<(), i32> {
+        self.encode_typecode(ty)?;
+        self.encode_length(value.len() as u32)?;
+        if !self.room(value.len()) { return Err(self.last_error); }
+        self.dst.extend_from_slice(value);
+        Ok(())
+    }
+
+    /// Encodes a signed 32-bit integer.
+    pub fn encode_int32(&mut self, ty: SnmpBerType, val: i32) -> Result<(), i32> {
+        let bytes = Self::min_int_bytes_signed(i64::from(val));
+        self.encode_tlv(ty, &bytes)
+    }
+
+    /// Encodes an unsigned 32-bit integer.
+    pub fn encode_uint32(&mut self, ty: SnmpBerType, val: u32) -> Result<(), i32> {
+        let bytes = Self::min_int_bytes_unsigned(u64::from(val));
+        self.encode_tlv(ty, &bytes)
+    }
+
+    /// Encodes a signed 64-bit integer.
+    pub fn encode_int64(&mut self, ty: SnmpBerType, val: i64) -> Result<(), i32> {
+        let bytes = Self::min_int_bytes_signed(val);
+        self.encode_tlv(ty, &bytes)
+    }
+
+    /// Encodes an unsigned 64-bit integer.
+    ///
+    /// Mirrors the C `asn1ber_ber_from_uint64` quirk: the byte count starts at 4
+    /// and shrinks past leading zero bytes, so values whose top 32 bits are zero
+    /// are encoded as 4 low-order bytes.
+    pub fn encode_uint64(&mut self, ty: SnmpBerType, val: u64) -> Result<(), i32> {
+        let mut bytes = val;
+        let mut needed: u32 = 4;
+        while bytes != 0 {
+            if bytes & 0xFF00_0000_0000_0000 != 0 {
+                break;
+            }
+            bytes <<= 8;
+            needed -= 1;
+        }
+        self.encode_typelen(ty, needed)?;
+        let mut value = Vec::with_capacity(needed as usize);
+        let mut n = needed;
+        while n > 0 {
+            value.push((val >> (8 * (n - 1))) as u8);
+            n -= 1;
+        }
+        if !self.room(value.len()) { return Err(self.last_error); }
+        self.dst.extend_from_slice(&value);
+        Ok(())
+    }
+
+    /// Encodes an object identifier with combined first two arcs.
+    pub fn encode_oid(&mut self, oid: &OidValue) -> Result<(), i32> {
+        let mut body = Vec::new();
+        if oid.elements.len() >= 2 {
+            body.push((oid.elements[0] * 40 + oid.elements[1]) as u8);
+            for &arc in &oid.elements[2..] {
+                // base-128 encode multi-byte arcs
+                if arc < 0x80 {
+                    body.push(arc as u8);
+                } else {
+                    let mut tmp = Vec::new();
+                    let mut a = arc;
+                    tmp.push((a & 0x7f) as u8);
+                    a >>= 7;
+                    while a > 0 {
+                        tmp.push(((a & 0x7f) as u8) | 0x80);
+                        a >>= 7;
+                    }
+                    tmp.reverse();
+                    body.extend_from_slice(&tmp);
+                }
+            }
+        }
+        self.encode_tlv(SnmpBerType::ObjectId, &body)
+    }
+
+    /// Encodes a byte string with the caller-specified type.
+    pub fn encode_bytes(&mut self, ty: SnmpBerType, val: &[u8]) -> Result<(), i32> {
+        self.encode_tlv(ty, val)
+    }
+
+    /// Encodes a string as an octet string.
+    pub fn encode_string(&mut self, val: &str) -> Result<(), i32> {
+        self.encode_tlv(SnmpBerType::OctetString, val.as_bytes())
+    }
+}

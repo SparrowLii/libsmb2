@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::asn1_ber::{BerType, Decoder, Encoder, OidValue};
+use libsmb2_rs::lib::asn1_ber::{SnmpBerType as BerType, Decoder, Encoder, OidValue};
 
 const BER_MAX_OID_ELEMENTS: usize = 32;
 const ASN_CONSTRUCTOR: u8 = 0x20;

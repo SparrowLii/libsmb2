@@ -1,11 +1,11 @@
-use libsmb2_sys::legacy::unicode;
+use libsmb2_rs::lib::unicode;
 
 use libsmb2_rs::include::smb2::libsmb2::{
     self as public_api, AuthenticationMethod, ErrorCode, FileType, NegotiateVersion, PduHandle,
     Smb2Client, Smb2ClientState, Smb2OperationResult, SMB2_POLLERR, SMB2_POLLIN, SMB2_POLLOUT,
 };
 use libsmb2_rs::lib::sync::{self, PathOperation, SyncPayload, SyncRequestKind};
-use libsmb2_sys::smb2::smb2_errors::SMB2_STATUS_INVALID_PARAMETER;
+use libsmb2_rs::include::smb2::smb2_errors::SMB2_STATUS_INVALID_PARAMETER;
 
 // Trace: `include/smb2/libsmb2.h:smb2_context_lifecycle_api`, `lib/init.c:smb2_destroy_context`, `tests/prog_cat_cancel.c`
 // Spec: smb2_context_lifecycle_api manage context lifetime#销毁 context 取消未完成命令

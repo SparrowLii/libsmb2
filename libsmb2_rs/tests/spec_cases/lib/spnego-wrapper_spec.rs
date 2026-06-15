@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::spnego_wrapper::{self as spnego, SPNEGO_MECHANISM_NTLMSSP};
+use libsmb2_rs::lib::spnego_wrapper::{self as spnego, SPNEGO_MECHANISM_NTLMSSP};
 
 fn blob_is_valid(result: &spnego::SpnegoBlobResult) -> bool {
     result.rc > 0 && result.has_blob && result.bytes.len() == result.rc as usize

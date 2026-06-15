@@ -1,6 +1,6 @@
 use libsmb2_rs::lib::smb2_cmd_notify_change;
 use libsmb2_rs::lib::smb2_cmd_query_directory;
-use libsmb2_sys::smb2::smb2 as protocol;
+use libsmb2_rs::include::smb2::smb2 as protocol;
 
 // Trace: `include/smb2/smb2.h:114`, `specs/include/smb2/smb2.spec.md:25`
 // Spec: include/smb2/smb2.h data model summary#SMB2 GUID uses sixteen bytes
@@ -395,6 +395,7 @@ fn test_smb2_lock_element_model_stores_range_and_flags() {
         offset: 64,
         length: 128,
         flags: 1,
+        reserved: 0,
     };
 
     assert_eq!(element.offset, 64);

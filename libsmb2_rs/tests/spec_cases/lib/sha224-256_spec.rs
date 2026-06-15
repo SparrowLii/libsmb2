@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::sha::{self, Sha224Context, Sha256Context};
+use libsmb2_rs::lib::sha::{self, Sha224Context, Sha256Context};
 
 // Trace: `lib/sha224-256.c:SHA224Reset`, `lib/sha224-256.c:SHA224_256Reset`
 // Spec: SHA224Reset initialize SHA-224 context#成功初始化 SHA-224 上下文

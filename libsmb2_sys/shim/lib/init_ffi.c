@@ -67,7 +67,7 @@ void smb2_close_connecting_fds(struct smb2_context *smb2 _U_)
 {
 }
 
-void smb2_free_pdu(struct smb2_context *smb2 _U_, struct smb2_pdu *pdu _U_)
+__attribute__((weak)) void smb2_free_pdu(struct smb2_context *smb2 _U_, struct smb2_pdu *pdu _U_)
 {
 }
 

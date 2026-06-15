@@ -1,4 +1,4 @@
-use libsmb2_sys::include::config::PICOW_CONFIG;
+use libsmb2_rs::include::config::PICOW_CONFIG;
 
 // Trace: `include/picow/config.h:CONFIGURE_OPTION_TCP_LINGER`, `CMakeLists.txt:PICO_BOARD`, `lib/socket.c:CONFIGURE_OPTION_TCP_LINGER`
 // Spec: CONFIGURE_OPTION_TCP_LINGER expose PICO TCP linger policy#PICO 配置启用 TCP linger

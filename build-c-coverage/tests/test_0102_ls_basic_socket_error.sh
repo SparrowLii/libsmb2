@@ -1,0 +1,1 @@
+/home/liyuan/tmp/libsmb2/tests/test_0102_ls_basic_socket_error.sh

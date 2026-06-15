@@ -1,7 +1,7 @@
-use libsmb2_sys::legacy::aes_reference::{
+use libsmb2_rs::lib::aes_reference::{
     cbc_decrypt, cbc_encrypt, default_cbc_declarations_enabled, default_cbc_value,
     ecb_decrypt_block, ecb_encrypt_block, external_ecb_declarations_enabled_when_disabled,
-    external_ecb_value_when_disabled, AesBlock,
+    external_ecb_value_when_disabled, RefAesBlock as AesBlock,
 };
 
 // Trace: `lib/aes_reference.h:CBC`

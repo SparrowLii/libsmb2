@@ -194,6 +194,28 @@ impl Sha256Context {
         self.corrupted
     }
 
+    /// Returns `(length_high, length_low)` of the processed bit count.
+    #[must_use]
+    pub const fn length_words(&self) -> (u32, u32) {
+        (self.length_high, self.length_low)
+    }
+
+    /// Returns the current message block index.
+    #[must_use]
+    pub const fn message_block_index(&self) -> usize {
+        self.message_block_index
+    }
+
+    /// Overwrites the computed flag (observation hook for the C `Computed` field).
+    pub fn set_computed_flag(&mut self, computed: bool) {
+        self.computed = computed;
+    }
+
+    /// Overwrites the corruption state (observation hook for the C `Corrupted` field).
+    pub fn set_corrupted_state(&mut self, corrupted: ShaError) {
+        self.corrupted = corrupted;
+    }
+
     /// Resets this context for computing a new SHA-224 digest.
     pub fn sha224_reset(&mut self) -> ShaError {
         self.reset(Sha224256Variant::Sha224)

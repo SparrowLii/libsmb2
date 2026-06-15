@@ -1,4 +1,4 @@
-use libsmb2_sys::include::config::PS3_CONFIG;
+use libsmb2_rs::include::config::PS3_CONFIG;
 
 // Trace: `include/ps3/config.h:CONFIGURE_OPTION_TCP_LINGER`, `lib/socket.c:connect_async_ai`, `lib/socket.c:smb2_accept_connection_async`
 // Spec: CONFIGURE_OPTION_TCP_LINGER controls PS3 socket linger policy#PS3 配置保留默认 linger 行为

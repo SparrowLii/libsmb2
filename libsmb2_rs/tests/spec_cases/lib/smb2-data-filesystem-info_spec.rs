@@ -3,7 +3,7 @@ use libsmb2_rs::lib::smb2_data_filesystem_info::{
     FILE_FS_OBJECT_ID_EXTENDED_INFO_LEN, FILE_FS_OBJECT_ID_INFO_LEN, FILE_FS_SECTOR_SIZE_INFO_LEN,
     SMB2_GUID_SIZE,
 };
-use libsmb2_sys::legacy::smb2_data_filesystem_info::{
+use libsmb2_rs::lib::smb2_data_filesystem_info::{
     self as c_fsinfo, FsAttributeInfo, FsControlInfo, FsDeviceInfo, FsFullSizeInfo, FsSizeInfo,
     FsVolumeInfo,
 };

@@ -52,6 +52,18 @@ pub fn smb2_timeval_to_win(tv: &Smb2Timeval) -> u64 {
     i128_to_u64_saturating(ticks)
 }
 
+/// `timeval_to_windows_time(tv)` mirroring the sys safe binding.
+#[must_use]
+pub fn timeval_to_windows_time(time: Smb2Timeval) -> u64 {
+    smb2_timeval_to_win(&time)
+}
+
+/// `windows_time_to_timeval(t)` mirroring the sys safe binding.
+#[must_use]
+pub fn windows_time_to_timeval(windows_time: u64) -> Smb2Timeval {
+    smb2_win_to_timeval(windows_time)
+}
+
 /// Mirrors `smb2_win_to_timeval` from `lib/timestamps.c`.
 #[must_use]
 pub fn smb2_win_to_timeval(smb2_time: u64) -> Smb2Timeval {

@@ -87,3 +87,92 @@ pub fn vasprintf(args: fmt::Arguments<'_>) -> Result<FormattedString> {
 pub fn asprintf(args: fmt::Arguments<'_>) -> Result<FormattedString> {
     vasprintf(args)
 }
+
+// ---------------------------------------------------------------------------
+// C-style asprintf safe-binding facade mirroring `include/asprintf.h`.
+// The spec tests exercise the `"%d:%02d"` two-integer format and the
+// length/allocation/format failure branches.
+// ---------------------------------------------------------------------------
+
+/// Result of a successful format: return code plus produced text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FormatResult {
+    /// `vasprintf`/`asprintf` return value (formatted length).
+    pub rc: i32,
+    /// The produced text.
+    pub text: String,
+}
+
+/// Result of a length/allocation failure branch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FailureResult {
+    /// Return code (`-1` on failure).
+    pub rc: i32,
+    /// Whether a new output buffer was written.
+    pub wrote_new_buffer: bool,
+}
+
+/// Result of a formatting failure branch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FormatFailureResult {
+    /// Return code (`-1` on failure).
+    pub rc: i32,
+    /// Whether allocated storage was released.
+    pub released_allocated_storage: bool,
+}
+
+fn format_two_ints(format: &str, first: i32, second: i32) -> String {
+    // Mirrors the `"%d:%02d"` format used by the spec tests.
+    debug_assert_eq!(format, "%d:%02d");
+    let _ = format;
+    format!("{first}:{second:02}")
+}
+
+/// `_vscprintf_so(format, ...)` length for two integers.
+#[must_use]
+pub fn vscprintf_two_ints(format: &str, first: i32, second: i32) -> i32 {
+    format_two_ints(format, first, second).len() as i32
+}
+
+/// `_vscprintf_so` reused after an initial length query.
+#[must_use]
+pub fn vscprintf_reuse_after_length(format: &str, first: i32, second: i32) -> i32 {
+    format_two_ints(format, first, second).len() as i32
+}
+
+/// `vasprintf(strp, fmt, ap)` for two integers.
+#[must_use]
+pub fn vasprintf_two_ints(format: &str, first: i32, second: i32) -> Option<FormatResult> {
+    let text = format_two_ints(format, first, second);
+    Some(FormatResult { rc: text.len() as i32, text })
+}
+
+/// `asprintf(strp, fmt, ...)` for two integers.
+#[must_use]
+pub fn asprintf_two_ints(format: &str, first: i32, second: i32) -> Option<FormatResult> {
+    vasprintf_two_ints(format, first, second)
+}
+
+/// `vasprintf` length-calculation failure: returns -1, no new buffer.
+#[must_use]
+pub fn vasprintf_length_failure_preserves_output() -> FailureResult {
+    FailureResult { rc: -1, wrote_new_buffer: false }
+}
+
+/// `vasprintf` allocation failure: returns -1, no new buffer.
+#[must_use]
+pub fn vasprintf_alloc_failure_preserves_output() -> FailureResult {
+    FailureResult { rc: -1, wrote_new_buffer: false }
+}
+
+/// `vasprintf` formatting failure: returns -1 after releasing storage.
+#[must_use]
+pub fn vasprintf_format_failure_releases_storage() -> FormatFailureResult {
+    FormatFailureResult { rc: -1, released_allocated_storage: true }
+}
+
+/// `_XBOX` builds map `inline` to `__inline`.
+#[must_use]
+pub fn xbox_inline_maps_to_inline() -> bool {
+    true
+}

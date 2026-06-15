@@ -1,4 +1,4 @@
-use libsmb2_sys::include::config::XBOX_360_CONFIG;
+use libsmb2_rs::include::config::XBOX_360_CONFIG;
 
 // Trace: `include/xbox 360/config.h:CONFIGURE_OPTION_TCP_LINGER`, `lib/socket.c:connect_async_ai`, `lib/socket.c:smb2_accept_connection_async`
 // Spec: CONFIGURE_OPTION_TCP_LINGER controls Xbox 360 socket linger policy#Xbox 360 配置保留默认 linger 行为

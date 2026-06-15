@@ -1,0 +1,1 @@
+/home/liyuan/tmp/libsmb2/tests/functions.sh

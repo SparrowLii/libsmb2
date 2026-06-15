@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::aes::{
+use libsmb2_rs::lib::aes::{
     reference_cbc_decrypt, reference_cbc_encrypt, reference_decrypt_block, reference_encrypt_block,
     AesBlock,
 };

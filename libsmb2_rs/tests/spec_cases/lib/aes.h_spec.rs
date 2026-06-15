@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::aes::{encrypt_block, AesBlock};
+use libsmb2_rs::lib::aes::{encrypt_block, AesBlock};
 
 // Trace: `lib/aes.h:AES128_ECB_encrypt`, `lib/aes.c:AES128_ECB_encrypt`
 // Spec: AES128_ECB_encrypt provides AES-128 ECB block encryption declaration#declaration is available to C translation units

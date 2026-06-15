@@ -1,0 +1,1 @@
+/home/liyuan/tmp/libsmb2/tests/test_0300_cat_basic.sh

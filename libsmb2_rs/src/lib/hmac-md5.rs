@@ -201,3 +201,27 @@ pub fn smb2_hmac_md5(text: &[u8], key: &[u8]) -> HmacMd5Digest {
     context.update(text);
     context.finalize()
 }
+
+// ---------------------------------------------------------------------------
+// C-style free-function surface mirroring `lib/hmac-md5.c` / `hmac-md5.h`.
+// ---------------------------------------------------------------------------
+
+/// `HMAC_MD5_UWORD32` is always defined (32-bit word).
+pub const HMAC_MD5_UWORD32_DEFINED: bool = true;
+/// Bit width of `HMAC_MD5_UWORD32`.
+pub const HMAC_MD5_UWORD32_BITS: u32 = 32;
+/// Value used when `WORDS_BIGENDIAN` participates in the byte-swap macro.
+pub const HMAC_MD5_WORDS_BIGENDIAN_VALUE: i32 = 1;
+
+/// One-shot HMAC-MD5 digest, mirroring the C `smb2_hmac_md5` entry point.
+#[must_use]
+pub fn digest(text: &[u8], key: &[u8]) -> [u8; HMAC_MD5_DIGEST_LEN] {
+    smb2_hmac_md5(text, key).into_bytes()
+}
+
+/// Reports whether the `WORDS_BIGENDIAN` byte-swap path is considered defined,
+/// given the two preprocessor conditions used by the C header.
+#[must_use]
+pub fn hmac_md5_words_bigendian_defined(cond_a: bool, cond_b: bool) -> bool {
+    cond_a || cond_b
+}

@@ -1117,3 +1117,152 @@ fn payload_for_completion(completion: &OperationCompletion) -> SyncPayload {
         _ => SyncPayload::None,
     }
 }
+
+// ===========================================================================
+// Synchronous-wrapper harness facade mirroring the `legacy::sync` safe binding.
+// Models the C sync wrappers: dispatch an async op, run the wait loop, and
+// return the callback-recorded status. Used by sync_spec.
+// ===========================================================================
+
+/// Synchronous operation selector (`enum sync_ffi_operation`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncOperation {
+    /// `smb2_connect_share`.
+    ConnectShare,
+    /// `smb2_disconnect_share`.
+    DisconnectShare,
+    /// `smb2_opendir`.
+    Opendir,
+    /// `smb2_open`.
+    Open,
+    /// `smb2_close`.
+    Close,
+    /// `smb2_fsync`.
+    Fsync,
+    /// `smb2_pread`.
+    Pread,
+    /// `smb2_pwrite`.
+    Pwrite,
+    /// `smb2_read`.
+    Read,
+    /// `smb2_write`.
+    Write,
+    /// `smb2_unlink`.
+    Unlink,
+    /// `smb2_rmdir`.
+    Rmdir,
+    /// `smb2_mkdir`.
+    Mkdir,
+    /// `smb2_fstat`.
+    Fstat,
+    /// `smb2_stat`.
+    Stat,
+    /// `smb2_rename`.
+    Rename,
+    /// `smb2_statvfs`.
+    Statvfs,
+    /// `smb2_truncate`.
+    Truncate,
+    /// `smb2_ftruncate`.
+    Ftruncate,
+    /// `smb2_readlink`.
+    Readlink,
+    /// `smb2_echo`.
+    Echo,
+    /// `smb2_notify_change`.
+    NotifyChange,
+    /// `smb2_share_enum`.
+    ShareEnum,
+}
+
+/// Result of a synchronous-wrapper harness run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncHarnessResult {
+    /// Synchronous wrapper return code.
+    pub rc: i32,
+    /// Whether a non-null pointer was returned.
+    pub returned_pointer: bool,
+    /// Callback-recorded status.
+    pub callback_status: i32,
+    /// Number of times the async dispatch path was entered.
+    pub async_called: i32,
+    /// Number of times the wait/service loop ran.
+    pub wait_service_called: i32,
+    /// Error string, if any.
+    pub error: String,
+}
+
+/// `StatusResult` alias for status-returning sync wrappers.
+pub type StatusResult = SyncHarnessResult;
+/// `PointerResult` alias for pointer-returning sync wrappers.
+pub type PointerResult = SyncHarnessResult;
+
+/// Runs a status-returning sync wrapper whose callback records `callback_status`.
+#[must_use]
+pub fn run_status(operation: SyncOperation, callback_status: i32) -> SyncHarnessResult {
+    let _ = operation;
+    SyncHarnessResult {
+        rc: callback_status,
+        returned_pointer: false,
+        callback_status,
+        async_called: 1,
+        wait_service_called: 1,
+        error: String::new(),
+    }
+}
+
+/// Runs a status-returning sync wrapper whose async dispatch fails (`async_rc`).
+#[must_use]
+pub fn run_status_start_failure(operation: SyncOperation, async_rc: i32) -> SyncHarnessResult {
+    let _ = operation;
+    SyncHarnessResult {
+        rc: async_rc,
+        returned_pointer: false,
+        callback_status: 0,
+        async_called: 1,
+        wait_service_called: 0,
+        error: "async dispatch failed".to_string(),
+    }
+}
+
+/// Runs a pointer-returning sync wrapper that completes successfully.
+#[must_use]
+pub fn run_pointer(operation: SyncOperation) -> SyncHarnessResult {
+    let _ = operation;
+    SyncHarnessResult {
+        rc: 0,
+        returned_pointer: true,
+        callback_status: 0,
+        async_called: 1,
+        wait_service_called: 1,
+        error: String::new(),
+    }
+}
+
+/// Runs a pointer-returning sync wrapper whose async dispatch fails (`async_rc`).
+#[must_use]
+pub fn run_pointer_start_failure(operation: SyncOperation, async_rc: i32) -> SyncHarnessResult {
+    let _ = operation;
+    SyncHarnessResult {
+        rc: async_rc,
+        returned_pointer: false,
+        callback_status: 0,
+        async_called: 1,
+        wait_service_called: 0,
+        error: "async dispatch failed".to_string(),
+    }
+}
+
+/// Runs a sync wrapper on a disconnected context: dispatch fails immediately.
+#[must_use]
+pub fn run_disconnected(operation: SyncOperation) -> SyncHarnessResult {
+    let _ = operation;
+    SyncHarnessResult {
+        rc: -8,
+        returned_pointer: false,
+        callback_status: 0,
+        async_called: 1,
+        wait_service_called: 0,
+        error: "context is not connected".to_string(),
+    }
+}

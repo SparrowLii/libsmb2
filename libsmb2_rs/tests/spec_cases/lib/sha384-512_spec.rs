@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::sha::{self, Sha384Context, Sha512Context};
+use libsmb2_rs::lib::sha::{self, Sha384Context, Sha512Context};
 
 // Trace: `lib/sha384-512.c:SHA384Reset`, `lib/sha384-512.c:SHA384_512Reset`, `lib/sha.h:SHA384Context`
 // Spec: SHA384Reset initialize SHA-384 context#reset valid SHA-384 context

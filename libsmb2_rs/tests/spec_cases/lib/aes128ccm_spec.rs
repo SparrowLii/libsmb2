@@ -1,4 +1,4 @@
-use libsmb2_sys::legacy::aes128ccm;
+use libsmb2_rs::lib::aes128ccm;
 
 fn ccm_vector_1() -> ([u8; 16], [u8; 7], [u8; 8], [u8; 4]) {
     (

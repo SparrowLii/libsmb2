@@ -172,6 +172,33 @@ impl Sha1Context {
         self.corrupted
     }
 
+    /// Returns the five intermediate hash words.
+    #[must_use]
+    pub fn intermediate_hash(&self) -> [u32; SHA1_HASH_SIZE / 4] {
+        self.intermediate_hash
+    }
+
+    /// Returns the current message block index.
+    #[must_use]
+    pub fn message_block_index(&self) -> usize {
+        self.message_block_index
+    }
+
+    /// Overwrites the computed flag (test/observation hook for the C `Computed` field).
+    pub fn set_computed_flag(&mut self, computed: bool) {
+        self.computed = computed;
+    }
+
+    /// Overwrites the corruption state (test/observation hook for the C `Corrupted` field).
+    pub fn set_corrupted_state(&mut self, corrupted: Option<Sha1Error>) {
+        self.corrupted = corrupted;
+    }
+
+    /// Overwrites the intermediate hash words (observation hook for the C `Intermediate_Hash`).
+    pub fn set_intermediate_hash(&mut self, words: [u32; SHA1_HASH_SIZE / 4]) {
+        self.intermediate_hash = words;
+    }
+
     /// Returns the current message length split into high and low 32-bit words.
     #[must_use]
     pub fn length_words(&self) -> (u32, u32) {

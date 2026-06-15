@@ -1,5 +1,5 @@
-use libsmb2_sys::legacy::errors;
-use libsmb2_sys::smb2::smb2_errors;
+use libsmb2_rs::lib::errors;
+use libsmb2_rs::include::smb2::smb2_errors;
 
 // Trace: `lib/errors.c:nterror_to_str`, `include/smb2/libsmb2.h:nterror_to_str`
 // Spec: nterror_to_str map NTSTATUS to stable names#Known status name conversion
@@ -9,15 +9,15 @@ use libsmb2_sys::smb2::smb2_errors;
 #[test]
 fn test_errors_known_status_name_conversion() {
     assert_eq!(
-        errors::nt_error_to_str(smb2_errors::SMB2_STATUS_SUCCESS),
+        errors::nterror_to_str(smb2_errors::SMB2_STATUS_SUCCESS),
         "STATUS_SUCCESS"
     );
     assert_eq!(
-        errors::nt_error_to_str(smb2_errors::SMB2_STATUS_ACCESS_DENIED),
+        errors::nterror_to_str(smb2_errors::SMB2_STATUS_ACCESS_DENIED),
         "STATUS_ACCESS_DENIED"
     );
     assert_eq!(
-        errors::nt_error_to_str(smb2_errors::SMB2_STATUS_INVALID_PARAMETER),
+        errors::nterror_to_str(smb2_errors::SMB2_STATUS_INVALID_PARAMETER),
         "STATUS_INVALID_PARAMETER"
     );
 }
@@ -29,7 +29,7 @@ fn test_errors_known_status_name_conversion() {
 // - **THEN** 函数返回字符串 `Unknown`。
 #[test]
 fn test_errors_unknown_status_name_conversion() {
-    assert_eq!(errors::nt_error_to_str(0x1234_5678), "Unknown");
+    assert_eq!(errors::nterror_to_str(0x1234_5678), "Unknown");
 }
 
 // Trace: `lib/errors.c:nterror_to_errno`, `include/smb2/libsmb2.h:nterror_to_errno`
@@ -41,7 +41,7 @@ fn test_errors_unknown_status_name_conversion() {
 #[test]
 fn test_errors_successful_and_eof_status_conversion() {
     assert_eq!(
-        errors::nt_error_to_errno(smb2_errors::SMB2_STATUS_SUCCESS),
+        errors::nterror_to_errno(smb2_errors::SMB2_STATUS_SUCCESS),
         0
     );
 }
@@ -51,11 +51,11 @@ fn test_errors_successful_and_eof_status_conversion() {
 // - **GIVEN** 调用方传入 `SMB2_STATUS_CANCELLED`、`SMB2_STATUS_FILE_CLOSED`、`SMB2_STATUS_VOLUME_DISMOUNTED`、连接断开/重置/无效/中止状态、`SMB2_STATUS_NETWORK_NAME_DELETED` 或 `SMB2_STATUS_INVALID_NETWORK_RESPONSE`。
 // - **WHEN** 调用方调用 `nterror_to_errno(status)`。
 // - **THEN** 函数返回 `ENETRESET`，以便上层将这些状态作为可重试网络复位错误处理。
-// Note: POSIX `ENETRESET` is 52 on this target; the safe binding does not expose errno constants.
+// Note: POSIX `ENETRESET` is 102 on this Linux target; the safe binding does not expose errno constants.
 #[test]
 fn test_errors_retryable_network_reset_conversion() {
-    assert_eq!(errors::nt_error_to_errno(0xc000_0120), 52);
-    assert_eq!(errors::nt_error_to_errno(0xc000_020c), 52);
+    assert_eq!(errors::nterror_to_errno(0xc000_0120), 102);
+    assert_eq!(errors::nterror_to_errno(0xc000_020c), 102);
 }
 
 // Trace: `lib/errors.c:nterror_to_errno`, `include/smb2/libsmb2.h:nterror_to_errno`
@@ -66,5 +66,5 @@ fn test_errors_retryable_network_reset_conversion() {
 // Note: POSIX `EIO` is 5 on this target; the safe binding does not expose errno constants.
 #[test]
 fn test_errors_unknown_or_internal_status_conversion() {
-    assert_eq!(errors::nt_error_to_errno(0x1234_5678), 5);
+    assert_eq!(errors::nterror_to_errno(0x1234_5678), 5);
 }

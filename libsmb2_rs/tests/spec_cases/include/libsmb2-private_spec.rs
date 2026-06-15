@@ -1,6 +1,6 @@
-use libsmb2_sys::include::libsmb2_private::{
+use libsmb2_rs::include::libsmb2_private::{
     context_layout, directory_layout, discard_const_addr, header_layout, io_vectors_layout,
-    is_server_for_owning_server, min_i32, pad_to_32bit, pad_to_64bit, pdu_layout,
+    is_server_for_owning_server, min_i32, pad_to_32bit_u32 as pad_to_32bit, pad_to_64bit_u32 as pad_to_64bit, pdu_layout,
     private_constants, sizeof_smb2_context, sizeof_smb2_pdu, sizeof_smb2dir, sync_cb_data_layout,
     tree_id_for_current_index, RecvState,
 };

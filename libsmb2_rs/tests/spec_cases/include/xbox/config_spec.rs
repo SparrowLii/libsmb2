@@ -1,4 +1,4 @@
-use libsmb2_sys::include::config::XBOX_CONFIG;
+use libsmb2_rs::include::config::XBOX_CONFIG;
 
 // Trace: `include/xbox/config.h:HAVE_FCNTL_H`
 // Spec: HAVE_FCNTL_H declares fcntl header availability#fcntl 头能力可见

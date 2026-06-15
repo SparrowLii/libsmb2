@@ -47,9 +47,10 @@ pub fn reference_decrypt_block(input: AesBlock, key: AesBlock) -> AesBlock {
 
 pub fn reference_cbc_encrypt(input: &[u8], key: AesBlock, iv: AesBlock) -> Vec<u8> {
     let mut input = input.to_vec();
+    input.resize(cbc_output_len(input.len()), 0);
     let key = key.0;
     let mut iv = iv.0;
-    let mut output = vec![0; cbc_output_len(input.len())];
+    let mut output = vec![0; input.len()];
 
     unsafe {
         ffi::AES128_CBC_encrypt_buffer_reference(
@@ -66,9 +67,10 @@ pub fn reference_cbc_encrypt(input: &[u8], key: AesBlock, iv: AesBlock) -> Vec<u
 
 pub fn reference_cbc_decrypt(input: &[u8], key: AesBlock, iv: AesBlock) -> Vec<u8> {
     let mut input = input.to_vec();
+    input.resize(cbc_output_len(input.len()), 0);
     let key = key.0;
     let mut iv = iv.0;
-    let mut output = vec![0; cbc_output_len(input.len())];
+    let mut output = vec![0; input.len()];
 
     unsafe {
         ffi::AES128_CBC_decrypt_buffer_reference(

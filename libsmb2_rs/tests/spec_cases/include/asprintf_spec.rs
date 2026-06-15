@@ -1,4 +1,4 @@
-use libsmb2_sys::include::asprintf;
+use libsmb2_rs::include::asprintf;
 
 // Trace: `include/asprintf.h:_vscprintf_so`
 // Spec: _vscprintf_so computes formatted output length#non-Xbox length calculation uses a copied va_list

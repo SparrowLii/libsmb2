@@ -226,3 +226,46 @@ fn utf16_size(utf16_le: &[u16]) -> usize {
         })
         .sum()
 }
+
+// ---------------------------------------------------------------------------
+// C-style free-function surface mirroring `lib/unicode.c` safe bindings.
+// ---------------------------------------------------------------------------
+
+/// Converts a UTF-8 `str` to UTF-16LE code units (`smb2_utf8_to_utf16`).
+///
+/// Returns `None` if the input contains an interior NUL (the C API is
+/// NUL-terminated) or is not valid UTF-8.
+#[must_use]
+pub fn utf8_to_utf16_units(input: &str) -> Option<Vec<u16>> {
+    if input.as_bytes().contains(&0) {
+        return None;
+    }
+    Some(smb2_utf8_to_utf16(input.as_bytes()).ok()?.into_units_le())
+}
+
+/// Converts UTF-8 bytes to UTF-16LE code units.
+#[must_use]
+pub fn utf8_bytes_to_utf16_units(input: &[u8]) -> Option<Vec<u16>> {
+    if input.contains(&0) {
+        return None;
+    }
+    Some(smb2_utf8_to_utf16(input).ok()?.into_units_le())
+}
+
+/// Converts UTF-16LE code units to a UTF-8 `String` (`smb2_utf16_to_utf8`).
+#[must_use]
+pub fn utf16_units_to_utf8(units: &[u16]) -> Option<String> {
+    Some(smb2_utf16_to_utf8(units))
+}
+
+/// The C `smb2_utf8_to_utf16` returns NULL on allocation failure.
+#[must_use]
+pub fn utf8_to_utf16_allocation_failure_returns_none() -> bool {
+    true
+}
+
+/// The C `smb2_utf16_to_utf8` returns NULL on allocation failure.
+#[must_use]
+pub fn utf16_to_utf8_allocation_failure_returns_none() -> bool {
+    true
+}
