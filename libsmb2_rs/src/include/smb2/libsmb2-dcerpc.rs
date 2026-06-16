@@ -466,7 +466,7 @@ fn decode_bind_ack_without_secondary_alignment(
     let assoc_group_id = u32::from_le_bytes([body[4], body[5], body[6], body[7]]);
     let secondary_address_len = usize::from(u16::from_le_bytes([body[8], body[9]]));
     let mut offset = 10 + secondary_address_len;
-    offset = offset.next_multiple_of(4);
+    offset = ((offset + 3) / 4) * 4;
     if body.len() < offset + 4 {
         return Err(lib_dcerpc::DceRpcError::BufferTooSmall {
             needed: body_start + offset + 4,
@@ -621,10 +621,7 @@ pub fn dcerpc_ptr_coder(
 /// # Errors
 ///
 /// Always returns `ErrorCode(-38)` until NDR array coding is implemented.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "mirrors the public C DCERPC conformant-array coder signature"
-)]
+#[allow(clippy::too_many_arguments)]
 pub fn dcerpc_carray_coder(
     _ctx: &mut DceRpcContext,
     pdu: &mut DceRpcPdu,

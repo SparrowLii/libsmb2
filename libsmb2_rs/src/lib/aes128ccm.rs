@@ -393,7 +393,7 @@ fn validate_nonce_len(nonce_len: usize) -> Result<(), Aes128CcmError> {
 }
 
 fn validate_tag_len(tag_len: usize) -> Result<(), Aes128CcmError> {
-    if (4..=16).contains(&tag_len) && tag_len.is_multiple_of(2) {
+    if (4..=16).contains(&tag_len) && tag_len % 2 == 0 {
         Ok(())
     } else {
         Err(Aes128CcmError::InvalidTagLength)

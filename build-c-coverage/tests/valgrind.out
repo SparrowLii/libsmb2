@@ -1,1 +1,15 @@
-/bin/bash: symbol lookup error: ./ld_sockerr.so: undefined symbol: __gcov_merge_add
+==3297== Memcheck, a memory error detector
+==3297== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.
+==3297== Using Valgrind-3.18.1 and LibVEX; rerun with -h for copyright info
+==3297== Command: /home/liyuan/tmp/libsmb2/build-c-coverage/tests/.libs/prog_cat smb://libsmb2cov@127.0.0.1/Share/CAT
+==3297== 
+==3297== Warning: invalid file descriptor -1 in syscall readv()
+==3297== 
+==3297== HEAP SUMMARY:
+==3297==     in use at exit: 0 bytes in 0 blocks
+==3297==   total heap usage: 216 allocs, 216 frees, 191,485 bytes allocated
+==3297== 
+==3297== All heap blocks were freed -- no leaks are possible
+==3297== 
+==3297== For lists of detected and suppressed errors, rerun with: -s
+==3297== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)

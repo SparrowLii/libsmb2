@@ -285,7 +285,7 @@ fn expand_key(key: &Aes128Key) -> RoundKey {
             round_key[(i - 1) * 4 + 3],
         ];
 
-        if i.is_multiple_of(NK) {
+        if i % NK == 0 {
             temp.rotate_left(1);
             for byte in &mut temp {
                 *byte = SBOX[usize::from(*byte)];

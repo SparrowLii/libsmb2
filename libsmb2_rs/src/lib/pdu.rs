@@ -875,12 +875,12 @@ pub fn smb2_pdu_payload_state(pdu: &Pdu) -> PduPayloadState {
 }
 
 /// Sets the status field on a PDU header.
-pub const fn smb2_set_pdu_status(pdu: &mut Pdu, status: u32) {
+pub fn smb2_set_pdu_status(pdu: &mut Pdu, status: u32) {
     pdu.header.status = status;
 }
 
 /// Sets the message id field on a PDU header.
-pub const fn smb2_set_pdu_message_id(pdu: &mut Pdu, message_id: u64) {
+pub fn smb2_set_pdu_message_id(pdu: &mut Pdu, message_id: u64) {
     pdu.header.message_id = message_id;
 }
 
@@ -1054,7 +1054,7 @@ pub fn smb2_timeout_pdus(context: &mut Context, now: i64) {
 }
 
 /// Sets or clears the absolute Unix timestamp deadline for a PDU.
-pub const fn smb2_set_pdu_timeout(pdu: &mut Pdu, deadline: Option<i64>) {
+pub fn smb2_set_pdu_timeout(pdu: &mut Pdu, deadline: Option<i64>) {
     pdu.timeout = deadline;
 }
 

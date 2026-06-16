@@ -250,7 +250,7 @@ pub fn smb2_decode_fileidfulldirectoryinformation(
     data: &[u8],
 ) -> QueryDirectoryResult<FileIdFullDirectoryInformation> {
     let name_len = read_u32(data, 60)? as usize;
-    if !name_len.is_multiple_of(2) {
+    if name_len % 2 != 0 {
         return Err(QueryDirectoryError::MalformedName);
     }
     if name_len
@@ -291,7 +291,7 @@ pub fn smb2_decode_fileidbothdirectoryinformation(
     data: &[u8],
 ) -> QueryDirectoryResult<FileIdBothDirectoryInformation> {
     let name_len = read_u32(data, 60)? as usize;
-    if !name_len.is_multiple_of(2) {
+    if name_len % 2 != 0 {
         return Err(QueryDirectoryError::MalformedName);
     }
     if name_len

@@ -719,7 +719,7 @@ fn decode_optional_sid(input: &[u8], offset: usize) -> DecodeResult<Option<Smb2S
     if offset < 20 {
         return Err(SecurityDescriptorDecodeError::Malformed("sid offset"));
     }
-    if offset.checked_add(8).is_none_or(|end| end > input.len()) {
+    if offset.checked_add(8).map_or(true, |end| end > input.len()) {
         return Err(SecurityDescriptorDecodeError::Malformed("sid offset"));
     }
     Ok(Some(decode_sid(&input[offset..])?))
@@ -732,7 +732,7 @@ fn decode_optional_acl(input: &[u8], offset: usize) -> DecodeResult<Option<Smb2A
     if offset < 20 {
         return Err(SecurityDescriptorDecodeError::Malformed("acl offset"));
     }
-    if offset.checked_add(8).is_none_or(|end| end > input.len()) {
+    if offset.checked_add(8).map_or(true, |end| end > input.len()) {
         return Err(SecurityDescriptorDecodeError::Malformed("acl offset"));
     }
     Ok(Some(decode_acl(&input[offset..])?))

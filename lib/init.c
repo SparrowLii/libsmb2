@@ -354,6 +354,8 @@ void smb2_destroy_context(struct smb2_context *smb2)
                 smb2_free_pdu(smb2, pdu);
         }
         smb2_free_iovector(smb2, &smb2->in);
+        smb2_free_all_dirs(smb2);
+        smb2_free_all_filehandles(smb2);
 
         if (smb2->connect_cb) {
            smb2->connect_cb(smb2, SMB2_STATUS_CANCELLED,

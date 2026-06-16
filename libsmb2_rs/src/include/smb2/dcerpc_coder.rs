@@ -294,10 +294,7 @@ pub fn dcerpc_open_async(dce: &mut DceRpcContext, _callback: DceRpcCallback) -> 
     })
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "mirrors the public DCERPC async call boundary"
-)]
+#[allow(clippy::too_many_arguments)]
 pub fn dcerpc_call_async(
     dce: &mut DceRpcContext,
     _opnum: i32,
@@ -943,10 +940,7 @@ pub fn dcerpc_conformance_coder(
 /// Conformant array coder. Mirrors C `dcerpc_carray_coder`: codes the
 /// conformance count, then runs the element `coder` for each of `num` elements.
 /// The element payloads are carved from `ptr.data` in `elem_size` chunks.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "mirrors the public DCERPC conformant-array coder boundary"
-)]
+#[allow(clippy::too_many_arguments)]
 pub fn dcerpc_carray_coder(
     dce: &mut DceRpcContext,
     pdu: &mut DceRpcPdu,

@@ -397,7 +397,7 @@ impl AuthData {
     }
 
     /// Replaces the Windows timestamp used in generated challenge/authenticate blobs.
-    pub const fn set_wintime(&mut self, wintime: u64) {
+    pub fn set_wintime(&mut self, wintime: u64) {
         self.wintime = wintime;
     }
 
@@ -617,7 +617,7 @@ impl AuthData {
     /// be encoded.
     pub fn encode_ntlm_auth(&mut self) -> NtlmResult<NtlmBlob> {
         let anonymous =
-            self.password.as_deref().is_none() || self.user.as_deref().is_none_or(str::is_empty);
+            self.password.as_deref().is_none() || self.user.as_deref().map_or(true, str::is_empty);
 
         self.buffer = vec![0; AUTHENTICATE_HEADER_LEN];
         self.buffer[0..8].copy_from_slice(NTLMSSP_SIGNATURE);
@@ -773,7 +773,7 @@ impl AuthData {
         self.state = NtlmState::Authenticating;
 
         let anonymous =
-            auth.nt_response.is_empty() && auth.user_name.as_deref().is_none_or(str::is_empty);
+            auth.nt_response.is_empty() && auth.user_name.as_deref().map_or(true, str::is_empty);
         if anonymous || auth.flags & NTLMSSP_NEGOTIATE_ANONYMOUS != 0 {
             self.exported_session_key = [0; SMB2_KEY_SIZE];
             self.state = NtlmState::Authenticated;
@@ -1290,7 +1290,7 @@ fn utf16le_bytes(value: &str) -> Vec<u8> {
 }
 
 fn utf16le_to_string(bytes: &[u8]) -> NtlmResult<String> {
-    if !bytes.len().is_multiple_of(2) {
+    if bytes.len() % 2 != 0 {
         return Err(NtlmError::InvalidUtf16);
     }
 

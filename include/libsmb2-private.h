@@ -215,6 +215,8 @@ struct smb2_context {
          */
         struct smb2_pdu *outqueue;
         struct smb2_pdu *waitqueue;
+        struct smb2fh *files;
+        struct smb2dir *dirs;
 
         /*
          * For receiving PDUs
@@ -281,6 +283,9 @@ struct smb2_context {
         struct smb2_context *next;
 };
 
+void smb2_free_all_filehandles(struct smb2_context *smb2);
+void smb2_free_all_dirs(struct smb2_context *smb2);
+
 /*
  * Callback for freeing a payload.
  */
@@ -340,6 +345,7 @@ struct smb2_dirent_internal {
 };
 
 struct smb2dir {
+        struct smb2dir *next;
         smb2_command_cb cb;
         void (*free_cb_data)(void *);
         void *cb_data;

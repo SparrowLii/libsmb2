@@ -1,0 +1,365 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - coverage.info - lib/md4c.c</title>
+  <link rel="stylesheet" type="text/css" href="../gcov.css">
+</head>
+
+<body>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="title">LCOV - code coverage report</td></tr>
+    <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+
+    <tr>
+      <td width="100%">
+        <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="35%" class="headerValue"><a href="../index.html">top level</a> - <a href="index.html">lib</a> - md4c.c<span style="font-size: 80%;"> (source / <a href="md4c.c.func-sort-c.html">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="15%"></td>
+            <td width="10%" class="headerCovTableHead">Hit</td>
+            <td width="10%" class="headerCovTableHead">Total</td>
+            <td width="15%" class="headerCovTableHead">Coverage</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">coverage.info</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntry">107</td>
+            <td class="headerCovTableEntry">109</td>
+            <td class="headerCovTableEntryHi">98.2 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Date:</td>
+            <td class="headerValue">2026-06-15 11:24:01</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntry">8</td>
+            <td class="headerCovTableEntry">8</td>
+            <td class="headerCovTableEntryHi">100.0 %</td>
+          </tr>
+          <tr><td><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+  </table>
+
+  <table cellpadding=0 cellspacing=0 border=0>
+    <tr>
+      <td><br></td>
+    </tr>
+    <tr>
+      <td>
+<pre class="sourceHeading">          Line data    Source code</pre>
+<pre class="source">
+<a name="1"><span class="lineNum">       1 </span>            : /* From RFC1320 */</a>
+<a name="2"><span class="lineNum">       2 </span>            : </a>
+<a name="3"><span class="lineNum">       3 </span>            : /* MD4C.C - RSA Data Security, Inc., MD4 message-digest algorithm</a>
+<a name="4"><span class="lineNum">       4 </span>            :  */</a>
+<a name="5"><span class="lineNum">       5 </span>            : </a>
+<a name="6"><span class="lineNum">       6 </span>            : /* Copyright (C) 1990-2, RSA Data Security, Inc. All rights reserved.</a>
+<a name="7"><span class="lineNum">       7 </span>            : </a>
+<a name="8"><span class="lineNum">       8 </span>            :    License to copy and use this software is granted provided that it</a>
+<a name="9"><span class="lineNum">       9 </span>            :    is identified as the &quot;RSA Data Security, Inc. MD4 Message-Digest</a>
+<a name="10"><span class="lineNum">      10 </span>            :    Algorithm&quot; in all material mentioning or referencing this software</a>
+<a name="11"><span class="lineNum">      11 </span>            :    or this function.</a>
+<a name="12"><span class="lineNum">      12 </span>            : </a>
+<a name="13"><span class="lineNum">      13 </span>            :    License is also granted to make and use derivative works provided</a>
+<a name="14"><span class="lineNum">      14 </span>            :    that such works are identified as &quot;derived from the RSA Data</a>
+<a name="15"><span class="lineNum">      15 </span>            :    Security, Inc. MD4 Message-Digest Algorithm&quot; in all material</a>
+<a name="16"><span class="lineNum">      16 </span>            :    mentioning or referencing the derived work.</a>
+<a name="17"><span class="lineNum">      17 </span>            : </a>
+<a name="18"><span class="lineNum">      18 </span>            :    RSA Data Security, Inc. makes no representations concerning either</a>
+<a name="19"><span class="lineNum">      19 </span>            :    the merchantability of this software or the suitability of this</a>
+<a name="20"><span class="lineNum">      20 </span>            :    software for any particular purpose. It is provided &quot;as is&quot;</a>
+<a name="21"><span class="lineNum">      21 </span>            :    without express or implied warranty of any kind.</a>
+<a name="22"><span class="lineNum">      22 </span>            : </a>
+<a name="23"><span class="lineNum">      23 </span>            :    These notices must be retained in any copies of any part of this</a>
+<a name="24"><span class="lineNum">      24 </span>            :    documentation and/or software.</a>
+<a name="25"><span class="lineNum">      25 </span>            :  */</a>
+<a name="26"><span class="lineNum">      26 </span>            : #ifdef HAVE_CONFIG_H</a>
+<a name="27"><span class="lineNum">      27 </span>            : #include &quot;config.h&quot;</a>
+<a name="28"><span class="lineNum">      28 </span>            : #endif</a>
+<a name="29"><span class="lineNum">      29 </span>            : </a>
+<a name="30"><span class="lineNum">      30 </span>            : #ifdef HAVE_STDINT_H</a>
+<a name="31"><span class="lineNum">      31 </span>            : #include &lt;stdint.h&gt;</a>
+<a name="32"><span class="lineNum">      32 </span>            : #endif</a>
+<a name="33"><span class="lineNum">      33 </span>            : </a>
+<a name="34"><span class="lineNum">      34 </span>            : #include &quot;compat.h&quot;</a>
+<a name="35"><span class="lineNum">      35 </span>            : </a>
+<a name="36"><span class="lineNum">      36 </span>            : #include &quot;md4.h&quot;</a>
+<a name="37"><span class="lineNum">      37 </span>            : </a>
+<a name="38"><span class="lineNum">      38 </span>            : /* Constants for MD4Transform routine.</a>
+<a name="39"><span class="lineNum">      39 </span>            :  */</a>
+<a name="40"><span class="lineNum">      40 </span>            : #define S11 3</a>
+<a name="41"><span class="lineNum">      41 </span>            : #define S12 7</a>
+<a name="42"><span class="lineNum">      42 </span>            : #define S13 11</a>
+<a name="43"><span class="lineNum">      43 </span>            : #define S14 19</a>
+<a name="44"><span class="lineNum">      44 </span>            : #define S21 3</a>
+<a name="45"><span class="lineNum">      45 </span>            : #define S22 5</a>
+<a name="46"><span class="lineNum">      46 </span>            : #define S23 9</a>
+<a name="47"><span class="lineNum">      47 </span>            : #define S24 13</a>
+<a name="48"><span class="lineNum">      48 </span>            : #define S31 3</a>
+<a name="49"><span class="lineNum">      49 </span>            : #define S32 9</a>
+<a name="50"><span class="lineNum">      50 </span>            : #define S33 11</a>
+<a name="51"><span class="lineNum">      51 </span>            : #define S34 15</a>
+<a name="52"><span class="lineNum">      52 </span>            : </a>
+<a name="53"><span class="lineNum">      53 </span>            : static void MD4Transform(uint32_t [4], unsigned char [64]);</a>
+<a name="54"><span class="lineNum">      54 </span>            : static void Encode(unsigned char *, uint32_t *, unsigned int);</a>
+<a name="55"><span class="lineNum">      55 </span>            : static void Decode(uint32_t *, unsigned char *, unsigned int);</a>
+<a name="56"><span class="lineNum">      56 </span>            : static void MD4_memcpy(unsigned char *, unsigned char *, unsigned int);</a>
+<a name="57"><span class="lineNum">      57 </span>            : static void MD4_memset(unsigned char *, int, unsigned int);</a>
+<a name="58"><span class="lineNum">      58 </span>            : </a>
+<a name="59"><span class="lineNum">      59 </span>            : static unsigned char PADDING[64] = {</a>
+<a name="60"><span class="lineNum">      60 </span>            :   0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,</a>
+<a name="61"><span class="lineNum">      61 </span>            :   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,</a>
+<a name="62"><span class="lineNum">      62 </span>            :   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0</a>
+<a name="63"><span class="lineNum">      63 </span>            : };</a>
+<a name="64"><span class="lineNum">      64 </span>            : </a>
+<a name="65"><span class="lineNum">      65 </span>            : /* F, G and H are basic MD4 functions.</a>
+<a name="66"><span class="lineNum">      66 </span>            :  */</a>
+<a name="67"><span class="lineNum">      67 </span>            : #define F(x, y, z) (((x) &amp; (y)) | ((~x) &amp; (z)))</a>
+<a name="68"><span class="lineNum">      68 </span>            : #define G(x, y, z) (((x) &amp; (y)) | ((x) &amp; (z)) | ((y) &amp; (z)))</a>
+<a name="69"><span class="lineNum">      69 </span>            : #define H(x, y, z) ((x) ^ (y) ^ (z))</a>
+<a name="70"><span class="lineNum">      70 </span>            : </a>
+<a name="71"><span class="lineNum">      71 </span>            : /* ROTATE_LEFT rotates x left n bits.</a>
+<a name="72"><span class="lineNum">      72 </span>            :  */</a>
+<a name="73"><span class="lineNum">      73 </span>            : #define ROTATE_LEFT(x, n) (((x) &lt;&lt; (n)) | ((x) &gt;&gt; (32-(n))))</a>
+<a name="74"><span class="lineNum">      74 </span>            : </a>
+<a name="75"><span class="lineNum">      75 </span>            : /* FF, GG and HH are transformations for rounds 1, 2 and 3 */</a>
+<a name="76"><span class="lineNum">      76 </span>            : /* Rotation is separate from addition to prevent recomputation */</a>
+<a name="77"><span class="lineNum">      77 </span>            : </a>
+<a name="78"><span class="lineNum">      78 </span>            : #define FF(a, b, c, d, x, s) { \</a>
+<a name="79"><span class="lineNum">      79 </span>            :     (a) += F ((b), (c), (d)) + (x); \</a>
+<a name="80"><span class="lineNum">      80 </span>            :     (a) = ROTATE_LEFT ((a), (s)); \</a>
+<a name="81"><span class="lineNum">      81 </span>            :   }</a>
+<a name="82"><span class="lineNum">      82 </span>            : #define GG(a, b, c, d, x, s) { \</a>
+<a name="83"><span class="lineNum">      83 </span>            :     (a) += G ((b), (c), (d)) + (x) + (uint32_t)0x5a827999; \</a>
+<a name="84"><span class="lineNum">      84 </span>            :     (a) = ROTATE_LEFT ((a), (s)); \</a>
+<a name="85"><span class="lineNum">      85 </span>            :   }</a>
+<a name="86"><span class="lineNum">      86 </span>            : #define HH(a, b, c, d, x, s) { \</a>
+<a name="87"><span class="lineNum">      87 </span>            :     (a) += H ((b), (c), (d)) + (x) + (uint32_t)0x6ed9eba1; \</a>
+<a name="88"><span class="lineNum">      88 </span>            :     (a) = ROTATE_LEFT ((a), (s)); \</a>
+<a name="89"><span class="lineNum">      89 </span>            :   }</a>
+<a name="90"><span class="lineNum">      90 </span>            : </a>
+<a name="91"><span class="lineNum">      91 </span>            : /* MD4 initialization. Begins an MD4 operation, writing a new context.</a>
+<a name="92"><span class="lineNum">      92 </span>            :  */</a>
+<a name="93"><span class="lineNum">      93 </span><span class="lineCov">        149 : void MD4Init(MD4_CTX *context)</span></a>
+<a name="94"><span class="lineNum">      94 </span>            : {</a>
+<a name="95"><span class="lineNum">      95 </span><span class="lineCov">        149 :   context-&gt;count[0] = context-&gt;count[1] = 0;</span></a>
+<a name="96"><span class="lineNum">      96 </span>            : </a>
+<a name="97"><span class="lineNum">      97 </span>            :   /* Load magic initialization constants.</a>
+<a name="98"><span class="lineNum">      98 </span>            :    */</a>
+<a name="99"><span class="lineNum">      99 </span><span class="lineCov">        149 :   context-&gt;state[0] = 0x67452301;</span></a>
+<a name="100"><span class="lineNum">     100 </span><span class="lineCov">        149 :   context-&gt;state[1] = 0xefcdab89;</span></a>
+<a name="101"><span class="lineNum">     101 </span><span class="lineCov">        149 :   context-&gt;state[2] = 0x98badcfe;</span></a>
+<a name="102"><span class="lineNum">     102 </span><span class="lineCov">        149 :   context-&gt;state[3] = 0x10325476;</span></a>
+<a name="103"><span class="lineNum">     103 </span><span class="lineCov">        149 : }</span></a>
+<a name="104"><span class="lineNum">     104 </span>            : </a>
+<a name="105"><span class="lineNum">     105 </span>            : /* MD4 block update operation. Continues an MD4 message-digest</a>
+<a name="106"><span class="lineNum">     106 </span>            :      operation, processing another message block, and updating the</a>
+<a name="107"><span class="lineNum">     107 </span>            :      context.</a>
+<a name="108"><span class="lineNum">     108 </span>            :  */</a>
+<a name="109"><span class="lineNum">     109 </span><span class="lineCov">        447 : void MD4Update(MD4_CTX *context, unsigned char *input, unsigned int inputLen)</span></a>
+<a name="110"><span class="lineNum">     110 </span>            : {</a>
+<a name="111"><span class="lineNum">     111 </span>            :   unsigned int i, index, partLen;</a>
+<a name="112"><span class="lineNum">     112 </span>            : </a>
+<a name="113"><span class="lineNum">     113 </span>            :   /* Compute number of bytes mod 64 */</a>
+<a name="114"><span class="lineNum">     114 </span><span class="lineCov">        447 :   index = (unsigned int)((context-&gt;count[0] &gt;&gt; 3) &amp; 0x3F);</span></a>
+<a name="115"><span class="lineNum">     115 </span>            :   /* Update number of bits */</a>
+<a name="116"><span class="lineNum">     116 </span><span class="lineCov">        447 :   if ((context-&gt;count[0] += ((uint32_t)inputLen &lt;&lt; 3))</span></a>
+<a name="117"><span class="lineNum">     117 </span><span class="lineCov">        447 :       &lt; ((uint32_t)inputLen &lt;&lt; 3))</span></a>
+<a name="118"><span class="lineNum">     118 </span><span class="lineNoCov">          0 :     context-&gt;count[1]++;</span></a>
+<a name="119"><span class="lineNum">     119 </span><span class="lineCov">        447 :   context-&gt;count[1] += ((uint32_t)inputLen &gt;&gt; 29);</span></a>
+<a name="120"><span class="lineNum">     120 </span>            : </a>
+<a name="121"><span class="lineNum">     121 </span><span class="lineCov">        447 :   partLen = 64 - index;</span></a>
+<a name="122"><span class="lineNum">     122 </span>            : </a>
+<a name="123"><span class="lineNum">     123 </span>            :   /* Transform as many times as possible.</a>
+<a name="124"><span class="lineNum">     124 </span>            :    */</a>
+<a name="125"><span class="lineNum">     125 </span><span class="lineCov">        447 :   if (inputLen &gt;= partLen) {</span></a>
+<a name="126"><span class="lineNum">     126 </span><span class="lineCov">        149 :     MD4_memcpy</span></a>
+<a name="127"><span class="lineNum">     127 </span>            :       ((unsigned char *)&amp;context-&gt;buffer[index], (unsigned char *)input, partLen);</a>
+<a name="128"><span class="lineNum">     128 </span><span class="lineCov">        149 :     MD4Transform (context-&gt;state, context-&gt;buffer);</span></a>
+<a name="129"><span class="lineNum">     129 </span>            : </a>
+<a name="130"><span class="lineNum">     130 </span><span class="lineCov">        149 :     for (i = partLen; i + 63 &lt; inputLen; i += 64)</span></a>
+<a name="131"><span class="lineNum">     131 </span><span class="lineNoCov">          0 :       MD4Transform (context-&gt;state, &amp;input[i]);</span></a>
+<a name="132"><span class="lineNum">     132 </span>            : </a>
+<a name="133"><span class="lineNum">     133 </span><span class="lineCov">        149 :     index = 0;</span></a>
+<a name="134"><span class="lineNum">     134 </span>            :   }</a>
+<a name="135"><span class="lineNum">     135 </span>            :   else</a>
+<a name="136"><span class="lineNum">     136 </span><span class="lineCov">        298 :     i = 0;</span></a>
+<a name="137"><span class="lineNum">     137 </span>            : </a>
+<a name="138"><span class="lineNum">     138 </span>            :   /* Buffer remaining input */</a>
+<a name="139"><span class="lineNum">     139 </span><span class="lineCov">        447 :   MD4_memcpy</span></a>
+<a name="140"><span class="lineNum">     140 </span>            :     ((unsigned char *)&amp;context-&gt;buffer[index], (unsigned char *)&amp;input[i],</a>
+<a name="141"><span class="lineNum">     141 </span>            :      inputLen-i);</a>
+<a name="142"><span class="lineNum">     142 </span><span class="lineCov">        447 : }</span></a>
+<a name="143"><span class="lineNum">     143 </span>            : </a>
+<a name="144"><span class="lineNum">     144 </span>            : /* MD4 finalization. Ends an MD4 message-digest operation, writing the</a>
+<a name="145"><span class="lineNum">     145 </span>            :      the message digest and zeroizing the context.</a>
+<a name="146"><span class="lineNum">     146 </span>            :  */</a>
+<a name="147"><span class="lineNum">     147 </span><span class="lineCov">        149 : void MD4Final(unsigned char digest[16], MD4_CTX *context)</span></a>
+<a name="148"><span class="lineNum">     148 </span>            : {</a>
+<a name="149"><span class="lineNum">     149 </span>            :   unsigned char bits[8];</a>
+<a name="150"><span class="lineNum">     150 </span>            :   unsigned int index, padLen;</a>
+<a name="151"><span class="lineNum">     151 </span>            : </a>
+<a name="152"><span class="lineNum">     152 </span>            :   /* Save number of bits */</a>
+<a name="153"><span class="lineNum">     153 </span><span class="lineCov">        149 :   Encode (bits, context-&gt;count, 8);</span></a>
+<a name="154"><span class="lineNum">     154 </span>            : </a>
+<a name="155"><span class="lineNum">     155 </span>            :   /* Pad out to 56 mod 64.</a>
+<a name="156"><span class="lineNum">     156 </span>            :    */</a>
+<a name="157"><span class="lineNum">     157 </span><span class="lineCov">        149 :   index = (unsigned int)((context-&gt;count[0] &gt;&gt; 3) &amp; 0x3f);</span></a>
+<a name="158"><span class="lineNum">     158 </span><span class="lineCov">        149 :   padLen = (index &lt; 56) ? (56 - index) : (120 - index);</span></a>
+<a name="159"><span class="lineNum">     159 </span><span class="lineCov">        149 :   MD4Update (context, PADDING, padLen);</span></a>
+<a name="160"><span class="lineNum">     160 </span>            : </a>
+<a name="161"><span class="lineNum">     161 </span>            :   /* Append length (before padding) */</a>
+<a name="162"><span class="lineNum">     162 </span><span class="lineCov">        149 :   MD4Update (context, bits, 8);</span></a>
+<a name="163"><span class="lineNum">     163 </span>            :   /* Store state in digest */</a>
+<a name="164"><span class="lineNum">     164 </span><span class="lineCov">        149 :   Encode (digest, context-&gt;state, 16);</span></a>
+<a name="165"><span class="lineNum">     165 </span>            : </a>
+<a name="166"><span class="lineNum">     166 </span>            :   /* Zeroize sensitive information.</a>
+<a name="167"><span class="lineNum">     167 </span>            :    */</a>
+<a name="168"><span class="lineNum">     168 </span><span class="lineCov">        149 :   MD4_memset ((unsigned char *)context, 0, sizeof (*context));</span></a>
+<a name="169"><span class="lineNum">     169 </span>            : </a>
+<a name="170"><span class="lineNum">     170 </span><span class="lineCov">        149 : }</span></a>
+<a name="171"><span class="lineNum">     171 </span>            : </a>
+<a name="172"><span class="lineNum">     172 </span>            : /* MD4 basic transformation. Transforms state based on block.</a>
+<a name="173"><span class="lineNum">     173 </span>            :  */</a>
+<a name="174"><span class="lineNum">     174 </span><span class="lineCov">        149 : static void MD4Transform(uint32_t state[4], unsigned char block[64])</span></a>
+<a name="175"><span class="lineNum">     175 </span>            : {</a>
+<a name="176"><span class="lineNum">     176 </span><span class="lineCov">        149 :   uint32_t a = state[0], b = state[1], c = state[2], d = state[3], x[16];</span></a>
+<a name="177"><span class="lineNum">     177 </span>            : </a>
+<a name="178"><span class="lineNum">     178 </span><span class="lineCov">        149 :   Decode (x, block, 64);</span></a>
+<a name="179"><span class="lineNum">     179 </span>            : </a>
+<a name="180"><span class="lineNum">     180 </span>            :   /* Round 1 */</a>
+<a name="181"><span class="lineNum">     181 </span><span class="lineCov">        149 :   FF (a, b, c, d, x[ 0], S11); /* 1 */</span></a>
+<a name="182"><span class="lineNum">     182 </span><span class="lineCov">        149 :   FF (d, a, b, c, x[ 1], S12); /* 2 */</span></a>
+<a name="183"><span class="lineNum">     183 </span><span class="lineCov">        149 :   FF (c, d, a, b, x[ 2], S13); /* 3 */</span></a>
+<a name="184"><span class="lineNum">     184 </span><span class="lineCov">        149 :   FF (b, c, d, a, x[ 3], S14); /* 4 */</span></a>
+<a name="185"><span class="lineNum">     185 </span><span class="lineCov">        149 :   FF (a, b, c, d, x[ 4], S11); /* 5 */</span></a>
+<a name="186"><span class="lineNum">     186 </span><span class="lineCov">        149 :   FF (d, a, b, c, x[ 5], S12); /* 6 */</span></a>
+<a name="187"><span class="lineNum">     187 </span><span class="lineCov">        149 :   FF (c, d, a, b, x[ 6], S13); /* 7 */</span></a>
+<a name="188"><span class="lineNum">     188 </span><span class="lineCov">        149 :   FF (b, c, d, a, x[ 7], S14); /* 8 */</span></a>
+<a name="189"><span class="lineNum">     189 </span><span class="lineCov">        149 :   FF (a, b, c, d, x[ 8], S11); /* 9 */</span></a>
+<a name="190"><span class="lineNum">     190 </span><span class="lineCov">        149 :   FF (d, a, b, c, x[ 9], S12); /* 10 */</span></a>
+<a name="191"><span class="lineNum">     191 </span><span class="lineCov">        149 :   FF (c, d, a, b, x[10], S13); /* 11 */</span></a>
+<a name="192"><span class="lineNum">     192 </span><span class="lineCov">        149 :   FF (b, c, d, a, x[11], S14); /* 12 */</span></a>
+<a name="193"><span class="lineNum">     193 </span><span class="lineCov">        149 :   FF (a, b, c, d, x[12], S11); /* 13 */</span></a>
+<a name="194"><span class="lineNum">     194 </span><span class="lineCov">        149 :   FF (d, a, b, c, x[13], S12); /* 14 */</span></a>
+<a name="195"><span class="lineNum">     195 </span><span class="lineCov">        149 :   FF (c, d, a, b, x[14], S13); /* 15 */</span></a>
+<a name="196"><span class="lineNum">     196 </span><span class="lineCov">        149 :   FF (b, c, d, a, x[15], S14); /* 16 */</span></a>
+<a name="197"><span class="lineNum">     197 </span>            : </a>
+<a name="198"><span class="lineNum">     198 </span>            :   /* Round 2 */</a>
+<a name="199"><span class="lineNum">     199 </span><span class="lineCov">        149 :   GG (a, b, c, d, x[ 0], S21); /* 17 */</span></a>
+<a name="200"><span class="lineNum">     200 </span><span class="lineCov">        149 :   GG (d, a, b, c, x[ 4], S22); /* 18 */</span></a>
+<a name="201"><span class="lineNum">     201 </span><span class="lineCov">        149 :   GG (c, d, a, b, x[ 8], S23); /* 19 */</span></a>
+<a name="202"><span class="lineNum">     202 </span><span class="lineCov">        149 :   GG (b, c, d, a, x[12], S24); /* 20 */</span></a>
+<a name="203"><span class="lineNum">     203 </span><span class="lineCov">        149 :   GG (a, b, c, d, x[ 1], S21); /* 21 */</span></a>
+<a name="204"><span class="lineNum">     204 </span><span class="lineCov">        149 :   GG (d, a, b, c, x[ 5], S22); /* 22 */</span></a>
+<a name="205"><span class="lineNum">     205 </span><span class="lineCov">        149 :   GG (c, d, a, b, x[ 9], S23); /* 23 */</span></a>
+<a name="206"><span class="lineNum">     206 </span><span class="lineCov">        149 :   GG (b, c, d, a, x[13], S24); /* 24 */</span></a>
+<a name="207"><span class="lineNum">     207 </span><span class="lineCov">        149 :   GG (a, b, c, d, x[ 2], S21); /* 25 */</span></a>
+<a name="208"><span class="lineNum">     208 </span><span class="lineCov">        149 :   GG (d, a, b, c, x[ 6], S22); /* 26 */</span></a>
+<a name="209"><span class="lineNum">     209 </span><span class="lineCov">        149 :   GG (c, d, a, b, x[10], S23); /* 27 */</span></a>
+<a name="210"><span class="lineNum">     210 </span><span class="lineCov">        149 :   GG (b, c, d, a, x[14], S24); /* 28 */</span></a>
+<a name="211"><span class="lineNum">     211 </span><span class="lineCov">        149 :   GG (a, b, c, d, x[ 3], S21); /* 29 */</span></a>
+<a name="212"><span class="lineNum">     212 </span><span class="lineCov">        149 :   GG (d, a, b, c, x[ 7], S22); /* 30 */</span></a>
+<a name="213"><span class="lineNum">     213 </span><span class="lineCov">        149 :   GG (c, d, a, b, x[11], S23); /* 31 */</span></a>
+<a name="214"><span class="lineNum">     214 </span><span class="lineCov">        149 :   GG (b, c, d, a, x[15], S24); /* 32 */</span></a>
+<a name="215"><span class="lineNum">     215 </span>            : </a>
+<a name="216"><span class="lineNum">     216 </span>            :   /* Round 3 */</a>
+<a name="217"><span class="lineNum">     217 </span><span class="lineCov">        149 :   HH (a, b, c, d, x[ 0], S31); /* 33 */</span></a>
+<a name="218"><span class="lineNum">     218 </span><span class="lineCov">        149 :   HH (d, a, b, c, x[ 8], S32); /* 34 */</span></a>
+<a name="219"><span class="lineNum">     219 </span><span class="lineCov">        149 :   HH (c, d, a, b, x[ 4], S33); /* 35 */</span></a>
+<a name="220"><span class="lineNum">     220 </span><span class="lineCov">        149 :   HH (b, c, d, a, x[12], S34); /* 36 */</span></a>
+<a name="221"><span class="lineNum">     221 </span><span class="lineCov">        149 :   HH (a, b, c, d, x[ 2], S31); /* 37 */</span></a>
+<a name="222"><span class="lineNum">     222 </span><span class="lineCov">        149 :   HH (d, a, b, c, x[10], S32); /* 38 */</span></a>
+<a name="223"><span class="lineNum">     223 </span><span class="lineCov">        149 :   HH (c, d, a, b, x[ 6], S33); /* 39 */</span></a>
+<a name="224"><span class="lineNum">     224 </span><span class="lineCov">        149 :   HH (b, c, d, a, x[14], S34); /* 40 */</span></a>
+<a name="225"><span class="lineNum">     225 </span><span class="lineCov">        149 :   HH (a, b, c, d, x[ 1], S31); /* 41 */</span></a>
+<a name="226"><span class="lineNum">     226 </span><span class="lineCov">        149 :   HH (d, a, b, c, x[ 9], S32); /* 42 */</span></a>
+<a name="227"><span class="lineNum">     227 </span><span class="lineCov">        149 :   HH (c, d, a, b, x[ 5], S33); /* 43 */</span></a>
+<a name="228"><span class="lineNum">     228 </span><span class="lineCov">        149 :   HH (b, c, d, a, x[13], S34); /* 44 */</span></a>
+<a name="229"><span class="lineNum">     229 </span><span class="lineCov">        149 :   HH (a, b, c, d, x[ 3], S31); /* 45 */</span></a>
+<a name="230"><span class="lineNum">     230 </span><span class="lineCov">        149 :   HH (d, a, b, c, x[11], S32); /* 46 */</span></a>
+<a name="231"><span class="lineNum">     231 </span><span class="lineCov">        149 :   HH (c, d, a, b, x[ 7], S33); /* 47 */</span></a>
+<a name="232"><span class="lineNum">     232 </span><span class="lineCov">        149 :   HH (b, c, d, a, x[15], S34); /* 48 */</span></a>
+<a name="233"><span class="lineNum">     233 </span>            : </a>
+<a name="234"><span class="lineNum">     234 </span><span class="lineCov">        149 :   state[0] += a;</span></a>
+<a name="235"><span class="lineNum">     235 </span><span class="lineCov">        149 :   state[1] += b;</span></a>
+<a name="236"><span class="lineNum">     236 </span><span class="lineCov">        149 :   state[2] += c;</span></a>
+<a name="237"><span class="lineNum">     237 </span><span class="lineCov">        149 :   state[3] += d;</span></a>
+<a name="238"><span class="lineNum">     238 </span>            : </a>
+<a name="239"><span class="lineNum">     239 </span>            :   /* Zeroize sensitive information.</a>
+<a name="240"><span class="lineNum">     240 </span>            :    */</a>
+<a name="241"><span class="lineNum">     241 </span><span class="lineCov">        149 :   MD4_memset ((unsigned char *)x, 0, sizeof (x));</span></a>
+<a name="242"><span class="lineNum">     242 </span><span class="lineCov">        149 : }</span></a>
+<a name="243"><span class="lineNum">     243 </span>            : </a>
+<a name="244"><span class="lineNum">     244 </span>            : /* Encodes input (uint32_t) into output (unsigned char). Assumes len is</a>
+<a name="245"><span class="lineNum">     245 </span>            :      a multiple of 4.</a>
+<a name="246"><span class="lineNum">     246 </span>            :  */</a>
+<a name="247"><span class="lineNum">     247 </span><span class="lineCov">        298 : static void Encode(unsigned char *output, uint32_t *input, unsigned int len)</span></a>
+<a name="248"><span class="lineNum">     248 </span>            : {</a>
+<a name="249"><span class="lineNum">     249 </span>            :   unsigned int i, j;</a>
+<a name="250"><span class="lineNum">     250 </span>            : </a>
+<a name="251"><span class="lineNum">     251 </span><span class="lineCov">       1192 :   for (i = 0, j = 0; j &lt; len; i++, j += 4) {</span></a>
+<a name="252"><span class="lineNum">     252 </span><span class="lineCov">        894 :     output[j] = (unsigned char)(input[i] &amp; 0xff);</span></a>
+<a name="253"><span class="lineNum">     253 </span><span class="lineCov">        894 :     output[j+1] = (unsigned char)((input[i] &gt;&gt; 8) &amp; 0xff);</span></a>
+<a name="254"><span class="lineNum">     254 </span><span class="lineCov">        894 :     output[j+2] = (unsigned char)((input[i] &gt;&gt; 16) &amp; 0xff);</span></a>
+<a name="255"><span class="lineNum">     255 </span><span class="lineCov">        894 :     output[j+3] = (unsigned char)((input[i] &gt;&gt; 24) &amp; 0xff);</span></a>
+<a name="256"><span class="lineNum">     256 </span>            :   }</a>
+<a name="257"><span class="lineNum">     257 </span><span class="lineCov">        298 : }</span></a>
+<a name="258"><span class="lineNum">     258 </span>            : </a>
+<a name="259"><span class="lineNum">     259 </span>            : /* Decodes input (unsigned char) into output (uint32_t). Assumes len is</a>
+<a name="260"><span class="lineNum">     260 </span>            :      a multiple of 4.</a>
+<a name="261"><span class="lineNum">     261 </span>            :  */</a>
+<a name="262"><span class="lineNum">     262 </span><span class="lineCov">        149 : static void Decode(uint32_t *output, unsigned char *input, unsigned int len)</span></a>
+<a name="263"><span class="lineNum">     263 </span>            : {</a>
+<a name="264"><span class="lineNum">     264 </span>            :   unsigned int i, j;</a>
+<a name="265"><span class="lineNum">     265 </span>            : </a>
+<a name="266"><span class="lineNum">     266 </span><span class="lineCov">       2533 :   for (i = 0, j = 0; j &lt; len; i++, j += 4)</span></a>
+<a name="267"><span class="lineNum">     267 </span><span class="lineCov">       2384 :     output[i] = ((uint32_t)input[j]) | (((uint32_t)input[j+1]) &lt;&lt; 8) |</span></a>
+<a name="268"><span class="lineNum">     268 </span><span class="lineCov">       2384 :       (((uint32_t)input[j+2]) &lt;&lt; 16) | (((uint32_t)input[j+3]) &lt;&lt; 24);</span></a>
+<a name="269"><span class="lineNum">     269 </span><span class="lineCov">        149 : }</span></a>
+<a name="270"><span class="lineNum">     270 </span>            : </a>
+<a name="271"><span class="lineNum">     271 </span>            : /* Note: Replace &quot;for loop&quot; with standard memcpy if possible.</a>
+<a name="272"><span class="lineNum">     272 </span>            :  */</a>
+<a name="273"><span class="lineNum">     273 </span><span class="lineCov">        596 : static void MD4_memcpy(unsigned char *output, unsigned char *input, unsigned int len)</span></a>
+<a name="274"><span class="lineNum">     274 </span>            : {</a>
+<a name="275"><span class="lineNum">     275 </span>            :   unsigned int i;</a>
+<a name="276"><span class="lineNum">     276 </span>            : </a>
+<a name="277"><span class="lineNum">     277 </span><span class="lineCov">      10132 :   for (i = 0; i &lt; len; i++)</span></a>
+<a name="278"><span class="lineNum">     278 </span><span class="lineCov">       9536 :     output[i] = input[i];</span></a>
+<a name="279"><span class="lineNum">     279 </span><span class="lineCov">        596 : }</span></a>
+<a name="280"><span class="lineNum">     280 </span>            : </a>
+<a name="281"><span class="lineNum">     281 </span>            : /* Note: Replace &quot;for loop&quot; with standard memset if possible.</a>
+<a name="282"><span class="lineNum">     282 </span>            :  */</a>
+<a name="283"><span class="lineNum">     283 </span><span class="lineCov">        298 : static void MD4_memset(unsigned char *output, int value, unsigned int len)</span></a>
+<a name="284"><span class="lineNum">     284 </span>            : {</a>
+<a name="285"><span class="lineNum">     285 </span>            :   unsigned int i;</a>
+<a name="286"><span class="lineNum">     286 </span>            : </a>
+<a name="287"><span class="lineNum">     287 </span><span class="lineCov">      22946 :   for (i = 0; i &lt; len; i++)</span></a>
+<a name="288"><span class="lineNum">     288 </span><span class="lineCov">      22648 :     ((char *)output)[i] = (char)value;</span></a>
+<a name="289"><span class="lineNum">     289 </span><span class="lineCov">        298 : }</span></a>
+</pre>
+      </td>
+    </tr>
+  </table>
+  <br>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+    <tr><td class="versionInfo">Generated by: <a href="http://ltp.sourceforge.net/coverage/lcov.php" target="_parent">LCOV version 1.14</a></td></tr>
+  </table>
+  <br>
+
+</body>
+</html>

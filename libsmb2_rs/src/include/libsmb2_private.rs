@@ -619,7 +619,7 @@ impl Directory {
     }
 
     /// Rewinds directory iteration to the first entry.
-    pub const fn rewind(&mut self) {
+    pub fn rewind(&mut self) {
         self.index = 0;
     }
 }
@@ -959,10 +959,10 @@ impl Context {
     }
 
     /// Closes and forgets sockets that are still in the connecting set.
-    pub const fn close_connecting_fds(&mut self) {}
+    pub fn close_connecting_fds(&mut self) {}
 
     /// Sets the operation timeout in seconds.
-    pub const fn set_timeout(&mut self, timeout: i32) {
+    pub fn set_timeout(&mut self, timeout: i32) {
         self.private.timeout = timeout;
     }
 
@@ -1056,7 +1056,7 @@ impl Context {
     }
 
     /// Sets caller-defined opaque data.
-    pub const fn set_opaque(&mut self, opaque: Option<usize>) {
+    pub fn set_opaque(&mut self, opaque: Option<usize>) {
         self.private.opaque = opaque;
     }
 

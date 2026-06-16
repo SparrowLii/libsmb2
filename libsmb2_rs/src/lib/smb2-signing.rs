@@ -212,9 +212,9 @@ pub fn smb3_aes_cmac_128(key: &SigningKey, msg: &[u8]) -> SigningResult<AesCmac>
     let block_count = if msg.is_empty() {
         1
     } else {
-        msg.len().div_ceil(AES_BLOCK_SIZE)
+        (msg.len() + AES_BLOCK_SIZE - 1) / AES_BLOCK_SIZE
     };
-    let last_complete = !msg.is_empty() && msg.len().is_multiple_of(AES_BLOCK_SIZE);
+    let last_complete = !msg.is_empty() && msg.len() % AES_BLOCK_SIZE == 0;
     let mut mac = [0; AES_BLOCK_SIZE];
 
     for block in msg

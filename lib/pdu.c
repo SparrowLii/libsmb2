@@ -345,6 +345,12 @@ smb2_free_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu)
 {
         SMB2_LIST_REMOVE(&smb2->outqueue, pdu);
         SMB2_LIST_REMOVE(&smb2->waitqueue, pdu);
+        if (smb2->pdu == pdu) {
+                smb2->pdu = NULL;
+        }
+        if (smb2->next_pdu == pdu) {
+                smb2->next_pdu = NULL;
+        }
 
         if (pdu->next_compound) {
                 smb2_free_pdu(smb2, pdu->next_compound);

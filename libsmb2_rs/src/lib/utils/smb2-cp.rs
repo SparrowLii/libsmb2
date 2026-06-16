@@ -204,7 +204,7 @@ pub fn chunk_plan(file_size: u64) -> ChunkPlan {
     if file_size == 0 {
         return ChunkPlan { first_count: 0, last_count: 0, chunks: 0 };
     }
-    let chunks = file_size.div_ceil(BUFSIZE);
+    let chunks = (file_size + BUFSIZE - 1) / BUFSIZE;
     let first_count = file_size.min(BUFSIZE);
     let remainder = file_size % BUFSIZE;
     let last_count = if remainder == 0 { BUFSIZE } else { remainder };

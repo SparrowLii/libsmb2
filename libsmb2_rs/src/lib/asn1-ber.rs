@@ -268,7 +268,7 @@ pub struct Asn1BerContext<'src, 'dst> {
 impl<'src, 'dst> Asn1BerContext<'src, 'dst> {
     /// Creates a context with only an input buffer.
     #[must_use]
-    pub const fn from_src(src: &'src [u8]) -> Self {
+    pub fn from_src(src: &'src [u8]) -> Self {
         Self {
             src,
             src_tail: 0,

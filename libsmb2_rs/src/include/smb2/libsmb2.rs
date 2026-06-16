@@ -595,7 +595,7 @@ pub enum NegotiateVersion {
 impl NegotiateVersion {
     /// Converts a C `enum smb2_negotiate_version` value into Rust.
     #[must_use]
-    pub const fn from_raw(raw: u16) -> Self {
+    pub fn from_raw(raw: u16) -> Self {
         match raw {
             0 => Self::Any,
             2 => Self::Any2,
@@ -611,7 +611,7 @@ impl NegotiateVersion {
 
     /// Converts this version selector to the C enum value.
     #[must_use]
-    pub const fn as_raw(self) -> u16 {
+    pub fn as_raw(self) -> u16 {
         match self {
             Self::Any => 0,
             Self::Any2 => 2,
@@ -1699,7 +1699,7 @@ impl Smb2Client {
 
     /// Returns the primary socket descriptor used by the context skeleton.
     #[must_use]
-    pub const fn fd(&self) -> Socket {
+    pub fn fd(&self) -> Socket {
         self.fd
     }
 
@@ -1879,7 +1879,7 @@ impl Smb2Client {
     }
 
     /// Sets the timeout in seconds for future command skeletons.
-    pub const fn set_timeout(&mut self, seconds: i32) {
+    pub fn set_timeout(&mut self, seconds: i32) {
         self.timeout_seconds = seconds;
     }
 
@@ -1890,7 +1890,7 @@ impl Smb2Client {
     }
 
     /// Enables or disables passthrough handling for uninterpreted command data.
-    pub const fn set_passthrough(&mut self, passthrough: bool) {
+    pub fn set_passthrough(&mut self, passthrough: bool) {
         self.passthrough = passthrough;
     }
 
@@ -1901,7 +1901,7 @@ impl Smb2Client {
     }
 
     /// Sets the SMB dialect negotiation selector.
-    pub const fn set_version(&mut self, version: NegotiateVersion) {
+    pub fn set_version(&mut self, version: NegotiateVersion) {
         self.version = version;
     }
 
@@ -1925,12 +1925,12 @@ impl Smb2Client {
     }
 
     /// Records a negotiated dialect for tests or adapters that already know it.
-    pub const fn set_dialect(&mut self, dialect: u16) {
+    pub fn set_dialect(&mut self, dialect: u16) {
         self.dialect = dialect;
     }
 
     /// Sets the SMB2 security mode bitmask.
-    pub const fn set_security_mode(&mut self, security_mode: u16) {
+    pub fn set_security_mode(&mut self, security_mode: u16) {
         self.security_mode = security_mode;
     }
 
@@ -1941,7 +1941,7 @@ impl Smb2Client {
     }
 
     /// Enables or disables SMB3 encryption for future connection skeletons.
-    pub const fn set_seal(&mut self, val: bool) {
+    pub fn set_seal(&mut self, val: bool) {
         self.seal = val;
     }
 
@@ -1952,7 +1952,7 @@ impl Smb2Client {
     }
 
     /// Enables or disables required signing for future connection skeletons.
-    pub const fn set_sign(&mut self, val: bool) {
+    pub fn set_sign(&mut self, val: bool) {
         self.sign = val;
     }
 
@@ -1963,7 +1963,7 @@ impl Smb2Client {
     }
 
     /// Sets the authentication method used by future session setup skeletons.
-    pub const fn set_authentication(&mut self, authentication: AuthenticationMethod) {
+    pub fn set_authentication(&mut self, authentication: AuthenticationMethod) {
         self.authentication = authentication;
     }
 
@@ -2040,7 +2040,7 @@ impl Smb2Client {
     }
 
     /// Records a client GUID for future negotiation skeletons.
-    pub const fn set_client_guid(&mut self, guid: [u8; SMB2_GUID_SIZE]) {
+    pub fn set_client_guid(&mut self, guid: [u8; SMB2_GUID_SIZE]) {
         self.client_guid = Some(guid);
     }
 
@@ -2180,7 +2180,7 @@ impl Smb2Client {
     }
 
     /// Records the last NT status code observed by a backend.
-    pub const fn set_nterror(&mut self, nterror: i32) {
+    pub fn set_nterror(&mut self, nterror: i32) {
         self.nterror = nterror;
     }
 
@@ -2328,7 +2328,7 @@ impl Smb2Client {
     }
 
     /// Selects a connected tree id for subsequent request skeletons.
-    pub const fn select_tree_id(&mut self, tree_id: u32) {
+    pub fn select_tree_id(&mut self, tree_id: u32) {
         self.tree_id = Some(tree_id);
     }
 
@@ -2339,7 +2339,7 @@ impl Smb2Client {
     }
 
     /// Records a tree id on a PDU skeleton.
-    pub const fn set_tree_id_for_pdu(&self, pdu: &mut PduHandle, tree_id: u32) {
+    pub fn set_tree_id_for_pdu(&self, pdu: &mut PduHandle, tree_id: u32) {
         let _ = self;
         pdu.tree_id = Some(tree_id);
     }
@@ -2358,7 +2358,7 @@ impl Smb2Client {
     }
 
     /// Records a session id for tests or future backend adapters.
-    pub const fn set_session_id(&mut self, session_id: u64) {
+    pub fn set_session_id(&mut self, session_id: u64) {
         self.session_id = Some(session_id);
     }
 
@@ -2385,31 +2385,31 @@ impl Smb2Client {
     }
 
     /// Records the selected SMB3 encryption cipher for sealing.
-    pub const fn set_encryption_cipher(&mut self, cipher: Option<u16>) {
+    pub fn set_encryption_cipher(&mut self, cipher: Option<u16>) {
         self.encryption_cipher = cipher;
     }
 
     /// Adds a PDU to a compound chain skeleton.
-    pub const fn add_compound_pdu(&self, pdu: &mut PduHandle, next_pdu: &mut PduHandle) {
+    pub fn add_compound_pdu(&self, pdu: &mut PduHandle, next_pdu: &mut PduHandle) {
         let _ = self;
         pdu.is_compound = true;
         next_pdu.is_compound = true;
     }
 
     /// Queues a PDU skeleton by advancing the last request message id.
-    pub const fn queue_pdu(&mut self, pdu: &mut PduHandle) {
+    pub fn queue_pdu(&mut self, pdu: &mut PduHandle) {
         self.last_request_message_id = self.last_request_message_id.saturating_add(1);
         pdu.message_id = Some(self.last_request_message_id);
     }
 
     /// Sets a completion status on a PDU skeleton.
-    pub const fn set_pdu_status(&self, pdu: &mut PduHandle, status: i32) {
+    pub fn set_pdu_status(&self, pdu: &mut PduHandle, status: i32) {
         let _ = self;
         pdu.status = status;
     }
 
     /// Sets an SMB2 message id on a PDU skeleton.
-    pub const fn set_pdu_message_id(&self, pdu: &mut PduHandle, message_id: u64) {
+    pub fn set_pdu_message_id(&self, pdu: &mut PduHandle, message_id: u64) {
         let _ = self;
         pdu.message_id = Some(message_id);
     }
@@ -2434,7 +2434,7 @@ impl Smb2Client {
     }
 
     /// Records the last reply message id observed by a backend.
-    pub const fn set_last_reply_message_id(&mut self, message_id: u64) {
+    pub fn set_last_reply_message_id(&mut self, message_id: u64) {
         self.last_reply_message_id = message_id;
     }
 
@@ -2533,7 +2533,7 @@ impl Smb2Client {
     }
 
     /// Records negotiated maximum read and write sizes.
-    pub const fn set_max_io_sizes(&mut self, max_read_size: u32, max_write_size: u32) {
+    pub fn set_max_io_sizes(&mut self, max_read_size: u32, max_write_size: u32) {
         self.max_read_size = max_read_size;
         self.max_write_size = max_write_size;
     }
@@ -3293,7 +3293,7 @@ impl Smb2Client {
         let response_message_id = response.as_ref().and_then(|response| response.message_id);
         let Some(index) = self.operation_records.iter().position(|record| {
             record.state == OperationState::InFlight
-                && response_message_id.is_none_or(|message_id| record.message_id == message_id)
+                && response_message_id.map_or(true, |message_id| record.message_id == message_id)
         }) else {
             return;
         };

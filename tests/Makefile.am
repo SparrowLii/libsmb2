@@ -20,7 +20,7 @@ ld_sockerr.o: ld_sockerr-ld_sockerr.o
 	$(LIBTOOL) --mode=link $(CC) -o $@ $^
 
 ld_sockerr.so: ld_sockerr.o
-	$(CC) -shared -o ld_sockerr.so ld_sockerr.o -ldl
+	$(CC) $(LDFLAGS) -shared -o ld_sockerr.so ld_sockerr.o -ldl
 
 T = `ls test_*.sh`
 
@@ -28,7 +28,7 @@ test: $(noinst_PROGRAMS) $(bin_SCRIPTS)
 	for TEST in $(T); do \
 		echo "Running $$TEST"; \
 		echo "--------------"; \
-		sh $$TEST || exit 1; \
+		bash $$TEST || exit 1; \
 		echo "--------------"; \
 		echo; \
 	done

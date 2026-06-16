@@ -159,8 +159,10 @@ struct connect_data {
 };
 
 struct smb2fh {
+        struct smb2fh *next;
         smb2_command_cb cb;
         void *cb_data;
+        void (*free_cb_data)(void *);
 
         smb2_file_id file_id;
         int64_t offset;
@@ -203,6 +205,7 @@ send_session_setup_request(struct smb2_context *smb2,
 static void
 free_smb2dir(struct smb2_context *smb2, struct smb2dir *dir)
 {
+        SMB2_LIST_REMOVE(&smb2->dirs, dir);
         while (dir->entries) {
                 struct smb2_dirent_internal *e = dir->entries->next;
 
@@ -501,6 +504,7 @@ _smb2_opendir_async(struct smb2_context *smb2, const char *path,
         }
         pdu->free_cb = free_cb;
         pdu->caller_frees_pdu = caller_frees_pdu;
+        SMB2_LIST_ADD(&smb2->dirs, dir);
         smb2_queue_pdu(smb2, pdu);
 
         return pdu;
@@ -1156,7 +1160,27 @@ smb2_connect_share_async(struct smb2_context *smb2,
 static void
 free_smb2fh(struct smb2_context *smb2, struct smb2fh *fh)
 {
+        SMB2_LIST_REMOVE(&smb2->files, fh);
+        if (fh->free_cb_data) {
+                fh->free_cb_data(fh->cb_data);
+        }
         free(fh);
+}
+
+void
+smb2_free_all_dirs(struct smb2_context *smb2)
+{
+        while (smb2->dirs) {
+                free_smb2dir(smb2, smb2->dirs);
+        }
+}
+
+void
+smb2_free_all_filehandles(struct smb2_context *smb2)
+{
+        while (smb2->files) {
+                free_smb2fh(smb2, smb2->files);
+        }
 }
 
 static void
@@ -1170,6 +1194,7 @@ open_cb(struct smb2_context *smb2, int status,
                 smb2_set_nterror(smb2, status, "Open failed with (0x%08x) %s.",
                                status, nterror_to_str(status));
                 fh->cb(smb2, -nterror_to_errno(status), NULL, fh->cb_data);
+                fh->free_cb_data = NULL;
                 free_smb2fh(smb2, fh);
                 return;
         }
@@ -1177,6 +1202,7 @@ open_cb(struct smb2_context *smb2, int status,
         memcpy(fh->file_id, rep->file_id, SMB2_FD_SIZE);
         fh->end_of_file = rep->end_of_file;
         fh->cb(smb2, 0, fh, fh->cb_data);
+        fh->free_cb_data = NULL;
 }
 
 static struct smb2_pdu *
@@ -1206,6 +1232,7 @@ _smb2_open_async_with_oplock_or_lease(struct smb2_context *smb2, const char *pat
 
         fh->cb = cb;
         fh->cb_data = cb_data;
+        fh->free_cb_data = free_cb;
 
         /* Create disposition */
         if (flags & O_CREAT) {
@@ -1293,6 +1320,7 @@ _smb2_open_async_with_oplock_or_lease(struct smb2_context *smb2, const char *pat
                 free(req.create_context);
         }
 
+        SMB2_LIST_ADD(&smb2->files, fh);
         pdu->caller_frees_pdu = caller_frees_pdu;
         smb2_queue_pdu(smb2, pdu);
 
@@ -2788,6 +2816,7 @@ smb2_fh_from_file_id(struct smb2_context *smb2, smb2_file_id *fileid)
                 return NULL;
         }
         memcpy(fh->file_id, fileid, SMB2_FD_SIZE);
+        SMB2_LIST_ADD(&smb2->files, fh);
 
         return fh;
 }

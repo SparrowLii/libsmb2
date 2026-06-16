@@ -1033,7 +1033,7 @@ pub fn file_time_to_date(ticks: u64) -> FileTimeDate {
     time -= u64::from(days) * 60 * 60 * 24;
     days = days.saturating_sub(leapdays);
 
-    if years.is_multiple_of(4) && (!years.is_multiple_of(100) || years.is_multiple_of(400)) {
+    if years % 4 == 0 && (years % 100 != 0 || years % 400 == 0) {
         days_per_month[1] += 1;
     }
 
